@@ -1,0 +1,15 @@
+{
+  "name": "Codex OS Brain",
+  "version": "0.1.0",
+  "privacy_mode": "local_sanitized",
+  "dashboard_port": 8791,
+  "working_context": {
+    "max_focus_items": 8,
+    "default_ttl_minutes": 120
+  },
+  "gates": {
+    "verification_before_completion": true,
+    "candidate_only_memory": true,
+    "human_approval_for_self_evolution": true
+  }
+}

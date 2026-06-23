@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex OS Brain</title>
+  <style>
+    :root { color-scheme: dark; --bg:#151515; --panel:#242424; --soft:#303030; --text:#eeeeee; --muted:#a8a8a8; --green:#4caf7a; --amber:#d5a943; --red:#df6d6a; --blue:#4aa3ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); letter-spacing: 0; }
+    main { width: min(960px, 100%); margin: 0 auto; padding: 20px; }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: start; margin-bottom: 18px; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 16px; }
+    .sub { color: var(--muted); margin-top: 6px; font-size: 14px; }
+    button { border: 1px solid #444; border-radius: 8px; background: var(--soft); color: var(--text); padding: 8px 12px; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .card { background: var(--panel); border: 1px solid rgba(255,255,255,.07); border-radius: 10px; padding: 14px; margin-top: 12px; }
+    .metric .label { color: var(--muted); font-size: 12px; }
+    .metric .value { margin-top: 8px; font-size: 22px; font-weight: 700; overflow-wrap: anywhere; }
+    .metric .note { margin-top: 5px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    .dot { display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--blue); margin-right:8px; }
+    .green { color: var(--green); }
+    .amber { color: var(--amber); }
+    .red { color: var(--red); }
+    .dot.green { background: var(--green); }
+    .dot.amber { background: var(--amber); }
+    .dot.red { background: var(--red); }
+    .rows { display: grid; gap: 10px; }
+    .row { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; gap: 10px; padding: 10px; border-radius: 8px; background: var(--soft); align-items: start; }
+    .row strong { overflow-wrap:anywhere; }
+    .row small { display:block; color:var(--muted); margin-top:4px; line-height:1.35; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border-radius: 8px; background: #101010; color: #d8d8d8; }
+    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } header { display:block; } button { margin-top: 12px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Codex OS Brain</h1>
+      <p class="sub" id="subtitle">Observable public cognitive harness for Codex</p>
+    </div>
+    <button id="refresh">Refresh</button>
+  </header>
+
+  <section class="grid" id="metrics"></section>
+
+  <section class="card">
+    <h2>Global Entry</h2>
+    <div class="rows" id="globalRows"></div>
+  </section>
+
+  <section class="card">
+    <h2>Privacy Boundary</h2>
+    <div class="rows" id="privacyRows"></div>
+  </section>
+
+  <section class="card">
+    <h2>Latest Sanitized Event</h2>
+    <pre id="latest">loading</pre>
+  </section>
+</main>
+<script>
+const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[m]));
+const tone = (ok) => ok ? "green" : "red";
+
+function metric(label, value, note, ok) {
+  return `<article class="card metric"><div class="label"><span class="dot ${tone(ok)}"></span>${esc(label)}</div><div class="value">${esc(value)}</div><div class="note">${esc(note)}</div></article>`;
+}
+
+function row(label, note, ok) {
+  return `<div class="row"><span class="dot ${tone(ok)}"></span><div><strong>${esc(label)}</strong><small>${esc(note)}</small></div><span class="${tone(ok)}">${ok ? "ok" : "check"}</span></div>`;
+}
+
+async function load() {
+  const data = await fetch("/api/status", { cache: "no-store" }).then((r) => r.json());
+  const entry = data.global_entry || {};
+  document.getElementById("subtitle").textContent = `${entry.status || "unknown"} · ${new Date(data.generated_at).toLocaleTimeString()}`;
+  document.getElementById("metrics").innerHTML = [
+    metric("Global entry", entry.global_coverage ? "active" : "partial", entry.scope || "unknown", entry.global_coverage),
+    metric("Prompt events", data.metrics?.prompt_events || 0, "sanitized count only", true),
+    metric("Engineering audits", data.metrics?.engineering_audits || 0, "risk categories only", true),
+    metric("Red flag", data.metrics?.red_flag ? "raised" : "clear", "requires verification or approval when raised", !data.metrics?.red_flag),
+  ].join("");
+  document.getElementById("globalRows").innerHTML = (entry.required || []).map((item) => row(item.label, item.ok ? "installed and global" : "missing or not global", item.ok)).join("") || row("status unavailable", "run codex-os-brain status", false);
+  document.getElementById("privacyRows").innerHTML = [
+    row("No personal memory packaged", "MEMORY/USER/STATE/IDENTITY/SOUL are excluded", data.privacy?.packaged_private_memory === false),
+    row("No API keys packaged", "privacy scan blocks common token shapes", data.privacy?.packaged_api_keys === false),
+    row("No hidden reasoning shown", "dashboard displays observable state only", true),
+  ].join("");
+  document.getElementById("latest").textContent = JSON.stringify(data.latest || {}, null, 2);
+}
+
+document.getElementById("refresh").addEventListener("click", load);
+load().catch((error) => {
+  document.getElementById("latest").textContent = error.message;
+});
+</script>
+</body>
+</html>

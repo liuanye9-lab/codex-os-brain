@@ -1,0 +1,39 @@
+{
+  "name": "codex-os-brain",
+  "version": "0.1.0",
+  "description": "A public, privacy-first cognitive harness for Codex: global hooks, working context, verification gates, and a local dashboard.",
+  "type": "module",
+  "bin": {
+    "codex-os-brain": "bin/codex-os-brain.mjs"
+  },
+  "files": [
+    "bin/",
+    "runtime/",
+    "docs/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "node --check bin/codex-os-brain.mjs && node --check runtime/scripts/inject-context.cjs && node --check runtime/scripts/global-hook-status.cjs && node --check runtime/scripts/engineering-harness.cjs && node --check runtime/scripts/capture-session.cjs && node --check runtime/scripts/privacy-scan.cjs && node --check runtime/dashboard/dashboard-server.mjs && npm run privacy:scan && node test/smoke.mjs",
+    "privacy:scan": "node runtime/scripts/privacy-scan.cjs .",
+    "smoke": "node test/smoke.mjs",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "keywords": [
+    "codex",
+    "agent",
+    "hooks",
+    "verification",
+    "dashboard",
+    "privacy"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/liuanye9-lab/codex-os-brain.git"
+  }
+}

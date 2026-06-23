@@ -1,0 +1,25 @@
+node_modules/
+npm-debug.log*
+.DS_Store
+
+# Runtime output must stay local.
+data/
+artifacts/
+*.log
+*.jsonl
+
+# Secrets and local config.
+.env
+.env.*
+!.env.example
+auth.json
+credentials.json
+secrets/
+
+# Local Codex/user state must never be committed.
+MEMORY.md
+USER.md
+STATE.md
+IDENTITY.md
+SOUL.md
+AGENTS.local.md
