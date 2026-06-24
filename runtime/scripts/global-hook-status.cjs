@@ -51,7 +51,7 @@ function smokeInjection() {
   try {
     const parsed = JSON.parse(out.stdout || "{}");
     const ctx = parsed?.hookSpecificOutput?.additionalContext || "";
-    return { ok: ctx.includes("codex-os-brain"), chars: ctx.length };
+    return { ok: ctx.includes("codex-os-brain") && ctx.includes("Agentic Coding Preflight"), chars: ctx.length };
   } catch (error) {
     return { ok: false, error: error.message };
   }
@@ -74,6 +74,10 @@ function buildStatus() {
     {
       label: "stop heartbeat capture",
       ok: stopCommands.some((item) => item.globalMatcher && item.command.includes(".codex-os-brain") && item.command.includes("capture-session.cjs")) && syntaxOk("scripts/capture-session.cjs"),
+    },
+    {
+      label: "agentic dispatch preflight",
+      ok: syntaxOk("scripts/agentic-dispatch.cjs"),
     },
   ];
   const injectionSmoke = smokeInjection();

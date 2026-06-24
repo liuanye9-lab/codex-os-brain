@@ -27,8 +27,22 @@ function run(args, options = {}) {
   return result;
 }
 
+function runAny(args, options = {}) {
+  return spawnSync(process.execPath, [path.join(root, "bin", "codex-os-brain.mjs"), ...args], {
+    cwd: root,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      CODEX_HOME: codexHome,
+      CODEX_OS_BRAIN_HOME: brainHome,
+    },
+    timeout: 15000,
+    ...options,
+  });
+}
+
 try {
-  run(["install"]);
+  run(["install", "--global-agentic"]);
   const status = run(["status", "--summary"]);
   if (!status.stdout.includes("status: global_active")) {
     throw new Error(`status did not become global_active:\n${status.stdout}`);
@@ -37,6 +51,38 @@ try {
   const promptGroups = hooks.hooks.UserPromptSubmit || [];
   if (!promptGroups.some((group) => group.matcher === "")) {
     throw new Error("missing global UserPromptSubmit matcher");
+  }
+  const config = JSON.parse(fs.readFileSync(path.join(brainHome, "config.json"), "utf8"));
+  if (config.dispatch_policy !== "gated_agentic_preflight") {
+    throw new Error("missing gated global agentic install config");
+  }
+  const agents = run(["agents", "--json"]);
+  const parsedAgents = JSON.parse(agents.stdout);
+  if (!parsedAgents.agents.some((agent) => agent.name === "上下文侦察员")) {
+    throw new Error("missing Chinese sub-agent names");
+  }
+  const lowRiskTask = "实现 dashboard 功能，更新文档，运行测试，准备发布";
+  const lowRisk = run(["dispatch", "--task", lowRiskTask, "--json", "--write"]);
+  const lowRiskPlan = JSON.parse(lowRisk.stdout);
+  if (!lowRiskPlan.recommended || !lowRiskPlan.selected_agents.some((agent) => agent.name === "安全审查员")) {
+    throw new Error("low-risk release task did not open gate with security reviewer");
+  }
+  const highRisk = runAny(["dispatch", "--task", "修改 persona 和私密 memory 并发布", "--json"]);
+  if (highRisk.status === 0) {
+    throw new Error("high-privacy task should not auto-open dispatch gate");
+  }
+  const records = fs.readFileSync(path.join(brainHome, "data", "agentic-dispatch.jsonl"), "utf8");
+  if (records.includes(lowRiskTask)) {
+    throw new Error("dispatch log leaked raw task text");
+  }
+  const injected = spawnSync(process.execPath, [path.join(brainHome, "runtime", "scripts", "inject-context.cjs")], {
+    input: JSON.stringify({ prompt: lowRiskTask }),
+    encoding: "utf8",
+    timeout: 5000,
+    env: { ...process.env, CODEX_OS_BRAIN_HOME: brainHome },
+  });
+  if (!injected.stdout.includes("Agentic Coding Preflight")) {
+    throw new Error("hook injection did not include agentic preflight");
   }
   run(["uninstall"]);
   console.log("Smoke test: PASS");

@@ -8,14 +8,50 @@ Codex OS Brain is a local Codex hook runtime. It is intentionally small and obse
 flowchart TD
   A["User prompt in Codex"] --> B["UserPromptSubmit hook"]
   B --> C["inject-context.cjs"]
-  C --> D["Codex executes task"]
-  D --> E["PostToolUse hook"]
-  E --> F["engineering-harness.cjs"]
-  D --> G["Stop hook"]
-  G --> H["capture-session.cjs"]
-  F --> I["Local dashboard"]
-  H --> I
+  C --> D["Agentic preflight\nclassify task and gate dispatch"]
+  D --> E{"Dispatch gate"}
+  E -->|"open"| F["Chinese sub-agent plan"]
+  E -->|"closed"| G["Parent agent works directly"]
+  F --> H["Codex executes task"]
+  G --> H
+  H --> I["PostToolUse hook"]
+  I --> J["engineering-harness.cjs"]
+  H --> K["Stop hook"]
+  K --> L["capture-session.cjs"]
+  J --> M["Local dashboard"]
+  L --> M
 ```
+
+## Agentic Coding Layer
+
+The agentic layer is declarative and globally injected. `runtime/agents/library.json` defines reusable Chinese-named sub-agent templates with permissions, budgets, recursion policy, verification expectations, and redaction rules.
+
+`runtime/scripts/agentic-dispatch.cjs` does not execute arbitrary work. It produces an auditable dispatch plan, and `inject-context.cjs` runs this preflight for every prompt:
+
+```mermaid
+flowchart TD
+  A["Task"] --> B["Classify risk and shape"]
+  B --> C{"Dispatch gate"}
+  C -->|"closed"| D["Parent agent works directly"]
+  C -->|"open"| E["Select specialist agents"]
+  E --> F["上下文侦察员"]
+  E --> G["代码执行员"]
+  E --> H["测试验证员"]
+  E --> I["安全审查员"]
+  F --> J["Parent merge gate"]
+  G --> J
+  H --> J
+  I --> J
+```
+
+Dispatch rules:
+
+- no recursive sub-agents
+- max fanout is bounded
+- high-risk tasks default to read-only review unless approved
+- sub-agent output is advice/evidence, not final completion
+- parent agent owns final merge and user-facing answer
+- if real subagent tools are unavailable, the dispatch plan is advisory only
 
 ## Installed Files
 

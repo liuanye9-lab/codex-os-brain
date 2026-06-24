@@ -14,10 +14,12 @@
     "LICENSE"
   ],
   "scripts": {
-    "check": "node --check bin/codex-os-brain.mjs && node --check runtime/scripts/inject-context.cjs && node --check runtime/scripts/global-hook-status.cjs && node --check runtime/scripts/engineering-harness.cjs && node --check runtime/scripts/capture-session.cjs && node --check runtime/scripts/privacy-scan.cjs && node --check runtime/dashboard/dashboard-server.mjs && npm run privacy:scan && node test/smoke.mjs",
+    "check": "node --check bin/codex-os-brain.mjs && node --check runtime/scripts/inject-context.cjs && node --check runtime/scripts/global-hook-status.cjs && node --check runtime/scripts/agentic-dispatch.cjs && node --check runtime/scripts/engineering-harness.cjs && node --check runtime/scripts/capture-session.cjs && node --check runtime/scripts/privacy-scan.cjs && node --check runtime/dashboard/dashboard-server.mjs && npm run privacy:scan && node test/smoke.mjs",
     "privacy:scan": "node runtime/scripts/privacy-scan.cjs .",
     "smoke": "node test/smoke.mjs",
-    "pack:dry": "npm pack --dry-run"
+    "pack:dry": "npm pack --dry-run",
+    "agents:list": "node runtime/scripts/agentic-dispatch.cjs --list",
+    "dispatch:plan": "node runtime/scripts/agentic-dispatch.cjs"
   },
   "keywords": [
     "codex",

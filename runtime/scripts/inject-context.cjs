@@ -2,6 +2,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { buildPlan } = require("./agentic-dispatch.cjs");
 
 const HOME = os.homedir();
 const ROOT = process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".codex-os-brain");
@@ -27,8 +28,48 @@ function classifyPrompt(prompt) {
   return "default";
 }
 
+function sanitizedDispatchRecord(plan) {
+  return {
+    ts: plan.generated_at,
+    event: "agentic_preflight",
+    task_hash: plan.task_hash,
+    task_chars: plan.task_chars,
+    recommended: plan.recommended,
+    gate: plan.gate,
+    selected_agent_ids: plan.selected_agents.map((agent) => agent.agent_id),
+    selected_agent_names: plan.selected_agents.map((agent) => agent.name),
+  };
+}
+
+function buildAgenticPreflight(prompt) {
+  try {
+    const plan = buildPlan(prompt);
+    appendJsonl(path.join(DATA_DIR, "agentic-dispatch.jsonl"), sanitizedDispatchRecord(plan));
+    const selected = plan.selected_agents.length
+      ? plan.selected_agents.map((agent) => `${agent.name}(${agent.agent_id})`).join(", ")
+      : "none";
+    return [
+      "## Agentic Coding Preflight",
+      `- Dispatch gate: ${plan.recommended ? "open" : "closed"}`,
+      `- Privacy risk: ${plan.gate.privacyRisk}`,
+      `- Selected sub-agents: ${selected}`,
+      "- If this Codex environment exposes real subagent tools, the parent Agent may call these sub-agents with the generated role prompts.",
+      "- If real subagent tools are unavailable, use this as a local dispatch plan and do not claim subagents executed.",
+      "- Do not force subagents for small/simple tasks; parent Agent may execute directly when the gate is closed.",
+      "- Subagents must not spawn child agents; the parent Agent owns final verification and answer.",
+    ].join("\n");
+  } catch {
+    return [
+      "## Agentic Coding Preflight",
+      "- Dispatch gate: unavailable",
+      "- Fallback: parent Agent executes directly and should run verification before claiming completion.",
+    ].join("\n");
+  }
+}
+
 function buildContext(prompt) {
   const intent = classifyPrompt(prompt);
+  const agenticPreflight = buildAgenticPreflight(prompt);
   const lines = [
     "<codex-os-brain>",
     `> auto-injected public cognitive harness · intent=${intent}`,
@@ -52,6 +93,8 @@ function buildContext(prompt) {
     "- Reflection is not learning without feedback.",
     "- More agents do not automatically mean better results.",
     "- Human approval is the highest gate for risky system changes.",
+    "",
+    agenticPreflight,
     "</codex-os-brain>",
   ];
   return lines.join("\n");

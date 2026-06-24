@@ -10,7 +10,7 @@ It does not replace Codex. It wraps Codex with a public, privacy-first harness s
 
 Codex OS Brain is a small local runtime that installs into your Codex environment.
 
-After installation, your Codex prompts pass through a global entry gate before the agent starts working. That gate reminds the agent to:
+After installation, every Codex prompt passes through a global entry gate before the agent starts working. That gate runs an Agentic Coding preflight and reminds the agent to:
 
 - keep the current goal clear
 - remember the active constraints
@@ -18,6 +18,7 @@ After installation, your Codex prompts pass through a global entry gate before t
 - slow down on risky changes
 - avoid turning private memory into public data
 - record sanitized status for a local dashboard
+- dispatch Chinese-named specialist sub-agents only when the task is complex, verifiable, and low-risk
 
 In plain language:
 
@@ -40,10 +41,13 @@ In plain language:
 flowchart LR
   A["You ask Codex to do something"] --> B["Codex OS Brain entry gate"]
   B --> C["Working context\nWhat is the goal?\nWhat matters now?"]
-  C --> D["Verification gate\nHow do we know it worked?"]
-  D --> E["Codex uses tools"]
-  E --> F["Engineering audit\nAny risky boundary touched?"]
-  F --> G["Local dashboard\nWhat happened? What needs attention?"]
+  C --> D{"Agentic dispatch gate\nShould specialists help?"}
+  D -->|"small or risky"| E["Main agent works directly"]
+  D -->|"3+ steps\nverifiable\nlow risk"| F["Chinese sub-agent team"]
+  E --> G["Verification gate\nHow do we know it worked?"]
+  F --> G
+  G --> H["Engineering audit\nAny risky boundary touched?"]
+  H --> I["Local dashboard\nWhat happened? What needs attention?"]
 ```
 
 The goal is simple:
@@ -70,7 +74,7 @@ Codex OS Brain installs three global hook stages into Codex:
 
 | Codex event | Runtime script | What it does |
 |---|---|---|
-| `UserPromptSubmit` | `inject-context.cjs` | adds the public cognitive harness context before work starts |
+| `UserPromptSubmit` | `inject-context.cjs` | adds the public cognitive harness context and Agentic Coding preflight before work starts |
 | `PostToolUse` | `engineering-harness.cjs` | records sanitized risk categories after tool use |
 | `Stop` | `capture-session.cjs` | updates a sanitized heartbeat/status file |
 
@@ -83,7 +87,7 @@ sequenceDiagram
 
   U->>C: Prompt
   C->>H: UserPromptSubmit
-  H-->>C: Goal / constraints / verification reminders
+  H-->>C: Goal / constraints / verification reminders / agentic preflight
   C->>C: Work with tools
   C->>H: PostToolUse
   H-->>D: Sanitized audit category
@@ -135,7 +139,36 @@ The important rule:
 
 Sub-agents should be used only when the task has clear parts, low privacy risk, and a way to verify results. Otherwise, the main agent should keep the work simple.
 
-The current public package provides the global harness, audit layer, and dashboard foundation. Real sub-agent backends can be added on top of this dispatch model.
+The public package now includes a local sub-agent library and dispatch planner:
+
+```bash
+codex-os-brain agents
+codex-os-brain dispatch --task "refactor the dashboard, update docs, run checks" --json
+```
+
+Built-in Chinese agent templates:
+
+| Agent | Stable id | Job | Default power |
+|---|---|---|---|
+| 上下文侦察员 | `context-scout` | map files, APIs, patterns, constraints | read-only |
+| 架构规划师 | `architecture-planner` | compare designs and choose the smallest viable plan | read-only |
+| 代码执行员 | `implementation-worker` | implement one bounded, assigned slice | limited write scope |
+| 测试验证员 | `test-verifier` | find and run focused verification | read/execute safe checks |
+| 安全审查员 | `security-reviewer` | review secrets, privacy, hooks, local servers | read-only |
+| 文档说明员 | `docs-writer` | update README/docs/user-facing explanation | docs-only write scope |
+| 发布检查员 | `release-operator` | run release checklist and package inspection | read/execute safe checks |
+
+The dispatch gate opens only when:
+
+- the task has enough clear sub-steps
+- the outcome is verifiable
+- privacy risk is low, or selected agents are read-only
+- responsibilities are disjoint
+- the parent agent remains responsible for final merge
+
+This means Codex OS Brain supports agentic coding without pretending that "more agents" automatically means better work.
+
+When the dispatch gate opens and the current Codex environment exposes real subagent tools, the parent agent can call those subagents directly. When the environment does not expose real subagent tools, Codex OS Brain falls back to the local dispatch plan and must not pretend the subagents executed.
 
 ## Dashboard
 
@@ -153,6 +186,8 @@ It shows observable state only:
 - how many engineering audits happened
 - whether a red flag is raised
 - whether privacy boundaries are intact
+- which agent templates are registered
+- whether the latest dispatch was recommended or blocked
 
 It does not show hidden reasoning chains. It does not show private memory. It does not show your raw prompt text.
 
@@ -186,13 +221,13 @@ The public package starts with safe infrastructure. Personal memory should be ad
 After the package is published to npm:
 
 ```bash
-npx codex-os-brain install
+npx codex-os-brain install --global-agentic
 ```
 
 Until npm publication, install from GitHub:
 
 ```bash
-npx --yes github:liuanye9-lab/codex-os-brain install
+npx --yes github:liuanye9-lab/codex-os-brain install --global-agentic
 ```
 
 Then verify:
@@ -217,8 +252,11 @@ codex-os-brain dashboard
 ## Commands
 
 ```bash
-codex-os-brain install
+codex-os-brain install --global-agentic
 codex-os-brain status
+codex-os-brain agents
+codex-os-brain dispatch --task "..."
+codex-os-brain dispatch --task "..." --json --write
 codex-os-brain dashboard
 codex-os-brain check
 codex-os-brain uninstall
@@ -231,7 +269,8 @@ The installer:
 1. copies the public runtime to `~/.codex-os-brain`
 2. backs up `~/.codex/hooks.json`
 3. adds global Codex hooks with empty matchers
-4. writes only sanitized local status files under `~/.codex-os-brain/data`
+4. enables gated Agentic Coding preflight globally
+5. writes only sanitized local status files under `~/.codex-os-brain/data`
 
 ## What Is Explicitly Not Included
 

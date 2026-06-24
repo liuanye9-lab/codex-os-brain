@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -18,8 +18,10 @@ function usage() {
   console.log(`Codex OS Brain
 
 Usage:
-  codex-os-brain install
+  codex-os-brain install [--global-agentic]
   codex-os-brain status [--json]
+  codex-os-brain agents [--json]
+  codex-os-brain dispatch --task "..." [--json] [--write]
   codex-os-brain dashboard [--port 8791]
   codex-os-brain check
   codex-os-brain uninstall [--keep-runtime]
@@ -97,7 +99,16 @@ function installHooks() {
   return backup;
 }
 
-function install() {
+function writeInstallConfig(args) {
+  writeJson(path.join(installRoot, "config.json"), {
+    version: "0.1.0",
+    global_agentic: true,
+    dispatch_policy: "gated_agentic_preflight",
+    installed_with_global_agentic_flag: args.includes("--global-agentic"),
+  });
+}
+
+function install(args = []) {
   if (!fs.existsSync(sourceRuntime)) {
     throw new Error(`runtime folder missing: ${sourceRuntime}`);
   }
@@ -105,8 +116,10 @@ function install() {
   fs.rmSync(runtimeRoot, { recursive: true, force: true });
   fs.cpSync(sourceRuntime, runtimeRoot, { recursive: true });
   fs.mkdirSync(path.join(installRoot, "data"), { recursive: true });
+  writeInstallConfig(args);
   const backup = installHooks();
   console.log("Codex OS Brain installed");
+  console.log("agentic: global gated preflight enabled");
   console.log(`runtime: ${runtimeRoot}`);
   console.log(`hooks: ${hooksFile}`);
   if (backup) console.log(`backup: ${backup}`);
@@ -131,6 +144,30 @@ function runStatus(args = []) {
   child.on("exit", (code) => { process.exitCode = code || 0; });
 }
 
+function runRuntimeOrPackageScript(scriptName, args = []) {
+  const installed = path.join(runtimeRoot, scriptName);
+  const packaged = path.join(sourceRuntime, scriptName);
+  const script = fs.existsSync(installed) ? installed : packaged;
+  if (!fs.existsSync(script)) {
+    console.error(`missing ${scriptName}; run codex-os-brain install`);
+    process.exitCode = 1;
+    return;
+  }
+  const child = spawn(process.execPath, [script, ...args], {
+    stdio: "inherit",
+    env: { ...process.env, CODEX_OS_BRAIN_HOME: installRoot },
+  });
+  child.on("exit", (code) => { process.exitCode = code || 0; });
+}
+
+function agents(args = []) {
+  runRuntimeOrPackageScript("scripts/agentic-dispatch.cjs", ["--list", ...args]);
+}
+
+function dispatch(args = []) {
+  runRuntimeOrPackageScript("scripts/agentic-dispatch.cjs", args);
+}
+
 function dashboard(args) {
   const portIndex = args.indexOf("--port");
   const port = portIndex >= 0 ? args[portIndex + 1] : "8791";
@@ -150,6 +187,7 @@ function check() {
   const checks = [
     ["scripts/inject-context.cjs"],
     ["scripts/global-hook-status.cjs"],
+    ["scripts/agentic-dispatch.cjs"],
     ["scripts/engineering-harness.cjs"],
     ["scripts/capture-session.cjs"],
     ["scripts/privacy-scan.cjs"],
@@ -163,10 +201,8 @@ function check() {
       failed = true;
       continue;
     }
-    const child = spawn(process.execPath, ["--check", target], { stdio: "inherit" });
-    child.on("exit", (code) => {
-      if (code) process.exit(code);
-    });
+    const child = spawnSync(process.execPath, ["--check", target], { stdio: "inherit" });
+    if (child.status) process.exit(child.status);
   }
   if (failed) process.exit(1);
   runStatus(["--summary"]);
@@ -187,8 +223,10 @@ const [command, ...args] = process.argv.slice(2);
 
 try {
   if (!command || command === "help" || command === "--help" || command === "-h") usage();
-  else if (command === "install") install();
+  else if (command === "install") install(args);
   else if (command === "status") runStatus(args);
+  else if (command === "agents") agents(args);
+  else if (command === "dispatch") dispatch(args);
   else if (command === "dashboard") dashboard(args);
   else if (command === "check") check();
   else if (command === "uninstall") uninstall(args);
