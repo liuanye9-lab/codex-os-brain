@@ -89,13 +89,20 @@ function pickAgents(library, task, forcedAgent = "") {
     const agent = agents.find((item) => item.id === id);
     if (agent && !selected.some((item) => item.id === id)) selected.push(agent);
   };
+  if (cls.publicRelease) {
+    add("context-scout");
+    add("test-verifier");
+    add("security-reviewer");
+    add("release-operator");
+    return selected.slice(0, library.policy?.max_parallel_agents || 4);
+  }
   if (cls.architecture) add("architecture-planner");
   add("context-scout");
   if (cls.implementation && !cls.highPrivacy) add("implementation-worker");
   if (cls.tests || cls.implementation || cls.publicRelease) add("test-verifier");
   if (cls.highPrivacy || cls.publicRelease) add("security-reviewer");
-  if (cls.docs || cls.publicRelease) add("docs-writer");
   if (cls.publicRelease) add("release-operator");
+  if (cls.docs || cls.publicRelease) add("docs-writer");
   return selected.slice(0, library.policy?.max_parallel_agents || 4);
 }
 

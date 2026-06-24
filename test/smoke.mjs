@@ -71,6 +71,9 @@ try {
   if (!lowRiskPlan.recommended || !lowRiskPlan.selected_agents.some((agent) => agent.name === "安全审查员")) {
     throw new Error("low-risk release task did not open gate with security reviewer");
   }
+  if (!lowRiskPlan.selected_agents.some((agent) => agent.name === "发布检查员")) {
+    throw new Error("low-risk release task did not include release operator");
+  }
   const highRisk = runAny(["dispatch", "--task", "修改 persona 和私密 memory 并发布", "--json"]);
   if (highRisk.status === 0) {
     throw new Error("high-privacy task should not auto-open dispatch gate");
