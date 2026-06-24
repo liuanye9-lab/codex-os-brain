@@ -269,8 +269,9 @@ The installer:
 1. copies the public runtime to `~/.codex-os-brain`
 2. backs up `~/.codex/hooks.json`
 3. adds global Codex hooks with empty matchers
-4. enables gated Agentic Coding preflight globally
-5. writes only sanitized local status files under `~/.codex-os-brain/data`
+4. backs up and updates `~/.codex/AGENTS.md` with a removable Agentic Coding managed block
+5. enables gated Agentic Coding preflight globally
+6. writes only sanitized local status files under `~/.codex-os-brain/data`
 
 ## What Is Explicitly Not Included
 

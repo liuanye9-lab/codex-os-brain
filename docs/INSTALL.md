@@ -37,6 +37,8 @@ codex-os-brain dispatch --task "实现 dashboard 功能，更新文档，运行�
 
 The dispatch gate should open for a multi-step, verifiable, low-risk task. For small or high-privacy prompts, the gate should remain closed and the parent agent should work directly or request approval.
 
+The installer also writes a removable managed block to `~/.codex/AGENTS.md` so future Codex conversations receive the global Agentic Coding rule even outside a specific project.
+
 Expected:
 
 ```text

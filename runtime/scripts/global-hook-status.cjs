@@ -9,6 +9,7 @@ const CODEX_HOME = process.env.CODEX_HOME || path.join(HOME, ".codex");
 const ROOT = process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".codex-os-brain");
 const RUNTIME = path.join(ROOT, "runtime");
 const HOOKS_FILE = path.join(CODEX_HOME, "hooks.json");
+const AGENTS_FILE = path.join(CODEX_HOME, "AGENTS.md");
 const STATUS_FILE = path.join(ROOT, "data", "global-hook-status.json");
 
 function readJson(file, fallback) {
@@ -57,6 +58,15 @@ function smokeInjection() {
   }
 }
 
+function agentsRuleOk() {
+  try {
+    const text = fs.readFileSync(AGENTS_FILE, "utf8");
+    return text.includes("CODEX_OS_BRAIN_AGENTIC_START") && text.includes("Codex OS Brain Agentic Coding");
+  } catch {
+    return false;
+  }
+}
+
 function buildStatus() {
   const hooks = readJson(HOOKS_FILE, { hooks: {} });
   const promptCommands = commandList(hooks, "UserPromptSubmit");
@@ -79,6 +89,10 @@ function buildStatus() {
       label: "agentic dispatch preflight",
       ok: syntaxOk("scripts/agentic-dispatch.cjs"),
     },
+    {
+      label: "global AGENTS.md agentic rules",
+      ok: agentsRuleOk(),
+    },
   ];
   const injectionSmoke = smokeInjection();
   const globalCoverage = required.every((item) => item.ok) && injectionSmoke.ok;
@@ -91,6 +105,7 @@ function buildStatus() {
     runtime_home: ROOT,
     hooks: {
       file: HOOKS_FILE,
+      agents_file_configured: agentsRuleOk(),
       user_prompt_submit_count: promptCommands.length,
       global_user_prompt_submit_count: promptCommands.filter((item) => item.globalMatcher).length,
       post_tool_use_count: postToolCommands.length,

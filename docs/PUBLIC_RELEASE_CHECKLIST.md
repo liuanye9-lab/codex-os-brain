@@ -16,8 +16,10 @@ Manual checks:
 - package name is `codex-os-brain`
 - README has no personal names, private paths, or private agent identity
 - runtime does not read any private personal Brain home
-- installer writes only `~/.codex-os-brain`
+- installer writes runtime data only under `~/.codex-os-brain`
+- installer modifies only managed blocks/hooks in `~/.codex/hooks.json` and `~/.codex/AGENTS.md`
 - hooks merge with backup
+- global `~/.codex/AGENTS.md` managed block is backed up, idempotent, and removable by uninstall
 - uninstall removes only managed hooks
 - dashboard is local-only
 - agentic preflight is installed globally by `install --global-agentic`

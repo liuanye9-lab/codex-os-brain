@@ -13,6 +13,9 @@ const codexHome = process.env.CODEX_HOME || path.join(home, ".codex");
 const installRoot = process.env.CODEX_OS_BRAIN_HOME || path.join(home, ".codex-os-brain");
 const runtimeRoot = path.join(installRoot, "runtime");
 const hooksFile = path.join(codexHome, "hooks.json");
+const agentsFile = path.join(codexHome, "AGENTS.md");
+const agentsBlockStart = "<!-- CODEX_OS_BRAIN_AGENTIC_START -->";
+const agentsBlockEnd = "<!-- CODEX_OS_BRAIN_AGENTIC_END -->";
 
 function usage() {
   console.log(`Codex OS Brain
@@ -83,6 +86,29 @@ function stripManagedHooks(hooks) {
   return hooks;
 }
 
+function stripManagedAgentsBlock(text) {
+  const pattern = new RegExp(`\\n?${agentsBlockStart}[\\s\\S]*?${agentsBlockEnd}\\n?`, "g");
+  return String(text || "").replace(pattern, "\n").replace(/\n{3,}/g, "\n\n").trimEnd();
+}
+
+function managedAgentsBlock() {
+  return [
+    agentsBlockStart,
+    "## Codex OS Brain Agentic Coding",
+    "",
+    "Every user prompt should enter the Codex OS Brain agentic preflight before execution.",
+    "",
+    "- Use gated dispatch, not forced fanout: small or unclear tasks stay with the parent agent.",
+    "- Auto-dispatch only when the task has 3+ concrete substeps, has a verifiable outcome, and has low privacy risk.",
+    "- Use these Chinese sub-agent roles when dispatch is open: 上下文侦察员, 架构规划师, 代码执行员, 测试验证员, 安全审查员, 文档说明员, 发布检查员.",
+    "- If real Codex subagent tools are available, the parent agent should call the selected subagents and merge their evidence.",
+    "- If real subagent tools are unavailable, use the generated dispatch plan as guidance and do not claim subagents executed.",
+    "- Do not dispatch write-capable agents for secrets, credentials, private memory, persona, self-evolution, destructive operations, or publishing without human approval.",
+    "- Subagents must not spawn child agents. The parent agent owns final verification, merge, and user-facing answer.",
+    agentsBlockEnd,
+  ].join("\n");
+}
+
 function installHooks() {
   const hooks = stripManagedHooks(readJson(hooksFile, { hooks: {} }));
   hooks.hooks ||= {};
@@ -96,6 +122,16 @@ function installHooks() {
 
   const backup = backupFile(hooksFile);
   writeJson(hooksFile, hooks);
+  return backup;
+}
+
+function installGlobalAgentsRules() {
+  const current = fs.existsSync(agentsFile) ? fs.readFileSync(agentsFile, "utf8") : "";
+  const cleaned = stripManagedAgentsBlock(current);
+  const next = `${cleaned ? `${cleaned}\n\n` : ""}${managedAgentsBlock()}\n`;
+  const backup = backupFile(agentsFile);
+  fs.mkdirSync(path.dirname(agentsFile), { recursive: true });
+  fs.writeFileSync(agentsFile, next, "utf8");
   return backup;
 }
 
@@ -118,11 +154,14 @@ function install(args = []) {
   fs.mkdirSync(path.join(installRoot, "data"), { recursive: true });
   writeInstallConfig(args);
   const backup = installHooks();
+  const agentsBackup = installGlobalAgentsRules();
   console.log("Codex OS Brain installed");
   console.log("agentic: global gated preflight enabled");
   console.log(`runtime: ${runtimeRoot}`);
   console.log(`hooks: ${hooksFile}`);
   if (backup) console.log(`backup: ${backup}`);
+  console.log(`agents: ${agentsFile}`);
+  if (agentsBackup) console.log(`agents backup: ${agentsBackup}`);
   runStatus(["--summary"]);
 }
 
@@ -212,6 +251,11 @@ function uninstall(args) {
   const hooks = stripManagedHooks(readJson(hooksFile, { hooks: {} }));
   const backup = backupFile(hooksFile);
   writeJson(hooksFile, hooks);
+  if (fs.existsSync(agentsFile)) {
+    const agentsBackup = backupFile(agentsFile);
+    fs.writeFileSync(agentsFile, `${stripManagedAgentsBlock(fs.readFileSync(agentsFile, "utf8"))}\n`, "utf8");
+    if (agentsBackup) console.log(`agents backup: ${agentsBackup}`);
+  }
   if (!args.includes("--keep-runtime")) {
     fs.rmSync(installRoot, { recursive: true, force: true });
   }

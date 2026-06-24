@@ -60,6 +60,7 @@ Dispatch rules:
 | `~/.codex-os-brain/runtime` | Public runtime copied from this package |
 | `~/.codex-os-brain/data` | Sanitized local status and audit counts |
 | `~/.codex/hooks.json` | User's Codex hook file, backed up before modification |
+| `~/.codex/AGENTS.md` | User's global Codex instruction file, updated with a removable Agentic Coding block |
 
 ## Cognitive Layers
 

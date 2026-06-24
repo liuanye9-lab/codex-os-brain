@@ -52,6 +52,10 @@ try {
   if (!promptGroups.some((group) => group.matcher === "")) {
     throw new Error("missing global UserPromptSubmit matcher");
   }
+  const agentsFile = fs.readFileSync(path.join(codexHome, "AGENTS.md"), "utf8");
+  if (!agentsFile.includes("CODEX_OS_BRAIN_AGENTIC_START") || !agentsFile.includes("上下文侦察员")) {
+    throw new Error("missing global AGENTS.md agentic managed block");
+  }
   const config = JSON.parse(fs.readFileSync(path.join(brainHome, "config.json"), "utf8"));
   if (config.dispatch_policy !== "gated_agentic_preflight") {
     throw new Error("missing gated global agentic install config");
@@ -85,6 +89,10 @@ try {
     throw new Error("hook injection did not include agentic preflight");
   }
   run(["uninstall"]);
+  const afterUninstallAgents = fs.readFileSync(path.join(codexHome, "AGENTS.md"), "utf8");
+  if (afterUninstallAgents.includes("CODEX_OS_BRAIN_AGENTIC_START")) {
+    throw new Error("uninstall did not remove global AGENTS.md agentic block");
+  }
   console.log("Smoke test: PASS");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });

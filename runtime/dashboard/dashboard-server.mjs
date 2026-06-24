@@ -52,6 +52,7 @@ function publicGlobalEntry(entry) {
     global_coverage: Boolean(entry.global_coverage),
     scope: entry.scope,
     hooks: {
+      agents_file_configured: Boolean(entry.hooks?.agents_file_configured),
       user_prompt_submit_count: entry.hooks?.user_prompt_submit_count || 0,
       global_user_prompt_submit_count: entry.hooks?.global_user_prompt_submit_count || 0,
       post_tool_use_count: entry.hooks?.post_tool_use_count || 0,
