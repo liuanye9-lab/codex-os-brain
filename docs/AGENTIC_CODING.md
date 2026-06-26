@@ -69,6 +69,19 @@ Closed gate means the parent agent should handle the task directly.
 
 Open gate means the parent agent may call real Codex subagent tools when they are available. If the current environment does not expose subagent tools, the dispatch output is only a plan and must not be reported as executed.
 
+## Hard Gates
+
+ACOB adds local hard gates around the advisory dispatch plan:
+
+- `acob agent-execution --example`: keeps spawn requests separate from imported `wait_agent` results and merge readiness
+- `acob agent-lock --example`: validates write-capable agents against role-scoped file claims
+- `acob budget --example`: blocks additional fanout when token reserve or ROI is below threshold
+- `acob tool-eval`: runs local tool-calling failure cases
+- `acob control --list`: lists localhost dashboard control commands
+- `acob evolution-apply --example`: records approved self-evolution adoption without automatic private memory/persona mutation
+
+These commands provide enforceable harness checks. They do not grant the package access to Codex internals or bypass human approval.
+
 ## Controlled Child Dispatch
 
 Sub-agents may not recursively spawn more agents by themselves. ACOB supports child dispatch only as a request back to the Mother Agent:
@@ -90,5 +103,6 @@ The purpose is better decomposition, not more noise.
 - no credential access
 - no automatic publish or external action
 - no final completion claim without verification evidence
+- no claim that subagents executed unless results were imported into the execution ledger
 - dashboard shows counts and sanitized status, not raw prompts
 - global hook records only sanitized task hashes, character counts, gate state, and selected agent ids/names

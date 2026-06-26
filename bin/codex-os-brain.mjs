@@ -27,6 +27,12 @@ Usage:
   acob status [--json]
   acob agents [--json]
   acob dispatch --task "..." [--json] [--write]
+  acob agent-execution [--example]
+  acob agent-lock [--example]
+  acob budget [--example]
+  acob tool-eval
+  acob control [--list]
+  acob evolution-apply [--example]
   acob dashboard [--port 8791]
   acob check
   acob uninstall [--keep-runtime]
@@ -219,6 +225,30 @@ function dispatch(args = []) {
   runRuntimeOrPackageScript("scripts/agentic-dispatch.cjs", args);
 }
 
+function agentExecution(args = []) {
+  runRuntimeOrPackageScript("scripts/agent-execution-ledger.cjs", args);
+}
+
+function agentLock(args = []) {
+  runRuntimeOrPackageScript("scripts/agent-permission-lock.cjs", args);
+}
+
+function budget(args = []) {
+  runRuntimeOrPackageScript("scripts/token-budget-enforcer.cjs", args);
+}
+
+function toolEval(args = []) {
+  runRuntimeOrPackageScript("scripts/tool-eval-suite.cjs", args);
+}
+
+function control(args = []) {
+  runRuntimeOrPackageScript("scripts/dashboard-control-plane.cjs", args);
+}
+
+function evolutionApply(args = []) {
+  runRuntimeOrPackageScript("scripts/evolution-apply.cjs", args);
+}
+
 function dashboard(args) {
   const portIndex = args.indexOf("--port");
   const port = portIndex >= 0 ? args[portIndex + 1] : "8791";
@@ -283,6 +313,12 @@ try {
   else if (command === "status") runStatus(args);
   else if (command === "agents") agents(args);
   else if (command === "dispatch") dispatch(args);
+  else if (command === "agent-execution") agentExecution(args);
+  else if (command === "agent-lock") agentLock(args);
+  else if (command === "budget") budget(args);
+  else if (command === "tool-eval") toolEval(args);
+  else if (command === "control") control(args);
+  else if (command === "evolution-apply") evolutionApply(args);
   else if (command === "dashboard") dashboard(args);
   else if (command === "check") check();
   else if (command === "uninstall") uninstall(args);

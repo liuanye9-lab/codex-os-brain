@@ -3,8 +3,11 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const controlPlane = require("../scripts/dashboard-control-plane.cjs");
 const HOME = os.homedir();
 const ROOT = process.env.ACOB_HOME || process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".acob");
 const DATA_DIR = path.join(ROOT, "data");
@@ -96,6 +99,10 @@ function status() {
       latest_dispatch: latestDispatch,
       policy: agentLibrary.policy || {},
     },
+    control_plane: {
+      commands: controlPlane.list().commands,
+      policy: "localhost-only, allowlisted commands, confirmation required for self-evolution",
+    },
     latest: {
       heartbeat,
       audit: latestJsonl(path.join(DATA_DIR, "engineering-audit.jsonl")),
@@ -117,17 +124,45 @@ function send(res, statusCode, body, type = "application/json") {
   res.end(body);
 }
 
+function readBody(req, maxBytes = 4096) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+      if (Buffer.byteLength(body) > maxBytes) {
+        reject(new Error("request body too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => resolve(body));
+    req.on("error", reject);
+  });
+}
+
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
-  if (url.pathname === "/api/status") {
-    send(res, 200, `${JSON.stringify(status(), null, 2)}\n`);
-    return;
-  }
-  if (url.pathname === "/" || url.pathname === "/index.html") {
-    send(res, 200, fs.readFileSync(path.join(__dirname, "index.html"), "utf8"), "text/html; charset=utf-8");
-    return;
-  }
-  send(res, 404, JSON.stringify({ error: "not found" }));
+  Promise.resolve().then(async () => {
+    const url = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
+    if (url.pathname === "/api/status") {
+      send(res, 200, `${JSON.stringify(status(), null, 2)}\n`);
+      return;
+    }
+    if (url.pathname === "/api/control" && req.method === "GET") {
+      send(res, 200, `${JSON.stringify(controlPlane.list(), null, 2)}\n`);
+      return;
+    }
+    if (url.pathname === "/api/control" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)) || "{}");
+      send(res, 200, `${JSON.stringify(controlPlane.run(String(body.command || ""), body.confirm || ""), null, 2)}\n`);
+      return;
+    }
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      send(res, 200, fs.readFileSync(path.join(__dirname, "index.html"), "utf8"), "text/html; charset=utf-8");
+      return;
+    }
+    send(res, 404, JSON.stringify({ error: "not found" }));
+  }).catch((error) => {
+    send(res, 500, JSON.stringify({ ok: false, error: error.message || String(error) }));
+  });
 });
 
 server.listen(PORT, "127.0.0.1", () => {

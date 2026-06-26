@@ -64,6 +64,12 @@
   </section>
 
   <section class="card">
+    <h2>Control Plane</h2>
+    <p class="sub">localhost allowlist only. High-risk self-evolution commands require explicit confirmation.</p>
+    <div class="rows" id="controlRows"></div>
+  </section>
+
+  <section class="card">
     <h2>Latest Sanitized Event</h2>
     <pre id="latest">loading</pre>
   </section>
@@ -104,6 +110,10 @@ async function load() {
     latest ? row("最近一次派发", `${latest.selected_agent_names?.join(", ") || latest.selected_agent_ids?.join(", ") || "none"} · recommended=${latest.recommended} · privacy=${latest.gate?.privacyRisk || "unknown"}`, true) : row("还没有派发记录", "run acob dispatch --task \"...\" --write", true),
     ...agents.slice(0, 7).map((agent) => row(agent.name || agent.id, `${agent.description || agent.tool_policy} · recursion spawn=${agent.recursionPolicy?.allowSpawn === true}`, agent.recursionPolicy?.allowSpawn !== true)),
   ].join("");
+  const commands = data.control_plane?.commands || [];
+  document.getElementById("controlRows").innerHTML = commands.map((command) =>
+    row(command.label || command.command, `${command.permission_level} · ${command.requires_confirmation ? "requires confirmation" : "safe allowlist"}`, !command.requires_confirmation)
+  ).join("") || row("control plane unavailable", "run acob control --list", false);
   document.getElementById("latest").textContent = JSON.stringify(data.latest || {}, null, 2);
 }
 

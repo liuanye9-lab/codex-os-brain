@@ -95,7 +95,7 @@ function pickAgents(library, task, forcedAgent = "") {
     const agent = agents.find((item) => item.id === id);
     if (agent && !selected.some((item) => item.id === id)) selected.push(agent);
   };
-  if (cls.stepSignals >= 3 || cls.architecture) add("task-orchestrator");
+  if ((cls.stepSignals >= 3 || cls.architecture) && !cls.publicRelease) add("architecture-planner");
   if (cls.publicRelease) {
     add("context-scout");
     add("test-verifier");
@@ -108,7 +108,7 @@ function pickAgents(library, task, forcedAgent = "") {
   if (cls.implementation && !cls.highPrivacy) add("implementation-worker");
   if (cls.tests || cls.implementation || cls.publicRelease) add("test-verifier");
   if (cls.toolCalling) add("tool-reliability-auditor");
-  if (cls.memory) add("memory-governor");
+  if (cls.memory) add("security-reviewer");
   if (cls.highPrivacy || cls.publicRelease) add("security-reviewer");
   if (cls.publicRelease) add("release-operator");
   if (cls.docs || cls.publicRelease) add("docs-writer");

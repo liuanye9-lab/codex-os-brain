@@ -187,15 +187,20 @@ ACOB allows child dispatch as a proposal, not as uncontrolled recursion.
 
 This keeps agentic coding useful without turning every prompt into an expensive agent swarm.
 
-### Current Gaps Toward A Full Agent Coding OS
+### Hard Gates Added In ACOB
 
-ACOB now has global preflight, a 10-agent library, gated dispatch, verification reminders, privacy scanning, and a dashboard. The remaining gaps are:
+ACOB now includes local hard gates for the common failure modes in agentic coding:
 
-- real sub-agent execution still depends on whether the current Codex environment exposes sub-agent tools
-- role permissions are declared in the manifest, but hard OS-level sandboxing is outside this package
-- result merging is still parent-owned and lightweight, not a full patch-conflict DAG
-- token/ROI accounting is bounded but not yet a full cost ledger
-- dashboard state is observable status, not proof that the agent reasoned correctly
+| Failure mode | ACOB mechanism | Command |
+|---|---|---|
+| manifest treated as real sub-agent execution | execution ledger requires imported results before merge-ready | `acob agent-execution --example` |
+| write-capable agent touches forbidden files | permission lock validates claimed files against write scope | `acob agent-lock --example` |
+| fanout burns unlimited context | budget enforcer blocks over-budget or low-ROI dispatch | `acob budget --example` |
+| tool call success is mistaken for task success | local tool eval covers missing params, privacy block, parse fail, unverified success | `acob tool-eval` |
+| dashboard can only observe | dashboard exposes localhost allowlisted control commands | `acob control --list` |
+| self-evolution has no adoption bridge | apply record requires explicit human approval | `acob evolution-apply --example` |
+
+These gates are harness controls, not an OS kernel sandbox. Real sub-agent execution still depends on the current Codex environment exposing sub-agent tools, and the parent agent still owns final merge and verification.
 
 ## Dashboard
 
@@ -214,6 +219,7 @@ It shows observable state only:
 - whether a red flag is raised
 - whether privacy boundaries are intact
 - which agent templates are registered
+- which control-plane commands are available
 - whether the latest dispatch was recommended or blocked
 
 It does not show hidden reasoning chains. It does not show private memory. It does not show your raw prompt text.

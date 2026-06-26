@@ -15,12 +15,18 @@
     "LICENSE"
   ],
   "scripts": {
-    "check": "node --check bin/codex-os-brain.mjs && node --check runtime/scripts/inject-context.cjs && node --check runtime/scripts/global-hook-status.cjs && node --check runtime/scripts/agentic-dispatch.cjs && node --check runtime/scripts/engineering-harness.cjs && node --check runtime/scripts/capture-session.cjs && node --check runtime/scripts/privacy-scan.cjs && node --check runtime/dashboard/dashboard-server.mjs && npm run privacy:scan && node test/smoke.mjs",
+    "check": "node --check bin/codex-os-brain.mjs && node --check runtime/scripts/inject-context.cjs && node --check runtime/scripts/global-hook-status.cjs && node --check runtime/scripts/agentic-dispatch.cjs && node --check runtime/scripts/engineering-harness.cjs && node --check runtime/scripts/capture-session.cjs && node --check runtime/scripts/privacy-scan.cjs && node --check runtime/dashboard/dashboard-server.mjs && npm run evolution:apply -- --example && npm run dashboard:control -- --example && npm run tool:eval && npm run budget:enforce -- --example && npm run agent:lock -- --example && npm run agent:execution -- --example && node --check runtime/scripts/evolution-apply.cjs && node --check runtime/scripts/dashboard-control-plane.cjs && node --check runtime/scripts/tool-eval-suite.cjs && node --check runtime/scripts/token-budget-enforcer.cjs && node --check runtime/scripts/agent-permission-lock.cjs && node --check runtime/scripts/agent-execution-ledger.cjs && npm run privacy:scan && node test/smoke.mjs",
     "privacy:scan": "node runtime/scripts/privacy-scan.cjs .",
     "smoke": "node test/smoke.mjs",
     "pack:dry": "npm pack --dry-run",
     "agents:list": "node runtime/scripts/agentic-dispatch.cjs --list",
-    "dispatch:plan": "node runtime/scripts/agentic-dispatch.cjs"
+    "dispatch:plan": "node runtime/scripts/agentic-dispatch.cjs",
+    "agent:execution": "node runtime/scripts/agent-execution-ledger.cjs",
+    "agent:lock": "node runtime/scripts/agent-permission-lock.cjs",
+    "budget:enforce": "node runtime/scripts/token-budget-enforcer.cjs",
+    "tool:eval": "node runtime/scripts/tool-eval-suite.cjs",
+    "dashboard:control": "node runtime/scripts/dashboard-control-plane.cjs",
+    "evolution:apply": "node runtime/scripts/evolution-apply.cjs"
   },
   "keywords": [
     "codex",
