@@ -6,11 +6,11 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HOME = os.homedir();
-const ROOT = process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".codex-os-brain");
+const ROOT = process.env.ACOB_HOME || process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".acob");
 const DATA_DIR = path.join(ROOT, "data");
 const RUNTIME_DIR = path.join(ROOT, "runtime");
 const AGENT_LIBRARY = path.join(RUNTIME_DIR, "agents", "library.json");
-const PORT = Number(process.env.CODEX_OS_BRAIN_PORT || 8791);
+const PORT = Number(process.env.ACOB_PORT || process.env.CODEX_OS_BRAIN_PORT || 8791);
 
 function readJson(file, fallback = null) {
   try {
@@ -43,7 +43,7 @@ function publicGlobalEntry(entry) {
     return {
       status: "unknown",
       global_coverage: false,
-      hint: "Run codex-os-brain status --json or codex-os-brain install.",
+      hint: "Run acob status --json or acob install.",
     };
   }
   return {
@@ -131,5 +131,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`Codex OS Brain dashboard: http://127.0.0.1:${PORT}/`);
+  console.log(`Agentic Coding OS Brain (ACOB) dashboard: http://127.0.0.1:${PORT}/`);
 });

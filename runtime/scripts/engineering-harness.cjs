@@ -4,7 +4,7 @@ const os = require("os");
 const path = require("path");
 
 const HOME = os.homedir();
-const ROOT = process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".codex-os-brain");
+const ROOT = process.env.ACOB_HOME || process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".acob");
 const DATA_DIR = path.join(ROOT, "data");
 const AUDIT_FILE = path.join(DATA_DIR, "engineering-audit.jsonl");
 const RED_FLAG_FILE = path.join(DATA_DIR, "red-flag.json");

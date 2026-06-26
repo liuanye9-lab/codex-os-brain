@@ -6,7 +6,7 @@ const { spawnSync } = require("child_process");
 
 const HOME = os.homedir();
 const CODEX_HOME = process.env.CODEX_HOME || path.join(HOME, ".codex");
-const ROOT = process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".codex-os-brain");
+const ROOT = process.env.ACOB_HOME || process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".acob");
 const RUNTIME = path.join(ROOT, "runtime");
 const HOOKS_FILE = path.join(CODEX_HOME, "hooks.json");
 const AGENTS_FILE = path.join(CODEX_HOME, "AGENTS.md");
@@ -44,7 +44,7 @@ function smokeInjection() {
   const file = path.join(RUNTIME, "scripts", "inject-context.cjs");
   if (!fs.existsSync(file)) return { ok: false, reason: "missing inject-context.cjs" };
   const out = spawnSync(process.execPath, [file], {
-    input: JSON.stringify({ prompt: "Codex OS Brain smoke check" }),
+    input: JSON.stringify({ prompt: "Agentic Coding OS Brain (ACOB) smoke check" }),
     encoding: "utf8",
     timeout: 5000,
   });
@@ -52,7 +52,7 @@ function smokeInjection() {
   try {
     const parsed = JSON.parse(out.stdout || "{}");
     const ctx = parsed?.hookSpecificOutput?.additionalContext || "";
-    return { ok: ctx.includes("codex-os-brain") && ctx.includes("Agentic Coding Preflight"), chars: ctx.length };
+    return { ok: ctx.includes("acob") && ctx.includes("Agentic Coding Preflight"), chars: ctx.length };
   } catch (error) {
     return { ok: false, error: error.message };
   }
@@ -61,7 +61,7 @@ function smokeInjection() {
 function agentsRuleOk() {
   try {
     const text = fs.readFileSync(AGENTS_FILE, "utf8");
-    return text.includes("CODEX_OS_BRAIN_AGENTIC_START") && text.includes("Codex OS Brain Agentic Coding");
+    return text.includes("ACOB_AGENTIC_START") && text.includes("Agentic Coding OS Brain (ACOB) Agentic Coding");
   } catch {
     return false;
   }
@@ -75,15 +75,15 @@ function buildStatus() {
   const required = [
     {
       label: "global prompt injection",
-      ok: promptCommands.some((item) => item.globalMatcher && item.command.includes(".codex-os-brain") && item.command.includes("inject-context.cjs")) && syntaxOk("scripts/inject-context.cjs"),
+      ok: promptCommands.some((item) => item.globalMatcher && (item.command.includes(".acob") || item.command.includes(".codex-os-brain")) && item.command.includes("inject-context.cjs")) && syntaxOk("scripts/inject-context.cjs"),
     },
     {
       label: "post-tool engineering audit",
-      ok: postToolCommands.some((item) => item.globalMatcher && item.command.includes(".codex-os-brain") && item.command.includes("engineering-harness.cjs")) && syntaxOk("scripts/engineering-harness.cjs"),
+      ok: postToolCommands.some((item) => item.globalMatcher && (item.command.includes(".acob") || item.command.includes(".codex-os-brain")) && item.command.includes("engineering-harness.cjs")) && syntaxOk("scripts/engineering-harness.cjs"),
     },
     {
       label: "stop heartbeat capture",
-      ok: stopCommands.some((item) => item.globalMatcher && item.command.includes(".codex-os-brain") && item.command.includes("capture-session.cjs")) && syntaxOk("scripts/capture-session.cjs"),
+      ok: stopCommands.some((item) => item.globalMatcher && (item.command.includes(".acob") || item.command.includes(".codex-os-brain")) && item.command.includes("capture-session.cjs")) && syntaxOk("scripts/capture-session.cjs"),
     },
     {
       label: "agentic dispatch preflight",

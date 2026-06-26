@@ -5,18 +5,19 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const temp = fs.mkdtempSync(path.join(os.tmpdir(), "codex-os-brain-smoke-"));
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), "acob-smoke-"));
 const codexHome = path.join(temp, ".codex");
-const brainHome = path.join(temp, ".codex-os-brain");
+const brainHome = path.join(temp, ".acob");
+const cli = path.join(root, "bin", "codex-os-brain.mjs");
 
 function run(args, options = {}) {
-  const result = spawnSync(process.execPath, [path.join(root, "bin", "codex-os-brain.mjs"), ...args], {
+  const result = spawnSync(process.execPath, [cli, ...args], {
     cwd: root,
     encoding: "utf8",
     env: {
       ...process.env,
       CODEX_HOME: codexHome,
-      CODEX_OS_BRAIN_HOME: brainHome,
+      ACOB_HOME: brainHome,
     },
     timeout: 15000,
     ...options,
@@ -28,13 +29,13 @@ function run(args, options = {}) {
 }
 
 function runAny(args, options = {}) {
-  return spawnSync(process.execPath, [path.join(root, "bin", "codex-os-brain.mjs"), ...args], {
+  return spawnSync(process.execPath, [cli, ...args], {
     cwd: root,
     encoding: "utf8",
     env: {
       ...process.env,
       CODEX_HOME: codexHome,
-      CODEX_OS_BRAIN_HOME: brainHome,
+      ACOB_HOME: brainHome,
     },
     timeout: 15000,
     ...options,
@@ -53,7 +54,7 @@ try {
     throw new Error("missing global UserPromptSubmit matcher");
   }
   const agentsFile = fs.readFileSync(path.join(codexHome, "AGENTS.md"), "utf8");
-  if (!agentsFile.includes("CODEX_OS_BRAIN_AGENTIC_START") || !agentsFile.includes("上下文侦察员")) {
+  if (!agentsFile.includes("ACOB_AGENTIC_START") || !agentsFile.includes("上下文侦察员")) {
     throw new Error("missing global AGENTS.md agentic managed block");
   }
   const config = JSON.parse(fs.readFileSync(path.join(brainHome, "config.json"), "utf8"));
@@ -86,14 +87,14 @@ try {
     input: JSON.stringify({ prompt: lowRiskTask }),
     encoding: "utf8",
     timeout: 5000,
-    env: { ...process.env, CODEX_OS_BRAIN_HOME: brainHome },
+    env: { ...process.env, ACOB_HOME: brainHome },
   });
   if (!injected.stdout.includes("Agentic Coding Preflight")) {
     throw new Error("hook injection did not include agentic preflight");
   }
   run(["uninstall"]);
   const afterUninstallAgents = fs.readFileSync(path.join(codexHome, "AGENTS.md"), "utf8");
-  if (afterUninstallAgents.includes("CODEX_OS_BRAIN_AGENTIC_START")) {
+  if (afterUninstallAgents.includes("ACOB_AGENTIC_START")) {
     throw new Error("uninstall did not remove global AGENTS.md agentic block");
   }
   console.log("Smoke test: PASS");

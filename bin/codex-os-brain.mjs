@@ -10,28 +10,34 @@ const packageRoot = path.resolve(__dirname, "..");
 const sourceRuntime = path.join(packageRoot, "runtime");
 const home = os.homedir();
 const codexHome = process.env.CODEX_HOME || path.join(home, ".codex");
-const installRoot = process.env.CODEX_OS_BRAIN_HOME || path.join(home, ".codex-os-brain");
+const installRoot = process.env.ACOB_HOME || process.env.CODEX_OS_BRAIN_HOME || path.join(home, ".acob");
 const runtimeRoot = path.join(installRoot, "runtime");
 const hooksFile = path.join(codexHome, "hooks.json");
 const agentsFile = path.join(codexHome, "AGENTS.md");
-const agentsBlockStart = "<!-- CODEX_OS_BRAIN_AGENTIC_START -->";
-const agentsBlockEnd = "<!-- CODEX_OS_BRAIN_AGENTIC_END -->";
+const agentsBlockStart = "<!-- ACOB_AGENTIC_START -->";
+const agentsBlockEnd = "<!-- ACOB_AGENTIC_END -->";
+const legacyAgentsBlockStart = "<!-- CODEX_OS_BRAIN_AGENTIC_START -->";
+const legacyAgentsBlockEnd = "<!-- CODEX_OS_BRAIN_AGENTIC_END -->";
 
 function usage() {
-  console.log(`Codex OS Brain
+  console.log(`Agentic Coding OS Brain (ACOB)
 
 Usage:
-  codex-os-brain install [--global-agentic]
-  codex-os-brain status [--json]
-  codex-os-brain agents [--json]
-  codex-os-brain dispatch --task "..." [--json] [--write]
-  codex-os-brain dashboard [--port 8791]
-  codex-os-brain check
-  codex-os-brain uninstall [--keep-runtime]
+  acob install [--global-agentic]
+  acob status [--json]
+  acob agents [--json]
+  acob dispatch --task "..." [--json] [--write]
+  acob dashboard [--port 8791]
+  acob check
+  acob uninstall [--keep-runtime]
+
+Legacy alias:
+  codex-os-brain still works as a compatibility command.
 
 Environment:
   CODEX_HOME            Defaults to ~/.codex
-  CODEX_OS_BRAIN_HOME   Defaults to ~/.codex-os-brain
+  ACOB_HOME             Defaults to ~/.acob
+  CODEX_OS_BRAIN_HOME   Backward-compatible alias
 `);
 }
 
@@ -57,7 +63,7 @@ function writeJson(file, value) {
 function backupFile(file) {
   if (!fs.existsSync(file)) return "";
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backup = `${file}.codex-os-brain-${stamp}.bak`;
+  const backup = `${file}.acob-${stamp}.bak`;
   fs.copyFileSync(file, backup);
   return backup;
 }
@@ -79,7 +85,10 @@ function stripManagedHooks(hooks) {
     const groups = Array.isArray(events[event]) ? events[event] : [];
     events[event] = groups.filter((group) => {
       const entries = Array.isArray(group.hooks) ? group.hooks : [];
-      return !entries.some((hook) => String(hook.command || "").includes(".codex-os-brain"));
+      return !entries.some((hook) => {
+        const command = String(hook.command || "");
+        return command.includes(".acob") || command.includes(".codex-os-brain");
+      });
     });
   }
   hooks.hooks = events;
@@ -87,16 +96,19 @@ function stripManagedHooks(hooks) {
 }
 
 function stripManagedAgentsBlock(text) {
-  const pattern = new RegExp(`\\n?${agentsBlockStart}[\\s\\S]*?${agentsBlockEnd}\\n?`, "g");
-  return String(text || "").replace(pattern, "\n").replace(/\n{3,}/g, "\n\n").trimEnd();
+  const patterns = [
+    new RegExp(`\\n?${agentsBlockStart}[\\s\\S]*?${agentsBlockEnd}\\n?`, "g"),
+    new RegExp(`\\n?${legacyAgentsBlockStart}[\\s\\S]*?${legacyAgentsBlockEnd}\\n?`, "g"),
+  ];
+  return patterns.reduce((textValue, pattern) => textValue.replace(pattern, "\n"), String(text || "")).replace(/\n{3,}/g, "\n\n").trimEnd();
 }
 
 function managedAgentsBlock() {
   return [
     agentsBlockStart,
-    "## Codex OS Brain Agentic Coding",
+    "## Agentic Coding OS Brain (ACOB) Agentic Coding",
     "",
-    "Every user prompt should enter the Codex OS Brain agentic preflight before execution.",
+    "Every user prompt should enter the Agentic Coding OS Brain (ACOB) agentic preflight before execution.",
     "",
     "- Use gated dispatch, not forced fanout: small or unclear tasks stay with the parent agent.",
     "- Auto-dispatch only when the task has 3+ concrete substeps, has a verifiable outcome, and has low privacy risk.",
@@ -155,7 +167,7 @@ function install(args = []) {
   writeInstallConfig(args);
   const backup = installHooks();
   const agentsBackup = installGlobalAgentsRules();
-  console.log("Codex OS Brain installed");
+  console.log("Agentic Coding OS Brain (ACOB) installed");
   console.log("agentic: global gated preflight enabled");
   console.log(`runtime: ${runtimeRoot}`);
   console.log(`hooks: ${hooksFile}`);
@@ -168,14 +180,14 @@ function install(args = []) {
 function runScript(script, args = [], inherit = false) {
   const result = spawn(process.execPath, [path.join(runtimeRoot, script), ...args], {
     stdio: inherit ? "inherit" : ["ignore", "pipe", "pipe"],
-    env: { ...process.env, CODEX_OS_BRAIN_HOME: installRoot },
+    env: { ...process.env, ACOB_HOME: installRoot, CODEX_OS_BRAIN_HOME: installRoot },
   });
   return result;
 }
 
 function runStatus(args = []) {
   if (!fs.existsSync(path.join(runtimeRoot, "scripts", "global-hook-status.cjs"))) {
-    console.error("Codex OS Brain is not installed. Run: codex-os-brain install");
+    console.error("Agentic Coding OS Brain (ACOB) is not installed. Run: acob install");
     process.exitCode = 1;
     return;
   }
@@ -188,13 +200,13 @@ function runRuntimeOrPackageScript(scriptName, args = []) {
   const packaged = path.join(sourceRuntime, scriptName);
   const script = fs.existsSync(installed) ? installed : packaged;
   if (!fs.existsSync(script)) {
-    console.error(`missing ${scriptName}; run codex-os-brain install`);
+    console.error(`missing ${scriptName}; run acob install`);
     process.exitCode = 1;
     return;
   }
   const child = spawn(process.execPath, [script, ...args], {
     stdio: "inherit",
-    env: { ...process.env, CODEX_OS_BRAIN_HOME: installRoot },
+    env: { ...process.env, ACOB_HOME: installRoot, CODEX_OS_BRAIN_HOME: installRoot },
   });
   child.on("exit", (code) => { process.exitCode = code || 0; });
 }
@@ -211,13 +223,13 @@ function dashboard(args) {
   const portIndex = args.indexOf("--port");
   const port = portIndex >= 0 ? args[portIndex + 1] : "8791";
   if (!fs.existsSync(path.join(runtimeRoot, "dashboard", "dashboard-server.mjs"))) {
-    console.error("Codex OS Brain is not installed. Run: codex-os-brain install");
+    console.error("Agentic Coding OS Brain (ACOB) is not installed. Run: acob install");
     process.exit(1);
   }
-  console.log(`Opening Codex OS Brain dashboard on http://127.0.0.1:${port}/`);
+  console.log(`Opening Agentic Coding OS Brain (ACOB) dashboard on http://127.0.0.1:${port}/`);
   const child = spawn(process.execPath, [path.join(runtimeRoot, "dashboard", "dashboard-server.mjs")], {
     stdio: "inherit",
-    env: { ...process.env, CODEX_OS_BRAIN_HOME: installRoot, CODEX_OS_BRAIN_PORT: port },
+    env: { ...process.env, ACOB_HOME: installRoot, CODEX_OS_BRAIN_HOME: installRoot, ACOB_PORT: port, CODEX_OS_BRAIN_PORT: port },
   });
   child.on("exit", (code) => process.exit(code || 0));
 }
@@ -259,7 +271,7 @@ function uninstall(args) {
   if (!args.includes("--keep-runtime")) {
     fs.rmSync(installRoot, { recursive: true, force: true });
   }
-  console.log("Codex OS Brain hooks removed");
+  console.log("Agentic Coding OS Brain (ACOB) hooks removed");
   if (backup) console.log(`backup: ${backup}`);
 }
 

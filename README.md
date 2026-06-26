@@ -1,14 +1,14 @@
-# Codex OS Brain
+# Agentic Coding OS Brain (ACOB)
 
 Give Codex a local "operating system for thinking and doing": memory discipline, verification gates, safer tool use, and a dashboard you can actually inspect.
 
-Think of Codex as a very capable driver. Codex OS Brain is the dashboard, seat belt, route planner, rear-view mirror, and maintenance log around that driver.
+Think of Codex as a very capable driver. Agentic Coding OS Brain (ACOB) is the dashboard, seat belt, route planner, rear-view mirror, and maintenance log around that driver.
 
 It does not replace Codex. It wraps Codex with a public, privacy-first harness so every task can enter through a visible, safer, more consistent workflow.
 
 ## What Is This?
 
-Codex OS Brain is a small local runtime that installs into your Codex environment.
+Agentic Coding OS Brain (ACOB) is a small local runtime that installs into your Codex environment.
 
 After installation, every Codex prompt passes through a global entry gate before the agent starts working. That gate runs an Agentic Coding preflight and reminds the agent to:
 
@@ -22,11 +22,11 @@ After installation, every Codex prompt passes through a global entry gate before
 
 In plain language:
 
-> Codex OS Brain gives Codex a workbench, checklist, dashboard, and learning notebook, without shipping your private life or secrets anywhere.
+> Agentic Coding OS Brain (ACOB) gives Codex a workbench, checklist, dashboard, and learning notebook, without shipping your private life or secrets anywhere.
 
 ## What Can It Help You Do?
 
-| If you use Codex for... | Codex OS Brain helps by... | What you get |
+| If you use Codex for... | Agentic Coding OS Brain (ACOB) helps by... | What you get |
 |---|---|---|
 | Coding tasks | adding verification-before-completion reminders | fewer "looks done but broken" results |
 | Long tasks | keeping a bounded working context | less drift and fewer forgotten constraints |
@@ -39,7 +39,7 @@ In plain language:
 
 ```mermaid
 flowchart LR
-  A["You ask Codex to do something"] --> B["Codex OS Brain entry gate"]
+  A["You ask Codex to do something"] --> B["Agentic Coding OS Brain (ACOB) entry gate"]
   B --> C["Working context\nWhat is the goal?\nWhat matters now?"]
   C --> D{"Agentic dispatch gate\nShould specialists help?"}
   D -->|"small or risky"| E["Main agent works directly"]
@@ -70,7 +70,7 @@ This project uses brain-inspired language as a practical analogy, not as a claim
 
 ## How It Runs
 
-Codex OS Brain installs three global hook stages into Codex:
+Agentic Coding OS Brain (ACOB) installs three global hook stages into Codex:
 
 | Codex event | Runtime script | What it does |
 |---|---|---|
@@ -82,7 +82,7 @@ Codex OS Brain installs three global hook stages into Codex:
 sequenceDiagram
   participant U as User
   participant C as Codex
-  participant H as Codex OS Brain Hooks
+  participant H as Agentic Coding OS Brain (ACOB) Hooks
   participant D as Dashboard
 
   U->>C: Prompt
@@ -99,7 +99,7 @@ sequenceDiagram
 
 Most "AI memory" systems make a dangerous mistake: they store everything and call it intelligence.
 
-Codex OS Brain takes the opposite approach:
+Agentic Coding OS Brain (ACOB) takes the opposite approach:
 
 - memory should be selected, not dumped
 - learning should require feedback, not just accumulation
@@ -110,14 +110,14 @@ Codex OS Brain takes the opposite approach:
 In this public package, no private long-term memory is included. The installed runtime only writes sanitized local status under:
 
 ```text
-~/.codex-os-brain/data
+~/.acob/data
 ```
 
 That makes the framework reusable without leaking the original user's personal agent, memory, identity, logs, or secrets.
 
 ## Sub-Agent Dispatch Model
 
-Codex OS Brain is designed so bigger tasks can be split like a small team:
+Agentic Coding OS Brain (ACOB) is designed so bigger tasks can be split like a small team:
 
 ```mermaid
 flowchart TD
@@ -142,8 +142,8 @@ Sub-agents should be used only when the task has clear parts, low privacy risk, 
 The public package now includes a local sub-agent library and dispatch planner:
 
 ```bash
-codex-os-brain agents
-codex-os-brain dispatch --task "refactor the dashboard, update docs, run checks" --json
+acob agents
+acob dispatch --task "refactor the dashboard, update docs, run checks" --json
 ```
 
 Built-in Chinese agent templates:
@@ -151,12 +151,15 @@ Built-in Chinese agent templates:
 | Agent | Stable id | Job | Default power |
 |---|---|---|---|
 | 上下文侦察员 | `context-scout` | map files, APIs, patterns, constraints | read-only |
-| 架构规划师 | `architecture-planner` | compare designs and choose the smallest viable plan | read-only |
+| 架构规划师 | `architecture-planner` | compare designs and choose the smallest viable plan | read-only, may request child dispatch |
 | 代码执行员 | `implementation-worker` | implement one bounded, assigned slice | limited write scope |
-| 测试验证员 | `test-verifier` | find and run focused verification | read/execute safe checks |
+| 测试验证员 | `test-verifier` | find and run focused verification | read/execute safe checks, no writes by default |
 | 安全审查员 | `security-reviewer` | review secrets, privacy, hooks, local servers | read-only |
 | 文档说明员 | `docs-writer` | update README/docs/user-facing explanation | docs-only write scope |
-| 发布检查员 | `release-operator` | run release checklist and package inspection | read/execute safe checks |
+| 发布检查员 | `release-operator` | run release checklist and package inspection | read/execute safe checks, no publishing by default |
+| 工具调用审计员 | `tool-reliability-auditor` | check API/tool parameters, parsing, and post-call verification | read/execute safe checks |
+| 依赖审计员 | `dependency-auditor` | check dependency, license, size, supply-chain, and platform risk | read-only |
+| 合并仲裁员 | `merge-arbiter` | merge sub-agent outputs, detect conflicts, and define final verification | read-only, may request child dispatch |
 
 The dispatch gate opens only when:
 
@@ -166,9 +169,33 @@ The dispatch gate opens only when:
 - responsibilities are disjoint
 - the parent agent remains responsible for final merge
 
-This means Codex OS Brain supports agentic coding without pretending that "more agents" automatically means better work.
+This means Agentic Coding OS Brain (ACOB) supports agentic coding without pretending that "more agents" automatically means better work.
 
-When the dispatch gate opens and the current Codex environment exposes real subagent tools, the parent agent can call those subagents directly. When the environment does not expose real subagent tools, Codex OS Brain falls back to the local dispatch plan and must not pretend the subagents executed.
+When the dispatch gate opens and the current Codex environment exposes real subagent tools, the parent agent can call those subagents directly. When the environment does not expose real subagent tools, Agentic Coding OS Brain (ACOB) falls back to the local dispatch plan and must not pretend the subagents executed.
+
+### Controlled Child Dispatch
+
+ACOB allows child dispatch as a proposal, not as uncontrolled recursion.
+
+- only `architecture-planner` and `merge-arbiter` may request child dispatch
+- Mother Agent must approve before any child agent executes
+- max child depth is 2
+- max child fanout per L2 agent is 2
+- max parallel agents is 4
+- max total agents per task is 10
+- high-privacy, secret, persona, memory, destructive, and publishing tasks require approval
+
+This keeps agentic coding useful without turning every prompt into an expensive agent swarm.
+
+### Current Gaps Toward A Full Agent Coding OS
+
+ACOB now has global preflight, a 10-agent library, gated dispatch, verification reminders, privacy scanning, and a dashboard. The remaining gaps are:
+
+- real sub-agent execution still depends on whether the current Codex environment exposes sub-agent tools
+- role permissions are declared in the manifest, but hard OS-level sandboxing is outside this package
+- result merging is still parent-owned and lightweight, not a full patch-conflict DAG
+- token/ROI accounting is bounded but not yet a full cost ledger
+- dashboard state is observable status, not proof that the agent reasoned correctly
 
 ## Dashboard
 
@@ -200,7 +227,7 @@ Think of it like a car dashboard:
 
 ## Why This Gets Better Over Time
 
-Codex OS Brain is a harness for repeated use.
+Agentic Coding OS Brain (ACOB) is a harness for repeated use.
 
 The more you use it, the more useful its local signals become:
 
@@ -221,7 +248,7 @@ The public package starts with safe infrastructure. Personal memory should be ad
 After the package is published to npm:
 
 ```bash
-npx codex-os-brain install --global-agentic
+npx agentic-coding-os-brain install --global-agentic
 ```
 
 Until npm publication, install from GitHub:
@@ -233,7 +260,7 @@ npx --yes github:liuanye9-lab/codex-os-brain install --global-agentic
 Then verify:
 
 ```bash
-codex-os-brain status
+acob status
 ```
 
 Expected:
@@ -246,32 +273,32 @@ scope: all_codex_prompts_on_this_codex_home
 Start the dashboard:
 
 ```bash
-codex-os-brain dashboard
+acob dashboard
 ```
 
 ## Commands
 
 ```bash
-codex-os-brain install --global-agentic
-codex-os-brain status
-codex-os-brain agents
-codex-os-brain dispatch --task "..."
-codex-os-brain dispatch --task "..." --json --write
-codex-os-brain dashboard
-codex-os-brain check
-codex-os-brain uninstall
+acob install --global-agentic
+acob status
+acob agents
+acob dispatch --task "..."
+acob dispatch --task "..." --json --write
+acob dashboard
+acob check
+acob uninstall
 ```
 
 ## What Gets Installed
 
 The installer:
 
-1. copies the public runtime to `~/.codex-os-brain`
+1. copies the public runtime to `~/.acob`
 2. backs up `~/.codex/hooks.json`
 3. adds global Codex hooks with empty matchers
 4. backs up and updates `~/.codex/AGENTS.md` with a removable Agentic Coding managed block
 5. enables gated Agentic Coding preflight globally
-6. writes only sanitized local status files under `~/.codex-os-brain/data`
+6. writes only sanitized local status files under `~/.acob/data`
 
 ## What Is Explicitly Not Included
 
@@ -287,7 +314,7 @@ The installer:
 
 ## Safety Model
 
-Codex OS Brain treats learning and self-evolution as candidate-only by default:
+Agentic Coding OS Brain (ACOB) treats learning and self-evolution as candidate-only by default:
 
 - learning requires external evidence
 - confidence should control action speed

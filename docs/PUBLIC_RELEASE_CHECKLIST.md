@@ -13,10 +13,10 @@ npm pack --dry-run
 
 Manual checks:
 
-- package name is `codex-os-brain`
+- package name is `agentic-coding-os-brain`
 - README has no personal names, private paths, or private agent identity
 - runtime does not read any private personal Brain home
-- installer writes runtime data only under `~/.codex-os-brain`
+- installer writes runtime data only under `~/.acob`
 - installer modifies only managed blocks/hooks in `~/.codex/hooks.json` and `~/.codex/AGENTS.md`
 - hooks merge with backup
 - global `~/.codex/AGENTS.md` managed block is backed up, idempotent, and removable by uninstall

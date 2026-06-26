@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.codex-os-brain/runtime/scripts/inject-context.cjs",
+            "command": "node ~/.acob/runtime/scripts/inject-context.cjs",
             "timeout": 5
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.codex-os-brain/runtime/scripts/engineering-harness.cjs",
+            "command": "node ~/.acob/runtime/scripts/engineering-harness.cjs",
             "timeout": 5
           }
         ]
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.codex-os-brain/runtime/scripts/capture-session.cjs",
+            "command": "node ~/.acob/runtime/scripts/capture-session.cjs",
             "timeout": 5
           }
         ]

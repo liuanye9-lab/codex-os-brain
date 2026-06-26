@@ -5,7 +5,7 @@ const path = require("path");
 const crypto = require("crypto");
 
 const HOME = os.homedir();
-const ROOT = process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".codex-os-brain");
+const ROOT = process.env.ACOB_HOME || process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".acob");
 const RUNTIME = path.join(ROOT, "runtime");
 const FALLBACK_RUNTIME = path.resolve(__dirname, "..");
 const DATA_DIR = path.join(ROOT, "data");
@@ -25,8 +25,8 @@ function hash(text) {
 function usage() {
   return [
     "Usage:",
-    "  codex-os-brain agents [--json]",
-    "  codex-os-brain dispatch --task \"...\" [--json] [--write]",
+    "  acob agents [--json]",
+    "  acob dispatch --task \"...\" [--json] [--write]",
     "",
     "Dispatch gate:",
     "  opens only for multi-step, verifiable, low-risk tasks where specialist agents add value.",
@@ -58,12 +58,16 @@ function classifyTask(task) {
   const tests = /test|check|verify|eval|ci|smoke|测试|验证|检查/.test(lower);
   const implementation = /implement|fix|refactor|build|add|create|script|code|实现|修复|重构|构建|新增|脚本|代码/.test(lower);
   const architecture = /architecture|design|system|framework|agentic|sub-agent|subagent|架构|系统|框架|设计|派发|子 agent|子agent/.test(lower);
+  const memory = /memory|remember|profile|preference|记忆|偏好|长期|用户画像/.test(lower);
+  const toolCalling = /tool|api|mcp|function call|schema|parameter|parse|工具|调用|参数|解析|接口/.test(lower);
   const stepSignals = [
     implementation,
     tests,
     docs,
     publicRelease,
     architecture,
+    memory,
+    toolCalling,
     /multiple|several|many|多个|多步|复杂|长期/.test(lower),
   ].filter(Boolean).length;
   const verifiable = tests || implementation || publicRelease || /done|acceptance|验收|通过|pass/.test(lower);
@@ -74,6 +78,8 @@ function classifyTask(task) {
     tests,
     implementation,
     architecture,
+    memory,
+    toolCalling,
     stepSignals,
     verifiable,
     privacyRisk: highPrivacy ? "high" : "low",
@@ -89,6 +95,7 @@ function pickAgents(library, task, forcedAgent = "") {
     const agent = agents.find((item) => item.id === id);
     if (agent && !selected.some((item) => item.id === id)) selected.push(agent);
   };
+  if (cls.stepSignals >= 3 || cls.architecture) add("task-orchestrator");
   if (cls.publicRelease) {
     add("context-scout");
     add("test-verifier");
@@ -100,6 +107,8 @@ function pickAgents(library, task, forcedAgent = "") {
   add("context-scout");
   if (cls.implementation && !cls.highPrivacy) add("implementation-worker");
   if (cls.tests || cls.implementation || cls.publicRelease) add("test-verifier");
+  if (cls.toolCalling) add("tool-reliability-auditor");
+  if (cls.memory) add("memory-governor");
   if (cls.highPrivacy || cls.publicRelease) add("security-reviewer");
   if (cls.publicRelease) add("release-operator");
   if (cls.docs || cls.publicRelease) add("docs-writer");
@@ -112,19 +121,40 @@ function gateDecision(task, selected) {
   const hasVerification = cls.verifiable;
   const privacyOk = cls.privacyRisk === "low" || selected.every((agent) => agent.tool_policy === "read_only");
   const useful = selected.length >= 2;
+  const highPrivacyRequiresApproval = cls.highPrivacy;
   return {
-    open: enoughSteps && hasVerification && privacyOk && useful,
+    open: enoughSteps && hasVerification && privacyOk && useful && !highPrivacyRequiresApproval,
     enoughSteps,
     hasVerification,
     privacyOk,
     useful,
+    highPrivacyRequiresApproval,
     privacyRisk: cls.privacyRisk,
     reasons: [
       enoughSteps ? "task has enough distinct signals" : "task is too small or underspecified",
       hasVerification ? "task has a verifiable outcome" : "verification is unclear",
       privacyOk ? "privacy gate allows selected agents" : "privacy risk blocks write-capable subagents",
       useful ? "multiple specialist agents add value" : "single-agent execution is enough",
+      highPrivacyRequiresApproval ? "high-privacy task requires human approval before dispatch execution" : "human approval not required for dispatch gate",
     ],
+  };
+}
+
+function childDispatchPolicy(library, selected, gate) {
+  const canSuggest = Boolean(library.policy?.controlled_child_subagents);
+  return {
+    mode: canSuggest ? "proposal_only" : "disabled",
+    execution_allowed: false,
+    requires_mother_approval: true,
+    max_depth: 2,
+    max_child_fanout_per_agent: 2,
+    token_guard: "skip child dispatch when the parent task can be solved directly or verification is missing",
+    eligible_agents: selected
+      .filter((agent) => agent.recursionPolicy?.allowSpawn === "proposal_only")
+      .map((agent) => agent.id),
+    reason: gate.open
+      ? "L2 agents may propose smaller child tasks; parent agent must approve before any execution."
+      : "Gate is closed, so child dispatch remains disabled.",
   };
 }
 
@@ -136,7 +166,7 @@ function promptForAgent(agent, task, gate) {
     "Operating rules:",
     "- You are a sub-agent, not the final owner.",
     "- Return concise evidence, changed files if any, checks run, and remaining risks.",
-    "- Do not spawn child agents.",
+    "- Do not spawn child agents directly. If decomposition is needed, propose child tasks for Mother approval.",
     "- Do not access private memory, credentials, or unrelated user data.",
     `- Tool policy: ${agent.tool_policy}. Write scope: ${agent.write_scope}.`,
     "",
@@ -151,6 +181,7 @@ function buildPlan(task, forcedAgent = "") {
   const library = readJson(LIBRARY_FILE, { version: "missing", policy: {}, agents: [] });
   const selected = pickAgents(library, task, forcedAgent);
   const gate = gateDecision(task, selected);
+  const childPolicy = childDispatchPolicy(library, selected, gate);
   const dispatch = selected.map((agent, index) => ({
     order: index + 1,
     agent_id: agent.id,
@@ -169,10 +200,12 @@ function buildPlan(task, forcedAgent = "") {
     gate,
     recommended: gate.open,
     selected_agents: dispatch,
+    child_dispatch: childPolicy,
     parent_agent_contract: [
       "Parent agent owns final answer and merge.",
       "Subagents must have disjoint responsibilities.",
-      "No recursive subagents.",
+      "Subagents may propose child tasks but cannot execute child dispatch without Mother approval.",
+      "Maximum child depth is 2 and maximum child fanout per L2 agent is 2.",
       "No final completion claim without verification evidence.",
     ],
   };
@@ -187,6 +220,7 @@ function writePlan(plan) {
     recommended: plan.recommended,
     gate: plan.gate,
     selected_agent_ids: plan.selected_agents.map((agent) => agent.agent_id),
+    child_dispatch_mode: plan.child_dispatch.mode,
   };
   fs.appendFileSync(path.join(DATA_DIR, "agentic-dispatch.jsonl"), `${JSON.stringify(record)}\n`, "utf8");
 }

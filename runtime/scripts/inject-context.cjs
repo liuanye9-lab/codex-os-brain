@@ -5,7 +5,7 @@ const path = require("path");
 const { buildPlan } = require("./agentic-dispatch.cjs");
 
 const HOME = os.homedir();
-const ROOT = process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".codex-os-brain");
+const ROOT = process.env.ACOB_HOME || process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".acob");
 const DATA_DIR = path.join(ROOT, "data");
 
 function appendJsonl(file, value) {
@@ -71,7 +71,7 @@ function buildContext(prompt) {
   const intent = classifyPrompt(prompt);
   const agenticPreflight = buildAgenticPreflight(prompt);
   const lines = [
-    "<codex-os-brain>",
+    "<acob>",
     `> auto-injected public cognitive harness · intent=${intent}`,
     "",
     "## Operating Contract",
@@ -95,7 +95,7 @@ function buildContext(prompt) {
     "- Human approval is the highest gate for risky system changes.",
     "",
     agenticPreflight,
-    "</codex-os-brain>",
+    "</acob>",
   ];
   return lines.join("\n");
 }

@@ -1,6 +1,6 @@
 # Architecture
 
-Codex OS Brain is a local Codex hook runtime. It is intentionally small and observable.
+Agentic Coding OS Brain (ACOB) is a local Codex hook runtime. It is intentionally small and observable.
 
 ## Runtime Flow
 
@@ -57,8 +57,8 @@ Dispatch rules:
 
 | Path | Purpose |
 |---|---|
-| `~/.codex-os-brain/runtime` | Public runtime copied from this package |
-| `~/.codex-os-brain/data` | Sanitized local status and audit counts |
+| `~/.acob/runtime` | Public runtime copied from this package |
+| `~/.acob/data` | Sanitized local status and audit counts |
 | `~/.codex/hooks.json` | User's Codex hook file, backed up before modification |
 | `~/.codex/AGENTS.md` | User's global Codex instruction file, updated with a removable Agentic Coding block |
 

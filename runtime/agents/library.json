@@ -1,8 +1,8 @@
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "policy": {
     "max_parallel_agents": 4,
-    "no_recursive_subagents": true,
+    "no_recursive_subagents": false,
     "candidate_only_memory": true,
     "human_approval_required_for": [
       "secrets",
@@ -21,7 +21,18 @@
       "主 Agent 永远负责最终合并、验证和回答"
     ],
     "global_default": "gated_agentic_preflight",
-    "fallback": "如果当前 Codex 环境不支持真实 subagent，则只输出本地 dispatch plan，不假装已执行"
+    "fallback": "如果当前 Codex 环境不支持真实 subagent，则只输出本地 dispatch plan，不假装已执行",
+    "max_total_agents_per_task": 10,
+    "controlled_child_subagents": true,
+    "no_unbounded_recursive_subagents": true,
+    "child_dispatch_policy": [
+      "L2 agents may propose child tasks but must not spawn them directly by default",
+      "only architecture-planner and merge-arbiter may request child dispatch",
+      "Mother Agent must approve child dispatch before execution",
+      "child dispatch requires clear ownership, verification, low privacy risk, and token budget",
+      "maximum depth is 2 and maximum child fanout per L2 agent is 2",
+      "if token budget or privacy risk is unclear, child dispatch is skipped"
+    ]
   },
   "agents": [
     {
@@ -199,7 +210,7 @@
       "purpose": "把复杂或模糊需求拆成边界、接口、阶段和验收标准。",
       "nonGoals": [
         "不拥有最终回答",
-        "不派生孙子 Agent",
+        "可以申请二级派发，但必须回到主 Agent 审批",
         "不读取私人记忆、密钥或无关用户数据",
         "不绕过主 Agent 的验证和 human approval"
       ],
@@ -266,9 +277,10 @@
         "tokenBudget": "bounded"
       },
       "recursionPolicy": {
-        "allowSpawn": false,
-        "maxDepth": 1,
-        "maxFanout": 0
+        "allowSpawn": "proposal_only",
+        "maxDepth": 2,
+        "maxFanout": 2,
+        "requiresMotherApproval": true
       },
       "stopConditions": [
         "success evidence produced",
@@ -499,8 +511,7 @@
       "allowedTools": [
         "read",
         "search",
-        "edit_assigned_files",
-        "run_assigned_checks"
+        "safe_execute"
       ],
       "deniedTools": [
         "secret_read",
@@ -525,7 +536,7 @@
         "rawSecrets": false,
         "logLevel": "sanitized_summary_only"
       },
-      "sideEffects": "writesWorkspaceLimited",
+      "sideEffects": "readOnlyOrSafeExecution",
       "approvalRequiredFor": [
         "secrets",
         "credentials",
@@ -916,8 +927,7 @@
       "allowedTools": [
         "read",
         "search",
-        "edit_assigned_files",
-        "run_assigned_checks"
+        "safe_execute"
       ],
       "deniedTools": [
         "secret_read",
@@ -942,7 +952,7 @@
         "rawSecrets": false,
         "logLevel": "sanitized_summary_only"
       },
-      "sideEffects": "writesWorkspaceLimited",
+      "sideEffects": "readOnlyOrSafeExecution",
       "approvalRequiredFor": [
         "secrets",
         "credentials",
@@ -975,6 +985,426 @@
         "runs privacy scan",
         "runs smoke/check",
         "inspects package files"
+      ],
+      "redaction": [
+        "remove secrets",
+        "remove private home paths",
+        "summarize raw prompts"
+      ],
+      "auditLogFields": [
+        "runId",
+        "parentRunId",
+        "agentId",
+        "taskHash",
+        "permissionProfile",
+        "riskLevel",
+        "evidenceSummary"
+      ],
+      "ownerReview": "主 Agent 必须审查后才能合并或声明完成"
+    },
+    {
+      "id": "tool-reliability-auditor",
+      "name": "工具调用审计员",
+      "type": "reviewer",
+      "description": "检查工具/API 调用前置条件、参数、输出解析、验证证据和失败降级。",
+      "when_to_use": [
+        "tool-heavy task",
+        "API integration",
+        "MCP or shell usage"
+      ],
+      "inputs": [
+        "tool plan",
+        "schemas",
+        "expected outputs"
+      ],
+      "outputs": [
+        "tool risks",
+        "parameter checks",
+        "parse checks",
+        "verification plan"
+      ],
+      "tool_policy": "read_execute_safe",
+      "write_scope": "none",
+      "privacy_level": "low",
+      "success_criteria": [
+        "returns tool risks",
+        "returns parameter checks",
+        "returns parse checks",
+        "returns verification plan"
+      ],
+      "failure_modes": [
+        "scope too broad",
+        "no evidence",
+        "duplicates another agent task"
+      ],
+      "version": "0.1.0",
+      "displayName": "工具调用审计员",
+      "purpose": "检查工具/API 调用前置条件、参数、输出解析、验证证据和失败降级。",
+      "nonGoals": [
+        "不拥有最终回答",
+        "不派生孙子 Agent",
+        "不读取私人记忆、密钥或无关用户数据",
+        "不绕过主 Agent 的验证和 human approval"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "tool plan",
+          "schemas",
+          "expected outputs"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "tool risks",
+          "parameter checks",
+          "parse checks",
+          "verification plan"
+        ]
+      },
+      "allowedTools": [
+        "read",
+        "search",
+        "safe_execute"
+      ],
+      "deniedTools": [
+        "secret_read",
+        "credential_access",
+        "network_without_approval",
+        "recursive_spawn_without_mother_approval",
+        "modify_agent_policy"
+      ],
+      "allowedPaths": [
+        "repo-relative read scope"
+      ],
+      "deniedPaths": [
+        "home secrets",
+        "private memory",
+        ".env",
+        "auth files",
+        "credentials"
+      ],
+      "networkPolicy": "explicitApproval",
+      "dataPolicy": {
+        "rawPrompt": false,
+        "rawSecrets": false,
+        "logLevel": "sanitized_summary_only"
+      },
+      "sideEffects": "readOnly",
+      "approvalRequiredFor": [
+        "secrets",
+        "credentials",
+        "network",
+        "delete files",
+        "publish",
+        "hooks",
+        "memory",
+        "persona",
+        "self-evolution"
+      ],
+      "budget": {
+        "timeoutMs": 900000,
+        "maxToolCalls": 20,
+        "maxFiles": 30,
+        "tokenBudget": "bounded"
+      },
+      "recursionPolicy": {
+        "allowSpawn": false,
+        "maxDepth": 1,
+        "maxFanout": 0
+      },
+      "stopConditions": [
+        "success evidence produced",
+        "blocked by privacy or permission",
+        "timeout",
+        "scope expansion required"
+      ],
+      "verification": [
+        "tool risks",
+        "parameter checks",
+        "parse checks",
+        "verification plan"
+      ],
+      "redaction": [
+        "remove secrets",
+        "remove private home paths",
+        "summarize raw prompts"
+      ],
+      "auditLogFields": [
+        "runId",
+        "parentRunId",
+        "agentId",
+        "taskHash",
+        "permissionProfile",
+        "riskLevel",
+        "evidenceSummary"
+      ],
+      "ownerReview": "主 Agent 必须审查后才能合并或声明完成"
+    },
+    {
+      "id": "dependency-auditor",
+      "name": "依赖审计员",
+      "type": "reviewer",
+      "description": "检查新增依赖、license、体积、供应链风险、Node/browser/Windows 兼容性。",
+      "when_to_use": [
+        "new dependency",
+        "package change",
+        "build tooling",
+        "npm release"
+      ],
+      "inputs": [
+        "dependency diff",
+        "package files",
+        "target runtime"
+      ],
+      "outputs": [
+        "dependency risk",
+        "compatibility notes",
+        "license notes",
+        "recommendation"
+      ],
+      "tool_policy": "read_only",
+      "write_scope": "none",
+      "privacy_level": "low",
+      "success_criteria": [
+        "returns dependency risk",
+        "returns compatibility notes",
+        "returns license notes",
+        "returns recommendation"
+      ],
+      "failure_modes": [
+        "scope too broad",
+        "no evidence",
+        "duplicates another agent task"
+      ],
+      "version": "0.1.0",
+      "displayName": "依赖审计员",
+      "purpose": "检查新增依赖、license、体积、供应链风险、Node/browser/Windows 兼容性。",
+      "nonGoals": [
+        "不拥有最终回答",
+        "不派生孙子 Agent",
+        "不读取私人记忆、密钥或无关用户数据",
+        "不绕过主 Agent 的验证和 human approval"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "dependency diff",
+          "package files",
+          "target runtime"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "dependency risk",
+          "compatibility notes",
+          "license notes",
+          "recommendation"
+        ]
+      },
+      "allowedTools": [
+        "read",
+        "search"
+      ],
+      "deniedTools": [
+        "secret_read",
+        "credential_access",
+        "network_without_approval",
+        "recursive_spawn_without_mother_approval",
+        "modify_agent_policy"
+      ],
+      "allowedPaths": [
+        "repo-relative read scope"
+      ],
+      "deniedPaths": [
+        "home secrets",
+        "private memory",
+        ".env",
+        "auth files",
+        "credentials"
+      ],
+      "networkPolicy": "explicitApproval",
+      "dataPolicy": {
+        "rawPrompt": false,
+        "rawSecrets": false,
+        "logLevel": "sanitized_summary_only"
+      },
+      "sideEffects": "readOnly",
+      "approvalRequiredFor": [
+        "secrets",
+        "credentials",
+        "network",
+        "delete files",
+        "publish",
+        "hooks",
+        "memory",
+        "persona",
+        "self-evolution"
+      ],
+      "budget": {
+        "timeoutMs": 900000,
+        "maxToolCalls": 20,
+        "maxFiles": 30,
+        "tokenBudget": "bounded"
+      },
+      "recursionPolicy": {
+        "allowSpawn": false,
+        "maxDepth": 1,
+        "maxFanout": 0
+      },
+      "stopConditions": [
+        "success evidence produced",
+        "blocked by privacy or permission",
+        "timeout",
+        "scope expansion required"
+      ],
+      "verification": [
+        "dependency risk",
+        "compatibility notes",
+        "license notes",
+        "recommendation"
+      ],
+      "redaction": [
+        "remove secrets",
+        "remove private home paths",
+        "summarize raw prompts"
+      ],
+      "auditLogFields": [
+        "runId",
+        "parentRunId",
+        "agentId",
+        "taskHash",
+        "permissionProfile",
+        "riskLevel",
+        "evidenceSummary"
+      ],
+      "ownerReview": "主 Agent 必须审查后才能合并或声明完成"
+    },
+    {
+      "id": "merge-arbiter",
+      "name": "合并仲裁员",
+      "type": "reviewer",
+      "description": "收集子 Agent 输出，发现冲突，提出最终合并顺序、阻塞项和验证闭环。",
+      "when_to_use": [
+        "multiple agents returned",
+        "parallel edits",
+        "conflicting recommendations"
+      ],
+      "inputs": [
+        "agent outputs",
+        "changed files",
+        "checks"
+      ],
+      "outputs": [
+        "merge order",
+        "conflicts",
+        "blocked items",
+        "final verification plan"
+      ],
+      "tool_policy": "read_only",
+      "write_scope": "none",
+      "privacy_level": "low",
+      "success_criteria": [
+        "returns merge order",
+        "returns conflicts",
+        "returns blocked items",
+        "returns final verification plan"
+      ],
+      "failure_modes": [
+        "scope too broad",
+        "no evidence",
+        "duplicates another agent task"
+      ],
+      "version": "0.1.0",
+      "displayName": "合并仲裁员",
+      "purpose": "收集子 Agent 输出，发现冲突，提出最终合并顺序、阻塞项和验证闭环。",
+      "nonGoals": [
+        "不拥有最终回答",
+        "可以申请二级派发，但必须回到主 Agent 审批",
+        "不读取私人记忆、密钥或无关用户数据",
+        "不绕过主 Agent 的验证和 human approval"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "agent outputs",
+          "changed files",
+          "checks"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "merge order",
+          "conflicts",
+          "blocked items",
+          "final verification plan"
+        ]
+      },
+      "allowedTools": [
+        "read",
+        "search"
+      ],
+      "deniedTools": [
+        "secret_read",
+        "credential_access",
+        "network_without_approval",
+        "recursive_spawn_without_mother_approval",
+        "modify_agent_policy"
+      ],
+      "allowedPaths": [
+        "repo-relative read scope"
+      ],
+      "deniedPaths": [
+        "home secrets",
+        "private memory",
+        ".env",
+        "auth files",
+        "credentials"
+      ],
+      "networkPolicy": "explicitApproval",
+      "dataPolicy": {
+        "rawPrompt": false,
+        "rawSecrets": false,
+        "logLevel": "sanitized_summary_only"
+      },
+      "sideEffects": "readOnly",
+      "approvalRequiredFor": [
+        "secrets",
+        "credentials",
+        "network",
+        "delete files",
+        "publish",
+        "hooks",
+        "memory",
+        "persona",
+        "self-evolution"
+      ],
+      "budget": {
+        "timeoutMs": 900000,
+        "maxToolCalls": 20,
+        "maxFiles": 30,
+        "tokenBudget": "bounded"
+      },
+      "recursionPolicy": {
+        "allowSpawn": "proposal_only",
+        "maxDepth": 2,
+        "maxFanout": 2,
+        "requiresMotherApproval": true
+      },
+      "stopConditions": [
+        "success evidence produced",
+        "blocked by privacy or permission",
+        "timeout",
+        "scope expansion required"
+      ],
+      "verification": [
+        "merge order",
+        "conflicts",
+        "blocked items",
+        "final verification plan"
       ],
       "redaction": [
         "remove secrets",

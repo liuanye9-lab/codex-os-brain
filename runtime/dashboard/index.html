@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Codex OS Brain</title>
+  <title>Agentic Coding OS Brain (ACOB)</title>
   <style>
     :root { color-scheme: dark; --bg:#151515; --panel:#242424; --soft:#303030; --text:#eeeeee; --muted:#a8a8a8; --green:#4caf7a; --amber:#d5a943; --red:#df6d6a; --blue:#4aa3ff; }
     * { box-sizing: border-box; }
@@ -39,7 +39,7 @@
 <main>
   <header>
     <div>
-      <h1>Codex OS Brain</h1>
+      <h1>Agentic Coding OS Brain (ACOB)</h1>
       <p class="sub" id="subtitle">Codex 全局 Agentic Coding Harness</p>
     </div>
     <button id="refresh">Refresh</button>
@@ -91,7 +91,7 @@ async function load() {
     metric("Agentic dispatch", data.metrics?.agentic_dispatches || 0, "只记录脱敏 hash 和 agent ids", true),
     metric("Red flag", data.metrics?.red_flag ? "raised" : "clear", "requires verification or approval when raised", !data.metrics?.red_flag),
   ].join("");
-  document.getElementById("globalRows").innerHTML = (entry.required || []).map((item) => row(item.label, item.ok ? "installed and global" : "missing or not global", item.ok)).join("") || row("status unavailable", "run codex-os-brain status", false);
+  document.getElementById("globalRows").innerHTML = (entry.required || []).map((item) => row(item.label, item.ok ? "installed and global" : "missing or not global", item.ok)).join("") || row("status unavailable", "run acob status", false);
   document.getElementById("privacyRows").innerHTML = [
     row("No personal memory packaged", "MEMORY/USER/STATE/IDENTITY/SOUL are excluded", data.privacy?.packaged_private_memory === false),
     row("No API keys packaged", "privacy scan blocks common token shapes", data.privacy?.packaged_api_keys === false),
@@ -101,7 +101,7 @@ async function load() {
   const latest = data.agentic?.latest_dispatch;
   document.getElementById("agentRows").innerHTML = [
     row(`${agents.length} 个中文子 Agent`, `library ${data.agentic?.library_version || "missing"} · max fanout ${data.agentic?.policy?.max_parallel_agents || "?"}`, agents.length > 0),
-    latest ? row("最近一次派发", `${latest.selected_agent_names?.join(", ") || latest.selected_agent_ids?.join(", ") || "none"} · recommended=${latest.recommended} · privacy=${latest.gate?.privacyRisk || "unknown"}`, true) : row("还没有派发记录", "run codex-os-brain dispatch --task \"...\" --write", true),
+    latest ? row("最近一次派发", `${latest.selected_agent_names?.join(", ") || latest.selected_agent_ids?.join(", ") || "none"} · recommended=${latest.recommended} · privacy=${latest.gate?.privacyRisk || "unknown"}`, true) : row("还没有派发记录", "run acob dispatch --task \"...\" --write", true),
     ...agents.slice(0, 7).map((agent) => row(agent.name || agent.id, `${agent.description || agent.tool_policy} · recursion spawn=${agent.recursionPolicy?.allowSpawn === true}`, agent.recursionPolicy?.allowSpawn !== true)),
   ].join("");
   document.getElementById("latest").textContent = JSON.stringify(data.latest || {}, null, 2);

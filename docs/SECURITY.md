@@ -1,6 +1,6 @@
 # Security and Privacy
 
-Codex OS Brain is designed for public distribution. The package must remain free of personal runtime data.
+Agentic Coding OS Brain (ACOB) is designed for public distribution. The package must remain free of personal runtime data.
 
 ## Never Commit
 
@@ -38,7 +38,7 @@ Then inspect the package file list. It should contain only:
 
 ## Hook Safety
 
-The installer backs up `~/.codex/hooks.json` before writing. It removes only hook commands containing `.codex-os-brain` during reinstall or uninstall.
+The installer backs up `~/.codex/hooks.json` before writing. It removes only hook commands containing `.acob` during reinstall or uninstall.
 
 The runtime scripts follow a fail-open policy: if a hook script fails, it exits without blocking Codex.
 
