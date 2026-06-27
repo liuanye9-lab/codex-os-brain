@@ -23,6 +23,7 @@ function usage() {
   console.log(`Agentic Coding OS Brain (ACOB)
 
 Usage:
+  acob quickstart
   acob install [--global-agentic]
   acob status [--json]
   acob agents [--json]
@@ -180,7 +181,18 @@ function install(args = []) {
   if (backup) console.log(`backup: ${backup}`);
   console.log(`agents: ${agentsFile}`);
   if (agentsBackup) console.log(`agents backup: ${agentsBackup}`);
+}
+
+function quickstart(args = []) {
+  const installArgs = args.includes("--no-global-agentic") ? [] : ["--global-agentic"];
+  install(installArgs);
+  console.log("");
+  console.log("Quickstart verification:");
   runStatus(["--summary"]);
+  console.log("");
+  console.log("Next:");
+  console.log("  acob dashboard");
+  console.log("  acob dispatch --task \"refactor dashboard, update docs, run checks\" --json");
 }
 
 function runScript(script, args = [], inherit = false) {
@@ -197,8 +209,11 @@ function runStatus(args = []) {
     process.exitCode = 1;
     return;
   }
-  const child = runScript("scripts/global-hook-status.cjs", args, true);
-  child.on("exit", (code) => { process.exitCode = code || 0; });
+  const child = spawnSync(process.execPath, [path.join(runtimeRoot, "scripts", "global-hook-status.cjs"), ...args], {
+    stdio: "inherit",
+    env: { ...process.env, ACOB_HOME: installRoot, CODEX_OS_BRAIN_HOME: installRoot },
+  });
+  process.exitCode = child.status || 0;
 }
 
 function runRuntimeOrPackageScript(scriptName, args = []) {
@@ -309,6 +324,7 @@ const [command, ...args] = process.argv.slice(2);
 
 try {
   if (!command || command === "help" || command === "--help" || command === "-h") usage();
+  else if (command === "quickstart") quickstart(args);
   else if (command === "install") install(args);
   else if (command === "status") runStatus(args);
   else if (command === "agents") agents(args);

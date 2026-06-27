@@ -25,6 +25,53 @@ In plain language:
 
 > Codex is the engine. ACOB is the operating system around it: memory, routing, safety rails, feedback loops, and a dashboard.
 
+## 60-Second Quickstart
+
+ACOB is designed to be tried with one command and no hosted backend.
+
+Use the GitHub package today:
+
+```bash
+npx -y github:liuanye9-lab/codex-os-brain quickstart
+```
+
+Use the npm package after publication:
+
+```bash
+npx -y agentic-coding-os-brain@latest quickstart
+```
+
+Open the dashboard:
+
+```bash
+acob dashboard
+```
+
+Verify the system:
+
+```bash
+acob status
+acob agents
+acob dispatch --task "refactor dashboard, update docs, run checks" --json
+acob check
+```
+
+Expected:
+
+```text
+status: global_active
+scope: all_codex_prompts_on_this_codex_home
+```
+
+Low-cost runtime profile:
+
+- no hosted backend
+- no database setup
+- no paid model call during install
+- no private memory uploaded
+- local files only under `~/.acob`
+- dashboard runs on localhost
+
 ## Why This Matters
 
 Most coding agents fail in predictable ways:
@@ -243,18 +290,25 @@ The public repository mirrors the full private project shape while keeping the c
 └── test/                        # smoke tests
 ```
 
-## Install
+## Install And Run
 
-From GitHub:
+Fastest GitHub path:
 
 ```bash
-npx --yes github:liuanye9-lab/codex-os-brain install --global-agentic
+npx -y github:liuanye9-lab/codex-os-brain quickstart
 ```
 
-After npm publication:
+Fastest npm path after publication:
 
 ```bash
-npx agentic-coding-os-brain install --global-agentic
+npx -y agentic-coding-os-brain@latest quickstart
+```
+
+Manual npm install:
+
+```bash
+npm install -g agentic-coding-os-brain
+acob quickstart
 ```
 
 Verify:
@@ -274,6 +328,7 @@ acob dashboard
 ## CLI Surface
 
 ```bash
+acob quickstart
 acob install --global-agentic
 acob status
 acob agents
@@ -328,6 +383,7 @@ See:
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Agentic Coding](docs/AGENTIC_CODING.md)
+- [Quickstart](docs/QUICKSTART.md)
 - [Security](docs/SECURITY.md)
 - [Install](docs/INSTALL.md)
 - [Public Release Checklist](docs/PUBLIC_RELEASE_CHECKLIST.md)

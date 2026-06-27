@@ -1,9 +1,25 @@
 # Install Guide
 
+## One-Command Quickstart
+
+From GitHub:
+
+```bash
+npx -y github:liuanye9-lab/codex-os-brain quickstart
+```
+
+After npm publication:
+
+```bash
+npx -y agentic-coding-os-brain@latest quickstart
+```
+
+Quickstart installs the runtime, enables global gated agentic preflight, and prints a verification summary.
+
 ## macOS / Linux
 
 ```bash
-npx agentic-coding-os-brain install --global-agentic
+npx -y agentic-coding-os-brain@latest install --global-agentic
 acob status
 acob dashboard
 ```
@@ -11,7 +27,7 @@ acob dashboard
 ## Windows PowerShell
 
 ```powershell
-npx agentic-coding-os-brain install --global-agentic
+npx -y agentic-coding-os-brain@latest install --global-agentic
 acob status
 acob dashboard
 ```
@@ -19,7 +35,7 @@ acob dashboard
 If the package is not published to npm yet:
 
 ```bash
-npx github:liuanye9-lab/codex-os-brain install --global-agentic
+npx -y github:liuanye9-lab/codex-os-brain quickstart
 ```
 
 ## Verify Global Coverage
