@@ -29,6 +29,13 @@ In plain language:
 
 ACOB is designed to be tried with one command and no hosted backend.
 
+By default, quickstart also prepares the local embedding path used for memory recall and token reduction:
+
+- provider: Ollama
+- model: `qwen3-embedding:0.6b`
+- purpose: local vector retrieval, not final reasoning
+- behavior: auto-detect Ollama, pull the model when available, verify `/api/embed`, then record status under `~/.acob/config.json`
+
 Use the GitHub package today:
 
 ```bash
@@ -47,11 +54,25 @@ Open the dashboard:
 acob dashboard
 ```
 
+Check local memory retrieval:
+
+```bash
+acob embedding --status
+acob embedding --setup
+```
+
+Skip embedding setup when you only want the lightweight harness:
+
+```bash
+npx -y github:liuanye9-lab/codex-os-brain quickstart --skip-embedding
+```
+
 Verify the system:
 
 ```bash
 acob status
 acob agents
+acob embedding --status
 acob dispatch --task "refactor dashboard, update docs, run checks" --json
 acob check
 ```
@@ -68,6 +89,7 @@ Low-cost runtime profile:
 - no hosted backend
 - no database setup
 - no paid model call during install
+- optional local embedding download through Ollama
 - no private memory uploaded
 - local files only under `~/.acob`
 - dashboard runs on localhost

@@ -13,7 +13,15 @@ This command:
 1. installs the public runtime into `~/.acob`
 2. updates Codex hooks under `~/.codex/hooks.json`
 3. adds the global ACOB agentic preflight block to `~/.codex/AGENTS.md`
-4. verifies the install with `acob status --summary`
+4. checks local embedding support through Ollama
+5. pulls and verifies `qwen3-embedding:0.6b` when Ollama is available
+6. verifies the install with `acob status --summary`
+
+Skip the embedding download:
+
+```bash
+npx -y github:liuanye9-lab/codex-os-brain quickstart --skip-embedding
+```
 
 ## npm Install
 
@@ -42,11 +50,31 @@ Dashboard URL:
 http://127.0.0.1:8791/
 ```
 
+## Local Embedding
+
+ACOB uses a local embedding model for memory recall and token reduction.
+
+Default model:
+
+```text
+qwen3-embedding:0.6b
+```
+
+Commands:
+
+```bash
+acob embedding --status
+acob embedding --setup
+```
+
+If Ollama is not installed, quickstart still finishes and records `ollama_missing` in `~/.acob/config.json`.
+
 ## Verify
 
 ```bash
 acob status
 acob agents
+acob embedding --status
 acob dispatch --task "refactor dashboard, update docs, run checks" --json
 acob check
 ```
@@ -56,6 +84,7 @@ acob check
 - no hosted backend
 - no database setup
 - no paid model call during install
+- optional local embedding model download through Ollama
 - no private memory packaged
 - no raw prompt stored in public artifacts
 - local runtime state stays under `~/.acob`

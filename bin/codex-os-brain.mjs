@@ -18,13 +18,16 @@ const agentsBlockStart = "<!-- ACOB_AGENTIC_START -->";
 const agentsBlockEnd = "<!-- ACOB_AGENTIC_END -->";
 const legacyAgentsBlockStart = "<!-- CODEX_OS_BRAIN_AGENTIC_START -->";
 const legacyAgentsBlockEnd = "<!-- CODEX_OS_BRAIN_AGENTIC_END -->";
+const defaultEmbeddingModel = process.env.ACOB_EMBEDDING_MODEL || "qwen3-embedding:0.6b";
+const defaultEmbeddingEndpoint = process.env.ACOB_EMBEDDING_ENDPOINT || "http://127.0.0.1:11434/api/embed";
 
 function usage() {
   console.log(`Agentic Coding OS Brain (ACOB)
 
 Usage:
-  acob quickstart
-  acob install [--global-agentic]
+  acob quickstart [--skip-embedding]
+  acob install [--global-agentic] [--skip-embedding]
+  acob embedding [--setup] [--status]
   acob status [--json]
   acob agents [--json]
   acob dispatch --task "..." [--json] [--write]
@@ -45,6 +48,7 @@ Environment:
   CODEX_HOME            Defaults to ~/.codex
   ACOB_HOME             Defaults to ~/.acob
   CODEX_OS_BRAIN_HOME   Backward-compatible alias
+  ACOB_EMBEDDING_MODEL  Defaults to qwen3-embedding:0.6b
 `);
 }
 
@@ -160,10 +164,117 @@ function writeInstallConfig(args) {
     global_agentic: true,
     dispatch_policy: "gated_agentic_preflight",
     installed_with_global_agentic_flag: args.includes("--global-agentic"),
+    local_embedding: {
+      provider: "ollama",
+      model: defaultEmbeddingModel,
+      endpoint: defaultEmbeddingEndpoint,
+      auto_setup: !args.includes("--skip-embedding"),
+      enabled: false,
+      status: "not_checked",
+      purpose: "local vector retrieval for memory recall and token reduction",
+    },
   });
 }
 
-function install(args = []) {
+function updateEmbeddingConfig(patch) {
+  const configFile = path.join(installRoot, "config.json");
+  const current = readJson(configFile, {});
+  current.local_embedding = {
+    provider: "ollama",
+    model: defaultEmbeddingModel,
+    endpoint: defaultEmbeddingEndpoint,
+    auto_setup: true,
+    enabled: false,
+    status: "not_checked",
+    purpose: "local vector retrieval for memory recall and token reduction",
+    ...(current.local_embedding || {}),
+    ...patch,
+  };
+  writeJson(configFile, current);
+}
+
+async function setupEmbedding(args = []) {
+  const statusOnly = args.includes("--status");
+  const shouldPull = args.includes("--setup") || args.includes("--pull") || args.includes("--auto") || args.includes("--quickstart");
+  fs.mkdirSync(installRoot, { recursive: true });
+
+  const ollama = spawnSync("ollama", ["--version"], { encoding: "utf8" });
+  if (ollama.status !== 0) {
+    updateEmbeddingConfig({
+      enabled: false,
+      status: "ollama_missing",
+      last_checked_at: new Date().toISOString(),
+      install_hint: "Install Ollama, then run: acob embedding --setup",
+    });
+    console.log("embedding: ollama_missing");
+    console.log("hint: install Ollama, then run: acob embedding --setup");
+    return { status: "ollama_missing" };
+  }
+
+  let listText = "";
+  const list = spawnSync("ollama", ["list"], { encoding: "utf8" });
+  if (list.status === 0) listText = `${list.stdout}\n${list.stderr}`;
+  const hasModel = listText.includes(defaultEmbeddingModel);
+
+  if (!hasModel && shouldPull && !statusOnly) {
+    console.log(`embedding: pulling ${defaultEmbeddingModel}`);
+    const pull = spawnSync("ollama", ["pull", defaultEmbeddingModel], { stdio: "inherit" });
+    if (pull.status !== 0) {
+      updateEmbeddingConfig({
+        enabled: false,
+        status: "pull_failed",
+        last_checked_at: new Date().toISOString(),
+      });
+      console.log("embedding: pull_failed");
+      return { status: "pull_failed" };
+    }
+  }
+
+  const shouldVerify = hasModel || shouldPull;
+  if (!shouldVerify || statusOnly) {
+    updateEmbeddingConfig({
+      enabled: hasModel,
+      status: hasModel ? "model_available" : "model_missing",
+      last_checked_at: new Date().toISOString(),
+    });
+    console.log(`embedding: ${hasModel ? "model_available" : "model_missing"}`);
+    if (!hasModel) console.log(`hint: acob embedding --setup`);
+    return { status: hasModel ? "model_available" : "model_missing" };
+  }
+
+  try {
+    const response = await fetch(defaultEmbeddingEndpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: defaultEmbeddingModel, input: "ACOB local memory token reduction check" }),
+    });
+    if (!response.ok) throw new Error(`http_${response.status}`);
+    const payload = await response.json();
+    const vector = Array.isArray(payload.embeddings) ? payload.embeddings[0] : payload.embedding;
+    const dimension = Array.isArray(vector) ? vector.length : 0;
+    if (!dimension) throw new Error("empty_embedding");
+    updateEmbeddingConfig({
+      enabled: true,
+      status: "ready",
+      dimension,
+      last_checked_at: new Date().toISOString(),
+    });
+    console.log(`embedding: ready (${defaultEmbeddingModel}, ${dimension} dims)`);
+    return { status: "ready", dimension };
+  } catch (error) {
+    updateEmbeddingConfig({
+      enabled: false,
+      status: "verify_failed",
+      last_error: String(error.message || error),
+      last_checked_at: new Date().toISOString(),
+    });
+    console.log("embedding: verify_failed");
+    console.log(`reason: ${error.message || error}`);
+    return { status: "verify_failed" };
+  }
+}
+
+async function install(args = []) {
   if (!fs.existsSync(sourceRuntime)) {
     throw new Error(`runtime folder missing: ${sourceRuntime}`);
   }
@@ -181,17 +292,29 @@ function install(args = []) {
   if (backup) console.log(`backup: ${backup}`);
   console.log(`agents: ${agentsFile}`);
   if (agentsBackup) console.log(`agents backup: ${agentsBackup}`);
+  if (!args.includes("--skip-embedding")) {
+    await setupEmbedding(["--quickstart"]);
+  } else {
+    updateEmbeddingConfig({
+      enabled: false,
+      status: "skipped",
+      last_checked_at: new Date().toISOString(),
+    });
+    console.log("embedding: skipped");
+  }
 }
 
-function quickstart(args = []) {
+async function quickstart(args = []) {
   const installArgs = args.includes("--no-global-agentic") ? [] : ["--global-agentic"];
-  install(installArgs);
+  if (args.includes("--skip-embedding")) installArgs.push("--skip-embedding");
+  await install(installArgs);
   console.log("");
   console.log("Quickstart verification:");
   runStatus(["--summary"]);
   console.log("");
   console.log("Next:");
   console.log("  acob dashboard");
+  console.log("  acob embedding --status");
   console.log("  acob dispatch --task \"refactor dashboard, update docs, run checks\" --json");
 }
 
@@ -322,10 +445,11 @@ function uninstall(args) {
 
 const [command, ...args] = process.argv.slice(2);
 
-try {
+async function main() {
   if (!command || command === "help" || command === "--help" || command === "-h") usage();
-  else if (command === "quickstart") quickstart(args);
-  else if (command === "install") install(args);
+  else if (command === "quickstart") await quickstart(args);
+  else if (command === "install") await install(args);
+  else if (command === "embedding") await setupEmbedding(args.length ? args : ["--status"]);
   else if (command === "status") runStatus(args);
   else if (command === "agents") agents(args);
   else if (command === "dispatch") dispatch(args);
@@ -343,6 +467,10 @@ try {
     usage();
     process.exit(1);
   }
+}
+
+try {
+  await main();
 } catch (error) {
   console.error(error.message);
   process.exit(1);

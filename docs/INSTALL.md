@@ -14,13 +14,26 @@ After npm publication:
 npx -y agentic-coding-os-brain@latest quickstart
 ```
 
-Quickstart installs the runtime, enables global gated agentic preflight, and prints a verification summary.
+Quickstart installs the runtime, enables global gated agentic preflight, checks Ollama, and prepares the local embedding model used for memory recall and token reduction.
+
+Default local embedding model:
+
+```text
+qwen3-embedding:0.6b
+```
+
+Skip embedding setup:
+
+```bash
+npx -y github:liuanye9-lab/codex-os-brain quickstart --skip-embedding
+```
 
 ## macOS / Linux
 
 ```bash
 npx -y agentic-coding-os-brain@latest install --global-agentic
 acob status
+acob embedding --status
 acob dashboard
 ```
 
@@ -29,6 +42,7 @@ acob dashboard
 ```powershell
 npx -y agentic-coding-os-brain@latest install --global-agentic
 acob status
+acob embedding --status
 acob dashboard
 ```
 
@@ -43,6 +57,15 @@ npx -y github:liuanye9-lab/codex-os-brain quickstart
 ```bash
 acob status
 ```
+
+## Verify Local Embedding
+
+```bash
+acob embedding --status
+acob embedding --setup
+```
+
+If Ollama is missing, install Ollama and rerun `acob embedding --setup`. ACOB keeps the harness usable even when local embedding is not available yet.
 
 ## Verify Agentic Dispatch
 
