@@ -1,0 +1,20 @@
+{
+  "suite": "acob-public-smoke",
+  "cases": [
+    {
+      "id": "install-global-agentic",
+      "command": "node test/smoke.mjs",
+      "expected": "global hooks install and uninstall without leaking raw prompts"
+    },
+    {
+      "id": "privacy-scan",
+      "command": "npm run privacy:scan",
+      "expected": "no private memory, home path, token, or secret pattern"
+    },
+    {
+      "id": "tool-eval",
+      "command": "npm run tool:eval",
+      "expected": "tool success is not treated as task success unless parsed and verified"
+    }
+  ]
+}

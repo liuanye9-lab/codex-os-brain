@@ -1,0 +1,9 @@
+{
+  "entry_gate": "active",
+  "dispatch_gate": "open",
+  "privacy_risk": "low",
+  "verification_status": "pending",
+  "dashboard_visibility": "observable_state_only",
+  "private_memory_packaged": false,
+  "raw_prompt_stored": false
+}

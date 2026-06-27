@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ACOB Public Agent Dispatch Plan",
+  "type": "object",
+  "required": ["id", "task_hash", "gate", "privacy_risk", "selected_agents", "verification"],
+  "properties": {
+    "id": { "type": "string" },
+    "task_hash": { "type": "string" },
+    "gate": { "enum": ["open", "closed", "approval_required"] },
+    "privacy_risk": { "enum": ["low", "medium", "high"] },
+    "selected_agents": { "type": "array", "items": { "type": "string" } },
+    "verification": { "type": "array", "items": { "type": "string" } },
+    "notes": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

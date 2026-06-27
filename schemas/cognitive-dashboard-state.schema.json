@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ACOB Public Cognitive Dashboard State",
+  "type": "object",
+  "required": ["entry_gate", "dispatch_gate", "privacy_risk", "verification_status", "dashboard_visibility"],
+  "properties": {
+    "entry_gate": { "type": "string" },
+    "dispatch_gate": { "type": "string" },
+    "privacy_risk": { "type": "string" },
+    "verification_status": { "type": "string" },
+    "dashboard_visibility": { "type": "string" },
+    "private_memory_packaged": { "type": "boolean" },
+    "raw_prompt_stored": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

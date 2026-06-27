@@ -1,0 +1,20 @@
+{
+  "id": "dispatch-plan-example",
+  "task_hash": "example-task-hash",
+  "gate": "open",
+  "privacy_risk": "low",
+  "selected_agents": [
+    "context-scout",
+    "architecture-planner",
+    "test-verifier",
+    "security-reviewer"
+  ],
+  "verification": [
+    "npm run check",
+    "npm run privacy:scan"
+  ],
+  "notes": [
+    "Raw task text is not stored in public dispatch logs.",
+    "Parent agent remains responsible for final merge and verification."
+  ]
+}

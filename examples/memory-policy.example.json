@@ -1,0 +1,12 @@
+{
+  "policy": "candidate_only",
+  "stores_private_memory": false,
+  "raw_prompt_storage": false,
+  "promotion_requires_human_approval": true,
+  "public_package_boundary": [
+    "No private memory files",
+    "No local user profile",
+    "No credentials",
+    "No raw session logs"
+  ]
+}
