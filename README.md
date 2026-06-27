@@ -171,16 +171,16 @@ Boundary: this demo is deterministic and transparent. It is a scaffold for publi
 
 ACOB now includes an auditable retrieval pipeline for token-aware memory use:
 
-```mermaid
-flowchart LR
-  Query["Task Query"] --> Rewrite["Query Rewrite"]
-  Rewrite --> Recall["Vector Recall Slot"]
-  Recall --> Rank["Rerank"]
-  Rank --> Fresh["Freshness Score"]
-  Fresh --> Privacy["Privacy Label"]
-  Privacy --> Conflict["Conflict Detection"]
-  Conflict --> Expiry["Expiry / Forget"]
-  Expiry --> Pack["Context Pack Injection"]
+```text
+Task Query
+  -> Query Rewrite
+  -> Vector Recall Slot
+  -> Rerank
+  -> Freshness Score
+  -> Privacy Label
+  -> Conflict Detection
+  -> Expiry / Forget
+  -> Context Pack Injection
 ```
 
 It implements:
@@ -228,23 +228,27 @@ Open the visual page:
 
 ## System Overview
 
-```mermaid
-flowchart LR
-  User["User Task"] --> Gate["ACOB Entry Gate"]
-  Gate --> WM["Working Memory"]
-  WM --> Pack["Context Pack"]
-  Pack --> Dispatch{"ROI Dispatch Gate"}
-  Dispatch -->|"simple or risky"| Parent["Parent Agent"]
-  Dispatch -->|"complex + verifiable + low risk"| Agents["Specialist Agents"]
-  Parent --> Tools["Tool Calls"]
-  Agents --> Tools
-  Tools --> Verify["Verification Gate"]
-  Verify --> Reward["Reward Signal"]
-  Reward --> Replay["Replay"]
-  Replay --> Memory["Memory Cycle"]
-  Memory --> Evolution["Self-Evolution Candidate"]
-  Evolution --> Approval["Human Approval Gate"]
-  Approval --> Dashboard["Observable Dashboard"]
+```text
+User Task
+  -> ACOB Entry Gate
+  -> Working Memory
+  -> Context Pack
+  -> ROI Dispatch Gate
+       | simple or risky
+       v
+       Parent Agent
+
+       | complex + verifiable + low risk
+       v
+       Specialist Agents
+  -> Tool Calls
+  -> Verification Gate
+  -> Reward Signal
+  -> Replay
+  -> Memory Cycle
+  -> Self-Evolution Candidate
+  -> Human Approval Gate
+  -> Observable Dashboard
 ```
 
 ## Core Product Layers
@@ -264,18 +268,18 @@ flowchart LR
 
 ACOB treats memory as a governed lifecycle, not a vector database.
 
-```mermaid
-flowchart TD
-  Input["Task Trace / Feedback / Eval"] --> Candidate["Memory Candidate"]
-  Candidate --> Policy["Privacy + Risk Policy"]
-  Policy --> Lifecycle["Lifecycle: hot / warm / cold / archived"]
-  Lifecycle --> Retrieve["Retrieval Plan"]
-  Retrieve --> Rank["Metadata + Keyword + Vector Signals"]
-  Rank --> Readback["Source Readback"]
-  Readback --> Context["Context Pack"]
-  Context --> Action["Agent Action"]
-  Action --> Eval["Verification"]
-  Eval --> Cycle["Memory Cycle Report"]
+```text
+Task Trace / Feedback / Eval
+  -> Memory Candidate
+  -> Privacy + Risk Policy
+  -> Lifecycle: hot / warm / cold / archived
+  -> Retrieval Plan
+  -> Metadata + Keyword + Vector Signals
+  -> Source Readback
+  -> Context Pack
+  -> Agent Action
+  -> Verification
+  -> Memory Cycle Report
 ```
 
 ### Memory Principles
@@ -305,22 +309,14 @@ ACOB supports self-evolution as a controlled feedback loop.
 
 It does not let an agent rewrite its own core rules just because a model reflection sounded plausible.
 
-```mermaid
-sequenceDiagram
-  participant T as Task
-  participant V as Verification
-  participant R as Reward Signal
-  participant P as Replay
-  participant C as Evolution Candidate
-  participant H as Human Approval
-  participant A as Apply Record
-
-  T->>V: run checks / evals / privacy gates
-  V->>R: external evidence
-  R->>P: reinforce or suppress pattern
-  P->>C: propose improvement candidate
-  C->>H: require approval for adoption
-  H->>A: approved apply record or rejection
+```text
+Task
+  -> Verification: run checks / evals / privacy gates
+  -> Reward Signal: external evidence
+  -> Replay: reinforce or suppress pattern
+  -> Evolution Candidate: propose improvement candidate
+  -> Human Approval: require approval for adoption
+  -> Apply Record: approved apply record or rejection
 ```
 
 ### Self-Evolution Contract
@@ -345,22 +341,23 @@ Dispatch opens only when the task has:
 - separable responsibilities
 - enough token budget
 
-```mermaid
-flowchart TD
-  Task["Task"] --> Gate{"Dispatch Gate"}
-  Gate -->|"closed"| Parent["Parent Agent"]
-  Gate -->|"open"| Plan["Dispatch Plan"]
-  Plan --> Scout["上下文侦察员"]
-  Plan --> Architect["架构规划师"]
-  Plan --> Builder["代码执行员"]
-  Plan --> Verifier["测试验证员"]
-  Plan --> Security["安全审查员"]
-  Scout --> Merge["Parent Merge"]
-  Architect --> Merge
-  Builder --> Merge
-  Verifier --> Merge
-  Security --> Merge
-  Merge --> Final["Final Verification"]
+```text
+Task
+  -> Dispatch Gate
+       | closed
+       v
+       Parent Agent
+
+       | open
+       v
+       Dispatch Plan
+         -> 上下文侦察员
+         -> 架构规划师
+         -> 代码执行员
+         -> 测试验证员
+         -> 安全审查员
+         -> Parent Merge
+         -> Final Verification
 ```
 
 | Agent | Stable ID | Role |

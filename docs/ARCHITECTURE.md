@@ -4,22 +4,22 @@ Agentic Coding OS Brain (ACOB) is a local Codex hook runtime. It is intentionall
 
 ## Runtime Flow
 
-```mermaid
-flowchart TD
-  A["User prompt in Codex"] --> B["UserPromptSubmit hook"]
-  B --> C["inject-context.cjs"]
-  C --> D["Agentic preflight\nclassify task and gate dispatch"]
-  D --> E{"Dispatch gate"}
-  E -->|"open"| F["Chinese sub-agent plan"]
-  E -->|"closed"| G["Parent agent works directly"]
-  F --> H["Codex executes task"]
-  G --> H
-  H --> I["PostToolUse hook"]
-  I --> J["engineering-harness.cjs"]
-  H --> K["Stop hook"]
-  K --> L["capture-session.cjs"]
-  J --> M["Local dashboard"]
-  L --> M
+```text
+User prompt in Codex
+  -> UserPromptSubmit hook
+  -> inject-context.cjs
+  -> Agentic preflight: classify task and gate dispatch
+  -> Dispatch gate
+       | open
+       v
+       Chinese sub-agent plan
+
+       | closed
+       v
+       Parent agent works directly
+  -> Codex executes task
+  -> PostToolUse hook -> engineering-harness.cjs -> Local dashboard
+  -> Stop hook        -> capture-session.cjs      -> Local dashboard
 ```
 
 ## Agentic Coding Layer
@@ -28,20 +28,22 @@ The agentic layer is declarative and globally injected. `runtime/agents/library.
 
 `runtime/scripts/agentic-dispatch.cjs` does not execute arbitrary work. It produces an auditable dispatch plan, and `inject-context.cjs` runs this preflight for every prompt:
 
-```mermaid
-flowchart TD
-  A["Task"] --> B["Classify risk and shape"]
-  B --> C{"Dispatch gate"}
-  C -->|"closed"| D["Parent agent works directly"]
-  C -->|"open"| E["Select specialist agents"]
-  E --> F["上下文侦察员"]
-  E --> G["代码执行员"]
-  E --> H["测试验证员"]
-  E --> I["安全审查员"]
-  F --> J["Parent merge gate"]
-  G --> J
-  H --> J
-  I --> J
+```text
+Task
+  -> Classify risk and shape
+  -> Dispatch gate
+       | closed
+       v
+       Parent agent works directly
+
+       | open
+       v
+       Select specialist agents
+         -> 上下文侦察员
+         -> 代码执行员
+         -> 测试验证员
+         -> 安全审查员
+         -> Parent merge gate
 ```
 
 Dispatch rules:
