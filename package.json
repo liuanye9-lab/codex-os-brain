@@ -65,6 +65,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/liuanye9-lab/codex-os-brain.git"
+    "url": "git+https://github.com/liuanye9-lab/codex-os-brain.git"
   }
 }
