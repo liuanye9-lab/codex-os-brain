@@ -43,7 +43,7 @@ function runAny(args, options = {}) {
 }
 
 try {
-  run(["install", "--global-agentic"]);
+  run(["install", "--global-agentic", "--skip-embedding"]);
   const status = run(["status", "--summary"]);
   if (!status.stdout.includes("status: global_active")) {
     throw new Error(`status did not become global_active:\n${status.stdout}`);

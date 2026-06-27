@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ACOB vs Mainstream Agent Memory Systems</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7fb;
+      --ink: #111827;
+      --muted: #5b6472;
+      --panel: #ffffff;
+      --line: #d9dee8;
+      --blue: #2563eb;
+      --green: #16875d;
+      --violet: #6d28d9;
+      --amber: #b7791f;
+      --red: #be3a34;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+    header { display: grid; gap: 10px; margin-bottom: 24px; }
+    h1 { font-size: clamp(32px, 6vw, 58px); line-height: 1.02; margin: 0; max-width: 900px; }
+    h2 { font-size: 20px; margin: 0 0 12px; }
+    p { margin: 0; color: var(--muted); line-height: 1.55; }
+    .tagline { font-size: 18px; max-width: 780px; }
+    .grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 220px;
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }
+    .card strong { font-size: 18px; }
+    .pill { display: inline-flex; width: fit-content; padding: 5px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #edf2ff; color: var(--blue); }
+    .pill.green { background: #e9f8f1; color: var(--green); }
+    .pill.violet { background: #f0eafe; color: var(--violet); }
+    .pill.amber { background: #fff6df; color: var(--amber); }
+    .pill.red { background: #fff0ef; color: var(--red); }
+    .matrix { margin-top: 24px; overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; min-width: 840px; }
+    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); padding: 12px; font-size: 14px; }
+    th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+    tr:last-child td { border-bottom: 0; }
+    .flow { margin-top: 24px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+    .step { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-height: 110px; }
+    .step b { display: block; margin-bottom: 6px; }
+    .note { margin-top: 22px; padding: 14px; background: #fff8e6; border: 1px solid #f3d38b; border-radius: 8px; color: #68470d; }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 560px) {
+      main { width: min(100% - 20px, 1120px); padding-top: 22px; }
+      .flow { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="pill violet">Agentic Coding OS Brain</span>
+    <h1>ACOB is not another vector memory store. It is a Codex-facing agentic coding harness.</h1>
+    <p class="tagline">Mainstream systems are strong at memory extraction, graph memory, context repositories, or state-machine orchestration. ACOB connects memory to coding execution: working memory, dispatch, verification, reward, replay, lifecycle, and dashboard evidence.</p>
+  </header>
+
+  <section class="grid" aria-label="system comparison">
+    <article class="card">
+      <span class="pill">Mem0</span>
+      <strong>Memory extraction / retrieval</strong>
+      <p>Strong fit for selective long-term memory, personalization, and reducing repeated context injection.</p>
+    </article>
+    <article class="card">
+      <span class="pill green">Zep / Graphiti</span>
+      <strong>Temporal graph memory</strong>
+      <p>Strong fit for entity relationships, time-aware facts, provenance, and graph traversal.</p>
+    </article>
+    <article class="card">
+      <span class="pill amber">Letta</span>
+      <strong>Context repo / memory OS</strong>
+      <p>Strong fit for agent-managed context files, durable memory operations, and repository-like memory workflows.</p>
+    </article>
+    <article class="card">
+      <span class="pill red">LangGraph</span>
+      <strong>State machine orchestration</strong>
+      <p>Strong fit for graph workflows, state transitions, human-in-the-loop, and production agent control flow.</p>
+    </article>
+    <article class="card">
+      <span class="pill violet">ACOB</span>
+      <strong>Codex-facing agentic coding harness</strong>
+      <p>Strong fit for coding tasks where memory must feed task cards, context packs, tool calls, verification, reward, replay, and public-safe release gates.</p>
+    </article>
+  </section>
+
+  <section class="matrix">
+    <table>
+      <thead>
+        <tr>
+          <th>Capability</th>
+          <th>Mem0</th>
+          <th>Zep / Graphiti</th>
+          <th>Letta</th>
+          <th>LangGraph</th>
+          <th>ACOB</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Primary job</td>
+          <td>Personal memory layer</td>
+          <td>Temporal knowledge graph</td>
+          <td>Context repository</td>
+          <td>Agent workflow graph</td>
+          <td>Agentic coding OS harness</td>
+        </tr>
+        <tr>
+          <td>Memory governance</td>
+          <td>Selective memory</td>
+          <td>Fact provenance and time</td>
+          <td>Files and context ops</td>
+          <td>Namespaces and state</td>
+          <td>Candidate-only, privacy label, freshness, conflict, expiry, context injection</td>
+        </tr>
+        <tr>
+          <td>Coding workflow</td>
+          <td>General agent support</td>
+          <td>General agent support</td>
+          <td>General agent runtime</td>
+          <td>Workflow orchestration</td>
+          <td>Task card, working memory, dispatch gate, tool ledger, eval, reward, replay</td>
+        </tr>
+        <tr>
+          <td>Verification</td>
+          <td>Depends on host app</td>
+          <td>Depends on host app</td>
+          <td>Depends on host app</td>
+          <td>Workflow-defined</td>
+          <td>Built into completion contract and public smoke checks</td>
+        </tr>
+        <tr>
+          <td>Privacy stance</td>
+          <td>Deployment-dependent</td>
+          <td>Deployment-dependent</td>
+          <td>Deployment-dependent</td>
+          <td>Deployment-dependent</td>
+          <td>Local-first public package, no private memory, no raw prompt storage in public artifacts</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="flow" aria-label="ACOB flow">
+    <div class="step"><b>1. Working Memory</b><p>Scope the current goal, constraints, focus files, and risks.</p></div>
+    <div class="step"><b>2. Retrieval Pipeline</b><p>Rewrite query, recall candidates, rerank by evidence and freshness.</p></div>
+    <div class="step"><b>3. Context Pack</b><p>Inject only bounded public-safe evidence into the agent turn.</p></div>
+    <div class="step"><b>4. Dispatch Gate</b><p>Use sub-agents only when ROI, verifiability, and privacy allow it.</p></div>
+    <div class="step"><b>5. Verification</b><p>Do not claim completion without checks, evals, or observable evidence.</p></div>
+    <div class="step"><b>6. Replay</b><p>Turn trace, eval, and reward into candidates, not automatic self-modification.</p></div>
+  </section>
+
+  <p class="note">Honest boundary: ACOB does not claim to outperform mature memory databases today. Its advantage is the integrated coding harness around memory: context, agents, tools, verification, replay, and public-safe governance in one local install.</p>
+</main>
+</body>
+</html>

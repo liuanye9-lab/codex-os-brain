@@ -73,6 +73,8 @@ Verify the system:
 acob status
 acob agents
 acob embedding --status
+acob benchmark --example
+acob memory-retrieval --example
 acob dispatch --task "refactor dashboard, update docs, run checks" --json
 acob check
 ```
@@ -111,6 +113,118 @@ Most coding agents fail in predictable ways:
 ACOB is built around a simple thesis:
 
 > Agentic coding becomes valuable when memory, tools, agents, evaluation, and feedback are governed as one system.
+
+## Public Value Check
+
+ACOB is useful when the problem is not "make one model remember more text", but "make a coding agent operate with memory, verification, tools, and safe feedback loops".
+
+Current strengths:
+
+- one-command local install for Codex
+- global preflight hook for every Codex prompt
+- local embedding setup for low-cost memory recall
+- bounded working context instead of unlimited context stuffing
+- public-safe memory lifecycle rules
+- ROI-gated sub-agent dispatch
+- verification-before-completion checks
+- dashboard that shows observable state only
+
+Current honest gaps:
+
+- public benchmark is a deterministic demo, not a live model leaderboard
+- memory retrieval v1 is a local auditable pipeline, not a mature graph memory database
+- dashboard is an observation surface, not a full remote control plane
+- self-evolution remains candidate-gated and does not rewrite core rules automatically
+
+That is intentional for a public release: the project favors local usability, privacy, and verifiability before claiming broad agent intelligence.
+
+## Benchmark Demo
+
+ACOB includes a public benchmark scaffold with 20 coding task scenarios.
+
+It compares:
+
+| Mode | Purpose |
+|---|---|
+| No ACOB | baseline coding agent without harness governance |
+| Long Context Only | more context but no memory lifecycle or verification loop |
+| ACOB Working Memory + Replay + Reward | task-scoped attention plus feedback loop |
+| ACOB + Memory Lifecycle | retrieval, freshness, privacy, conflict, expiry, context pack |
+
+Metrics:
+
+- success rate
+- rework rate
+- token estimate
+- verification pass rate
+
+Run:
+
+```bash
+npm run benchmark:demo -- --example
+acob benchmark --example
+```
+
+Boundary: this demo is deterministic and transparent. It is a scaffold for public feasibility and future live traces, not a claim that ACOB already beats all other systems on a real benchmark.
+
+## Memory Retrieval Pipeline
+
+ACOB now includes an auditable retrieval pipeline for token-aware memory use:
+
+```mermaid
+flowchart LR
+  Query["Task Query"] --> Rewrite["Query Rewrite"]
+  Rewrite --> Recall["Vector Recall Slot"]
+  Recall --> Rank["Rerank"]
+  Rank --> Fresh["Freshness Score"]
+  Fresh --> Privacy["Privacy Label"]
+  Privacy --> Conflict["Conflict Detection"]
+  Conflict --> Expiry["Expiry / Forget"]
+  Expiry --> Pack["Context Pack Injection"]
+```
+
+It implements:
+
+- memory write policy
+- retrieval query rewrite
+- vector recall slot through local Ollama embedding
+- rerank
+- freshness score
+- privacy label
+- conflict detection
+- expiry / forget
+- context pack injection
+
+Run:
+
+```bash
+npm run memory:retrieve -- --example
+acob memory-retrieval --example
+```
+
+Default embedding path:
+
+```text
+Ollama + qwen3-embedding:0.6b
+```
+
+## ACOB vs Mainstream Memory Systems
+
+ACOB does not try to replace Mem0, Zep, Letta, or LangGraph.
+
+It positions itself differently:
+
+| System | Primary Strength |
+|---|---|
+| Mem0 | memory extraction / retrieval |
+| Zep / Graphiti | temporal graph memory |
+| Letta | context repo / memory OS |
+| LangGraph | state machine / orchestration |
+| ACOB | Codex-facing agentic coding harness |
+
+Open the visual page:
+
+[ACOB vs Mainstream](docs/ACOB_VS_MAINSTREAM.html)
 
 ## System Overview
 
@@ -360,6 +474,8 @@ acob agent-execution --example
 acob agent-lock --example
 acob budget --example
 acob tool-eval
+acob benchmark --example
+acob memory-retrieval --example
 acob control --list
 acob evolution-apply --example
 acob dashboard
@@ -406,6 +522,9 @@ See:
 - [Architecture](docs/ARCHITECTURE.md)
 - [Agentic Coding](docs/AGENTIC_CODING.md)
 - [Quickstart](docs/QUICKSTART.md)
+- [Public Benchmark Demo](docs/BENCHMARK_DEMO.md)
+- [Memory Retrieval Pipeline](docs/MEMORY_RETRIEVAL_PIPELINE.md)
+- [ACOB vs Mainstream](docs/ACOB_VS_MAINSTREAM.html)
 - [Security](docs/SECURITY.md)
 - [Install](docs/INSTALL.md)
 - [Public Release Checklist](docs/PUBLIC_RELEASE_CHECKLIST.md)

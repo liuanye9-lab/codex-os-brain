@@ -28,6 +28,8 @@ Usage:
   acob quickstart [--skip-embedding]
   acob install [--global-agentic] [--skip-embedding]
   acob embedding [--setup] [--status]
+  acob benchmark --example
+  acob memory-retrieval --example
   acob status [--json]
   acob agents [--json]
   acob dispatch --task "..." [--json] [--write]
@@ -387,6 +389,14 @@ function evolutionApply(args = []) {
   runRuntimeOrPackageScript("scripts/evolution-apply.cjs", args);
 }
 
+function benchmark(args = []) {
+  runRuntimeOrPackageScript("scripts/benchmark-demo.cjs", args);
+}
+
+function memoryRetrieval(args = []) {
+  runRuntimeOrPackageScript("scripts/memory-retrieval-pipeline.cjs", args);
+}
+
 function dashboard(args) {
   const portIndex = args.indexOf("--port");
   const port = portIndex >= 0 ? args[portIndex + 1] : "8791";
@@ -459,6 +469,8 @@ async function main() {
   else if (command === "tool-eval") toolEval(args);
   else if (command === "control") control(args);
   else if (command === "evolution-apply") evolutionApply(args);
+  else if (command === "benchmark") benchmark(args);
+  else if (command === "memory-retrieval") memoryRetrieval(args);
   else if (command === "dashboard") dashboard(args);
   else if (command === "check") check();
   else if (command === "uninstall") uninstall(args);
