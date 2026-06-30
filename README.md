@@ -25,6 +25,96 @@ In plain language:
 
 > Codex is the engine. ACOB is the operating system around it: memory, routing, safety rails, feedback loops, and a dashboard.
 
+## Visual Overview
+
+ACOB is designed as a small public harness, not a private data dump. The public package explains the operating pattern, ships reusable runtime pieces, and keeps personal memory outside the repository.
+
+```mermaid
+flowchart LR
+  Codex["Codex<br/>coding engine"] --> ACOB["ACOB<br/>local operating layer"]
+  ACOB --> Focus["bounded context"]
+  ACOB --> Memory["governed memory"]
+  ACOB --> Agents["ROI-gated agents"]
+  ACOB --> Verify["verification gate"]
+  ACOB --> Privacy["privacy scan"]
+  ACOB --> Dashboard["observable dashboard"]
+
+  Focus --> Outcome["safer coding loop"]
+  Memory --> Outcome
+  Agents --> Outcome
+  Verify --> Outcome
+  Privacy --> Outcome
+  Dashboard --> Outcome
+```
+
+### Leaf Agent Mascot Layer
+
+The Leaf Agent is the public mascot layer used to make the system easier to understand in demos, docs, and visual explanations.
+
+| IP signal | Public meaning |
+|---|---|
+| Black long hair | calm, steady, readable agent presence |
+| Leaf motif | memory, growth, pruning, and renewal |
+| Gentle operator temperament | helpful by default, but grounded in verification |
+| Not a data source | mascot identity never grants access to private memory |
+
+The mascot is a communication layer. The actual product value comes from the local runtime, privacy boundaries, verification checks, and public-safe memory workflow.
+
+### Architecture Infographic
+
+```mermaid
+flowchart TB
+  subgraph "User-Facing Loop"
+    Prompt["User task"] --> Entry["Entry gate"]
+    Entry --> Context["Working context"]
+    Context --> Parent["Parent agent"]
+    Parent --> Tools["Tool calls"]
+    Tools --> Checks["Verification"]
+  end
+
+  subgraph "Governance Layer"
+    MemoryPolicy["Memory policy"]
+    Dispatch["Dispatch gate"]
+    ToolEval["Tool eval"]
+    Evolution["Evolution candidate"]
+    PrivacyGate["Privacy gate"]
+  end
+
+  subgraph "Local Runtime"
+    Hooks["Codex hooks"]
+    Runtime["Runtime scripts"]
+    DashboardLocal["Local dashboard"]
+    Config["~/.acob config"]
+  end
+
+  Context --> MemoryPolicy
+  Parent --> Dispatch
+  Tools --> ToolEval
+  Checks --> Evolution
+  Entry --> PrivacyGate
+
+  Hooks --> Entry
+  Runtime --> Context
+  Runtime --> Checks
+  DashboardLocal --> Checks
+  Config --> Runtime
+
+  PrivacyGate --> PublicSafe["public-safe package"]
+  Evolution --> Approval["human approval before adoption"]
+```
+
+### Product Map
+
+| Layer | Kano role | What users get |
+|---|---|---|
+| Privacy scan + local storage | Basic | confidence that private files and secrets do not ship |
+| Verification-before-completion | Basic | fewer unsupported "done" claims |
+| Working context + memory retrieval | Performance | less drift and lower context waste |
+| ROI-gated specialist agents | Performance | useful delegation without agent sprawl |
+| Dashboard | Excitement | visible state for debugging and trust |
+| Leaf Agent visual layer | Excitement | a friendly explanation surface for a technical system |
+| Raw logs, private memories, generated caches | Reverse | intentionally excluded from public release |
+
 ## 60-Second Quickstart
 
 ACOB is designed to be tried with one command and no hosted backend.
