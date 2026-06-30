@@ -47,8 +47,17 @@ const ROOT = resolveRoot();
 const DATA_DIR = path.join(ROOT, "data");
 const REPORT_DIR = path.join(ROOT, "reports");
 
+function localDateString(date = new Date()) {
+  const value = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(value.getTime())) return "";
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function parseArgs(argv) {
-  const args = { json: false, write: false, date: new Date().toISOString().slice(0, 10) };
+  const args = { json: false, write: false, date: localDateString() };
   for (let i = 0; i < argv.length; i += 1) {
     const item = argv[i];
     if (item === "--date") args.date = argv[++i] || args.date;
@@ -77,7 +86,7 @@ function readJsonl(name) {
 
 function eventDate(item) {
   const raw = item.ts || item.generated_at || item.created_at || item.approved_at || item.reviewed_at || "";
-  return String(raw).slice(0, 10);
+  return localDateString(raw) || String(raw).slice(0, 10);
 }
 
 function sameDay(items, date) {
@@ -145,6 +154,7 @@ function buildReport(date) {
   return {
     id: "acob-daily-effect-metrics",
     date,
+    date_basis: "local_calendar_date",
     generated_at: new Date().toISOString(),
     data_quality: observedEvents ? "observed_local_runtime_events" : "no_observed_events_yet",
     runtime: {

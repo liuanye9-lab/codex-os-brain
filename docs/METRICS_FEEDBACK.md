@@ -27,6 +27,8 @@ Reports are written under:
 ~/.acob/reports/YYYY-MM-DD.md
 ```
 
+The date is the machine's local calendar date. This keeps late-night and early-morning work in the same day the user sees locally instead of splitting it by UTC.
+
 If neither `ACOB_HOME` nor `CODEX_OS_BRAIN_HOME` is set, metrics automatically chooses the local runtime with the most observed sanitized events from:
 
 ```text
