@@ -37,6 +37,20 @@ function readJsonl(file) {
   }
 }
 
+function sanitizeMetricString(value) {
+  const text = String(value || "");
+  if (!text) return "";
+  return text
+    .replace(/[A-Z]:\\Users\\[^\\\s"]+(?:\\[^"\n\r]*)?/gi, "[home]")
+    .replace(/\/Users\/[^/\s"]+(?:\/[^"\n\r]*)?/g, "[home]")
+    .replace(/\/home\/[^/\s"]+(?:\/[^"\n\r]*)?/g, "[home]")
+    .replace(/\/private\/[^"\n\r]*/g, "[private-path]")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]")
+    .replace(/\b(api[_-]?key|token|password|secret|credential)\s*[:=]\s*[^,\s]+/gi, "$1=[redacted]")
+    .replace(/\b(prompt|raw_prompt|task_text|memory)\s*[:=]\s*.+$/gi, "$1=[redacted]")
+    .slice(0, 180);
+}
+
 function archiveCount() {
   return readJsonl(ARCHIVE_FILE).length;
 }
@@ -49,8 +63,8 @@ function activeStatus() {
     active: Boolean(active),
     active_flag: active ? {
       raised_at: active.raised_at || null,
-      reason: active.reason || "unknown",
-      required_action: active.required_action || "verify before completion",
+      reason: sanitizeMetricString(active.reason || "unknown"),
+      required_action: sanitizeMetricString(active.required_action || "verify before completion"),
     } : null,
     archive_count: archiveCount(),
   };
@@ -66,12 +80,12 @@ function clearFlag(args) {
     archived_at: new Date().toISOString(),
     previous_flag: {
       raised_at: active.raised_at || null,
-      reason: active.reason || "unknown",
-      required_action: active.required_action || "verify before completion",
+      reason: sanitizeMetricString(active.reason || "unknown"),
+      required_action: sanitizeMetricString(active.required_action || "verify before completion"),
     },
     cleared_by: args.by,
-    clear_reason: args.reason,
-    verification: args.verification.filter(Boolean),
+    clear_reason: sanitizeMetricString(args.reason),
+    verification: args.verification.filter(Boolean).map(sanitizeMetricString),
     policy: "archive_metadata_only_no_raw_prompt_or_tool_input",
   };
   fs.mkdirSync(DATA_DIR, { recursive: true });

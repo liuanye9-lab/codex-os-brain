@@ -32,6 +32,7 @@ Usage:
   acob demo [--task "..."] [--json] [--write]
   acob memory-loop [--report] [--candidate "..."] [--public] [--write] [--json]
   acob metrics [--date YYYY-MM-DD] [--json] [--write]
+  acob effect [--date YYYY-MM-DD] [--json] [--write]
   acob red-flag status [--json]
   acob red-flag clear --reason "verified" [--verification "..."] [--json]
   acob embedding [--setup] [--status]
@@ -417,7 +418,9 @@ function runRuntimeOrPackageScript(scriptName, args = [], options = {}) {
   const root = selected.root;
   const installed = path.join(root, "runtime", scriptName);
   const packaged = path.join(sourceRuntime, scriptName);
-  const script = fs.existsSync(installed) ? installed : packaged;
+  const script = options.preferPackage && fs.existsSync(packaged)
+    ? packaged
+    : fs.existsSync(installed) ? installed : packaged;
   if (!fs.existsSync(script)) {
     console.error(`missing ${scriptName}; run acob install`);
     process.exitCode = 1;
@@ -489,6 +492,16 @@ function metrics(args = []) {
   runRuntimeOrPackageScript("scripts/daily-metrics-report.cjs", args, {
     root: metricsRoot.root,
     metricsSelection: metricsRoot.selection,
+    preferPackage: true,
+  });
+}
+
+function effect(args = []) {
+  const metricsRoot = resolveMetricsRoot();
+  runRuntimeOrPackageScript("scripts/daily-metrics-report.cjs", ["--effect", ...args], {
+    root: metricsRoot.root,
+    metricsSelection: metricsRoot.selection,
+    preferPackage: true,
   });
 }
 
@@ -574,6 +587,7 @@ async function main() {
   else if (command === "demo" || command === "value") valueDemo(args);
   else if (command === "memory-loop" || command === "memory") memoryLoop(args);
   else if (command === "metrics" || command === "daily-report") metrics(args);
+  else if (command === "effect" || command === "scorecard") effect(args);
   else if (command === "red-flag" || command === "redflag") redFlag(args);
   else if (command === "status") runStatus(args);
   else if (command === "agents") agents(args);

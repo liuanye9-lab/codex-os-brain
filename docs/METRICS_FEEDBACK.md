@@ -8,16 +8,24 @@ Run the daily report:
 acob metrics
 ```
 
+Run the one-screen effect scorecard:
+
+```bash
+acob effect
+```
+
 JSON mode:
 
 ```bash
 acob metrics --json
+acob effect --json
 ```
 
 Write local report files:
 
 ```bash
 acob metrics --write
+acob effect --write
 ```
 
 Reports are written under:
@@ -25,6 +33,8 @@ Reports are written under:
 ```text
 ~/.acob/reports/YYYY-MM-DD.json
 ~/.acob/reports/YYYY-MM-DD.md
+~/.acob/reports/YYYY-MM-DD.effect.json
+~/.acob/reports/YYYY-MM-DD.effect.md
 ```
 
 The date is the machine's local calendar date. This keeps late-night and early-morning work in the same day the user sees locally instead of splitting it by UTC.
@@ -40,13 +50,25 @@ This keeps current ACOB installs and older `codex-os-brain` installs readable wi
 
 ## What The Report Measures
 
+`acob metrics` is the evidence ledger. `acob effect` is the user-facing scorecard built from the same sanitized data.
+
 | Area | Signal |
 |---|---|
 | System slimming | prompt count, prompt chars, injected context chars, context budget overruns |
 | Memory loop | candidates, approved records, rejected records, pending review, auto-promote status |
+| Self-evolution | candidates, applied-with-verification records, rejected records, rollback availability, auto-apply status |
 | Agent dispatch | gate-open rate, high-privacy events, average selected agents |
 | Verification pressure | post-tool audits, risk severity counts, active and archived red flags |
 | Intent mix | observed prompt intent distribution |
+
+`acob effect` also maps the same signals into a Kano-style snapshot:
+
+| Kano Type | ACOB Meaning |
+|---|---|
+| Basic needs | privacy boundary, human-approved memory, red-flag lifecycle |
+| Performance needs | context budget, gated dispatch, verification pressure |
+| Delight needs | one-command status, visible memory learning loop |
+| Reverse needs avoided | no forced fanout, no personal-memory publishing, no vanity confidence score |
 
 ## Red Flag Lifecycle
 
@@ -101,6 +123,8 @@ Public metrics are local, aggregate, and sanitized:
 - context length and budget status
 - memory candidate status
 - audit risk counts
+- self-evolution counts and gate status
+- sanitized red-flag metadata, not raw reasons or local paths
 
 Private deployments may add personal continuity and richer local evidence, but raw private memory, secrets, chat logs, vector indexes, sqlite/db files, and generated caches still stay out of public Git and npm packages.
 

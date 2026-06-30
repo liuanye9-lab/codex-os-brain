@@ -81,6 +81,7 @@ If Ollama is not installed, quickstart still finishes and records `ollama_missin
 acob demo --task "fix dashboard, update docs, run checks"
 acob memory-loop --example --json
 acob metrics --json
+acob effect
 acob status
 acob agents
 acob embedding --status

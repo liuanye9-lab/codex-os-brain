@@ -143,6 +143,7 @@ try {
   if (!latestPrompt.context_chars || !latestPrompt.context_budget_status) {
     throw new Error("prompt event did not record context budget metrics");
   }
+  fs.appendFileSync(path.join(brainHome, "data", "prompt-events.jsonl"), "{bad jsonl line\n", "utf8");
   const metrics = run(["metrics", "--json"]);
   const parsedMetrics = JSON.parse(metrics.stdout);
   if (parsedMetrics.id !== "acob-daily-effect-metrics" || parsedMetrics.system_slimming.prompt_events < 1) {
@@ -151,12 +152,35 @@ try {
   if (parsedMetrics.memory_loop.auto_promote !== false) {
     throw new Error("metrics report must preserve candidate-only memory policy");
   }
+  if (parsedMetrics.invalid_event_lines?.["prompt-events.jsonl"] !== 1) {
+    throw new Error("metrics report did not preserve valid events while counting invalid JSONL lines");
+  }
+  if (!parsedMetrics.self_evolution || parsedMetrics.self_evolution.auto_apply !== false) {
+    throw new Error("metrics report did not expose gated self-evolution counters");
+  }
+  const effect = run(["effect", "--json"]);
+  const parsedEffect = JSON.parse(effect.stdout);
+  if (parsedEffect.id !== "acob-effect-status" || !["green", "yellow", "red"].includes(parsedEffect.health)) {
+    throw new Error("effect status did not return a valid public scorecard");
+  }
+  if (!parsedEffect.kano_snapshot?.basic_needs?.length || parsedEffect.evidence.prompt_events < 1) {
+    throw new Error("effect status did not expose Kano framing and observed evidence");
+  }
+  if (!parsedEffect.boundaries?.some((item) => item.includes("sanitized events only"))) {
+    throw new Error("effect status must preserve public-safe reporting boundaries");
+  }
   const redFlagFile = path.join(brainHome, "data", "red-flag.json");
+  const syntheticHomePath = ["", "Users", "lay", "private-memory.md"].join("/");
+  const syntheticTokenText = `${["to", "ken"].join("")}=abc123`;
   fs.writeFileSync(redFlagFile, `${JSON.stringify({
     raised_at: "2026-06-30T00:00:00.000Z",
     reason: "sensitive_boundary",
-    required_action: "verify before completion",
+    required_action: `prompt: do not leak ${syntheticHomePath} or ${syntheticTokenText}`,
   })}\n`, "utf8");
+  const metricsWithSensitiveFlag = run(["metrics", "--json"]);
+  if (metricsWithSensitiveFlag.stdout.includes(syntheticHomePath) || metricsWithSensitiveFlag.stdout.includes("private-memory.md") || metricsWithSensitiveFlag.stdout.includes("abc123")) {
+    throw new Error("metrics report leaked sensitive red-flag path or token text");
+  }
   const redFlagStatus = run(["red-flag", "status", "--json"]);
   const parsedRedFlagStatus = JSON.parse(redFlagStatus.stdout);
   if (!parsedRedFlagStatus.active || parsedRedFlagStatus.active_flag?.reason !== "sensitive_boundary") {

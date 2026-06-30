@@ -42,6 +42,7 @@ acob status
 acob embedding --status
 acob demo --task "fix dashboard, update docs, run checks"
 acob metrics --json
+acob effect
 acob dashboard
 ```
 
@@ -53,6 +54,7 @@ acob status
 acob embedding --status
 acob demo --task "fix dashboard, update docs, run checks"
 acob metrics --json
+acob effect
 acob dashboard
 ```
 

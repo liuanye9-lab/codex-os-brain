@@ -169,6 +169,7 @@ Verify the system:
 acob demo --task "fix dashboard, update docs, run checks"
 acob memory-loop --example --json
 acob metrics --json
+acob effect
 acob status
 acob agents
 acob embedding --status
@@ -224,6 +225,7 @@ Current strengths:
 - one-command local install for Codex
 - first-minute `acob demo` that shows the memory, dispatch, verification, and self-evolution gates without private data
 - daily `acob metrics` reports for context weight, memory-loop state, dispatch gates, and verification pressure
+- one-screen `acob effect` scorecard for health, score, Kano snapshot, and next action
 - candidate-only `acob memory-loop` so memory can close the loop without unsafe auto-promotion
 - global preflight hook for every Codex prompt
 - local embedding setup for low-cost memory recall
