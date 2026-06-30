@@ -27,6 +27,15 @@ Reports are written under:
 ~/.acob/reports/YYYY-MM-DD.md
 ```
 
+If neither `ACOB_HOME` nor `CODEX_OS_BRAIN_HOME` is set, metrics automatically chooses the local runtime with the most observed sanitized events from:
+
+```text
+~/.acob
+~/.codex-os-brain
+```
+
+This keeps current ACOB installs and older `codex-os-brain` installs readable without manual flags. Set `ACOB_HOME=/path/to/runtime` when you need a specific runtime.
+
 ## What The Report Measures
 
 | Area | Signal |

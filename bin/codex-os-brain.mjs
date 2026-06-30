@@ -11,6 +11,7 @@ const sourceRuntime = path.join(packageRoot, "runtime");
 const home = os.homedir();
 const codexHome = process.env.CODEX_HOME || path.join(home, ".codex");
 const installRoot = process.env.ACOB_HOME || process.env.CODEX_OS_BRAIN_HOME || path.join(home, ".acob");
+const legacyInstallRoot = path.join(home, ".codex-os-brain");
 const runtimeRoot = path.join(installRoot, "runtime");
 const hooksFile = path.join(codexHome, "hooks.json");
 const agentsFile = path.join(codexHome, "AGENTS.md");
@@ -76,6 +77,37 @@ function readJson(file, fallback) {
 function writeJson(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function countLines(file) {
+  try {
+    return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).length;
+  } catch {
+    return 0;
+  }
+}
+
+function runtimeScore(root) {
+  const data = path.join(root, "data");
+  return [
+    "prompt-events.jsonl",
+    "agentic-dispatch.jsonl",
+    "engineering-audit.jsonl",
+    "memory-candidates.jsonl",
+    "memory-approved.jsonl",
+    "memory-reviews.jsonl",
+  ].reduce((sum, name) => sum + countLines(path.join(data, name)), 0);
+}
+
+function resolveMetricsRoot() {
+  if (process.env.ACOB_HOME || process.env.CODEX_OS_BRAIN_HOME) {
+    return { root: installRoot, selection: "explicit_env" };
+  }
+  const candidates = [installRoot, legacyInstallRoot];
+  const selected = candidates
+    .map((root) => ({ root, score: runtimeScore(root), exists: fs.existsSync(root) }))
+    .sort((a, b) => b.score - a.score || Number(b.exists) - Number(a.exists))[0];
+  return { root: selected.root, selection: "observed_event_count" };
 }
 
 function backupFile(file) {
@@ -346,8 +378,9 @@ function runStatus(args = []) {
   process.exitCode = child.status || 0;
 }
 
-function runRuntimeOrPackageScript(scriptName, args = []) {
-  const installed = path.join(runtimeRoot, scriptName);
+function runRuntimeOrPackageScript(scriptName, args = [], options = {}) {
+  const root = options.root || installRoot;
+  const installed = path.join(root, "runtime", scriptName);
   const packaged = path.join(sourceRuntime, scriptName);
   const script = fs.existsSync(installed) ? installed : packaged;
   if (!fs.existsSync(script)) {
@@ -357,7 +390,12 @@ function runRuntimeOrPackageScript(scriptName, args = []) {
   }
   const child = spawn(process.execPath, [script, ...args], {
     stdio: "inherit",
-    env: { ...process.env, ACOB_HOME: installRoot, CODEX_OS_BRAIN_HOME: installRoot },
+    env: {
+      ...process.env,
+      ACOB_HOME: root,
+      CODEX_OS_BRAIN_HOME: root,
+      ...(options.metricsSelection ? { ACOB_METRICS_ROOT_SELECTION: options.metricsSelection } : {}),
+    },
   });
   child.on("exit", (code) => { process.exitCode = code || 0; });
 }
@@ -411,7 +449,11 @@ function memoryLoop(args = []) {
 }
 
 function metrics(args = []) {
-  runRuntimeOrPackageScript("scripts/daily-metrics-report.cjs", args);
+  const metricsRoot = resolveMetricsRoot();
+  runRuntimeOrPackageScript("scripts/daily-metrics-report.cjs", args, {
+    root: metricsRoot.root,
+    metricsSelection: metricsRoot.selection,
+  });
 }
 
 function dashboard(args) {

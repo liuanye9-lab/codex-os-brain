@@ -4,7 +4,46 @@ const os = require("os");
 const path = require("path");
 
 const HOME = os.homedir();
-const ROOT = process.env.ACOB_HOME || process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".acob");
+const DEFAULT_ROOT = path.join(HOME, ".acob");
+const LEGACY_ROOT = path.join(HOME, ".codex-os-brain");
+
+function safeRuntimeName(root) {
+  if (root === DEFAULT_ROOT) return ".acob";
+  if (root === LEGACY_ROOT) return ".codex-os-brain";
+  return "custom";
+}
+
+function countLines(file) {
+  try {
+    return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).length;
+  } catch {
+    return 0;
+  }
+}
+
+function runtimeScore(root) {
+  const data = path.join(root, "data");
+  return [
+    "prompt-events.jsonl",
+    "agentic-dispatch.jsonl",
+    "engineering-audit.jsonl",
+    "memory-candidates.jsonl",
+    "memory-approved.jsonl",
+    "memory-reviews.jsonl",
+  ].reduce((sum, name) => sum + countLines(path.join(data, name)), 0);
+}
+
+function resolveRoot() {
+  if (process.env.ACOB_HOME) return process.env.ACOB_HOME;
+  if (process.env.CODEX_OS_BRAIN_HOME) return process.env.CODEX_OS_BRAIN_HOME;
+
+  const candidates = [DEFAULT_ROOT, LEGACY_ROOT];
+  return candidates
+    .map((root) => ({ root, score: runtimeScore(root), exists: fs.existsSync(root) }))
+    .sort((a, b) => b.score - a.score || Number(b.exists) - Number(a.exists))[0].root;
+}
+
+const ROOT = resolveRoot();
 const DATA_DIR = path.join(ROOT, "data");
 const REPORT_DIR = path.join(ROOT, "reports");
 
@@ -94,6 +133,11 @@ function buildReport(date) {
     date,
     generated_at: new Date().toISOString(),
     data_quality: observedEvents ? "observed_local_runtime_events" : "no_observed_events_yet",
+    runtime: {
+      selected_home: safeRuntimeName(ROOT),
+      selection_policy: process.env.ACOB_METRICS_ROOT_SELECTION
+        || (process.env.ACOB_HOME || process.env.CODEX_OS_BRAIN_HOME ? "explicit_env" : "observed_event_count"),
+    },
     boundaries: [
       "counts local sanitized events only",
       "does not infer model intelligence from dashboard state",
