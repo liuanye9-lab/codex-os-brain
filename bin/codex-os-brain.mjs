@@ -101,15 +101,39 @@ function runtimeScore(root) {
   ].reduce((sum, name) => sum + countLines(path.join(data, name)), 0);
 }
 
-function resolveMetricsRoot() {
+function hasInstalledRuntime(root) {
+  return fs.existsSync(path.join(root, "runtime", "scripts", "global-hook-status.cjs"));
+}
+
+function runtimeCandidates() {
+  return [installRoot, legacyInstallRoot].map((root) => ({
+    root,
+    score: runtimeScore(root),
+    exists: fs.existsSync(root),
+    installed: hasInstalledRuntime(root),
+  }));
+}
+
+function resolveRuntimeRoot(options = {}) {
   if (process.env.ACOB_HOME || process.env.CODEX_OS_BRAIN_HOME) {
-    return { root: installRoot, selection: "explicit_env" };
+    return { root: installRoot, selection: "explicit_env", installed: hasInstalledRuntime(installRoot) };
   }
-  const candidates = [installRoot, legacyInstallRoot];
-  const selected = candidates
-    .map((root) => ({ root, score: runtimeScore(root), exists: fs.existsSync(root) }))
-    .sort((a, b) => b.score - a.score || Number(b.exists) - Number(a.exists))[0];
-  return { root: selected.root, selection: "observed_event_count" };
+
+  const candidates = runtimeCandidates();
+  const selected = candidates.sort((a, b) => {
+    if (options.preferObserved) return b.score - a.score || Number(b.installed) - Number(a.installed) || Number(b.exists) - Number(a.exists);
+    return Number(b.installed) - Number(a.installed) || b.score - a.score || Number(b.exists) - Number(a.exists);
+  })[0];
+
+  let selection = options.preferObserved ? "observed_event_count" : "installed_runtime";
+  if (!selected.installed && !selected.score) selection = "default_home";
+  else if (selected.root === legacyInstallRoot) selection = `${selection}_legacy`;
+
+  return { root: selected.root, selection, installed: selected.installed };
+}
+
+function resolveMetricsRoot() {
+  return resolveRuntimeRoot({ preferObserved: true });
 }
 
 function backupFile(file) {
@@ -360,28 +384,37 @@ async function quickstart(args = []) {
 }
 
 function runScript(script, args = [], inherit = false) {
-  const result = spawn(process.execPath, [path.join(runtimeRoot, script), ...args], {
+  const selected = resolveRuntimeRoot();
+  const result = spawn(process.execPath, [path.join(selected.root, "runtime", script), ...args], {
     stdio: inherit ? "inherit" : ["ignore", "pipe", "pipe"],
-    env: { ...process.env, ACOB_HOME: installRoot, CODEX_OS_BRAIN_HOME: installRoot },
+    env: { ...process.env, ACOB_HOME: selected.root, CODEX_OS_BRAIN_HOME: selected.root, ACOB_RUNTIME_ROOT_SELECTION: selected.selection },
   });
   return result;
 }
 
 function runStatus(args = []) {
-  if (!fs.existsSync(path.join(runtimeRoot, "scripts", "global-hook-status.cjs"))) {
-    console.error("Agentic Coding OS Brain (ACOB) is not installed. Run: acob install");
+  const selected = resolveRuntimeRoot();
+  const installedStatus = path.join(selected.root, "runtime", "scripts", "global-hook-status.cjs");
+  const packagedStatus = path.join(sourceRuntime, "scripts", "global-hook-status.cjs");
+  const statusScript = fs.existsSync(packagedStatus) ? packagedStatus : installedStatus;
+  if (!selected.installed || !fs.existsSync(statusScript)) {
+    console.error(`Agentic Coding OS Brain (ACOB) is not installed. Run: acob install`);
+    console.error(`checked: ${selected.root}`);
     process.exitCode = 1;
     return;
   }
-  const child = spawnSync(process.execPath, [path.join(runtimeRoot, "scripts", "global-hook-status.cjs"), ...args], {
+  const child = spawnSync(process.execPath, [statusScript, ...args], {
     stdio: "inherit",
-    env: { ...process.env, ACOB_HOME: installRoot, CODEX_OS_BRAIN_HOME: installRoot },
+    env: { ...process.env, ACOB_HOME: selected.root, CODEX_OS_BRAIN_HOME: selected.root, ACOB_RUNTIME_ROOT_SELECTION: selected.selection },
   });
   process.exitCode = child.status || 0;
 }
 
 function runRuntimeOrPackageScript(scriptName, args = [], options = {}) {
-  const root = options.root || installRoot;
+  const selected = options.root
+    ? { root: options.root, selection: options.metricsSelection || "explicit_option" }
+    : resolveRuntimeRoot();
+  const root = selected.root;
   const installed = path.join(root, "runtime", scriptName);
   const packaged = path.join(sourceRuntime, scriptName);
   const script = fs.existsSync(installed) ? installed : packaged;
@@ -396,6 +429,7 @@ function runRuntimeOrPackageScript(scriptName, args = [], options = {}) {
       ...process.env,
       ACOB_HOME: root,
       CODEX_OS_BRAIN_HOME: root,
+      ACOB_RUNTIME_ROOT_SELECTION: selected.selection,
       ...(options.metricsSelection ? { ACOB_METRICS_ROOT_SELECTION: options.metricsSelection } : {}),
     },
   });
@@ -469,19 +503,27 @@ function redFlag(args = []) {
 function dashboard(args) {
   const portIndex = args.indexOf("--port");
   const port = portIndex >= 0 ? args[portIndex + 1] : "8791";
-  if (!fs.existsSync(path.join(runtimeRoot, "dashboard", "dashboard-server.mjs"))) {
+  const selected = resolveRuntimeRoot();
+  const server = path.join(selected.root, "runtime", "dashboard", "dashboard-server.mjs");
+  if (!selected.installed || !fs.existsSync(server)) {
     console.error("Agentic Coding OS Brain (ACOB) is not installed. Run: acob install");
     process.exit(1);
   }
   console.log(`Opening Agentic Coding OS Brain (ACOB) dashboard on http://127.0.0.1:${port}/`);
-  const child = spawn(process.execPath, [path.join(runtimeRoot, "dashboard", "dashboard-server.mjs")], {
+  const child = spawn(process.execPath, [server], {
     stdio: "inherit",
-    env: { ...process.env, ACOB_HOME: installRoot, CODEX_OS_BRAIN_HOME: installRoot, ACOB_PORT: port, CODEX_OS_BRAIN_PORT: port },
+    env: { ...process.env, ACOB_HOME: selected.root, CODEX_OS_BRAIN_HOME: selected.root, ACOB_RUNTIME_ROOT_SELECTION: selected.selection, ACOB_PORT: port, CODEX_OS_BRAIN_PORT: port },
   });
   child.on("exit", (code) => process.exit(code || 0));
 }
 
 function check() {
+  const selected = resolveRuntimeRoot();
+  if (!selected.installed) {
+    console.error("Agentic Coding OS Brain (ACOB) is not installed. Run: acob install");
+    console.error(`checked: ${selected.root}`);
+    process.exit(1);
+  }
   const checks = [
     ["scripts/inject-context.cjs"],
     ["scripts/global-hook-status.cjs"],
@@ -493,7 +535,7 @@ function check() {
   ];
   let failed = false;
   for (const [script] of checks) {
-    const target = path.join(runtimeRoot, script);
+    const target = path.join(selected.root, "runtime", script);
     if (!fs.existsSync(target)) {
       console.error(`missing ${script}`);
       failed = true;

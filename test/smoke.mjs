@@ -83,6 +83,35 @@ try {
   if (!doctor.stdout.includes("status: global_active")) {
     throw new Error("doctor alias did not run status summary");
   }
+  const originalHooksText = fs.readFileSync(path.join(codexHome, "hooks.json"), "utf8");
+  const originalAgentsText = fs.readFileSync(path.join(codexHome, "AGENTS.md"), "utf8");
+  try {
+    const hooks = JSON.parse(originalHooksText);
+    hooks.hooks.PostToolUse = [{
+      matcher: "",
+      hooks: [{
+        type: "command",
+        command: `"${process.execPath}" "${path.join(root, "runtime", "scripts", "engineering-harness.cjs")}"`,
+        timeout: 5,
+      }],
+    }];
+    fs.writeFileSync(path.join(codexHome, "hooks.json"), `${JSON.stringify(hooks, null, 2)}\n`, "utf8");
+    fs.writeFileSync(path.join(codexHome, "AGENTS.md"), [
+      "<!-- CODEX_OS_BRAIN_AGENTIC_START -->",
+      "## Codex OS Brain Agentic Coding",
+      "",
+      "Every user prompt should enter the Codex OS Brain agentic preflight before execution.",
+      "<!-- CODEX_OS_BRAIN_AGENTIC_END -->",
+      "",
+    ].join("\n"), "utf8");
+    const hybridStatus = run(["status", "--summary"]);
+    if (!hybridStatus.stdout.includes("status: hybrid_active")) {
+      throw new Error(`compatible external harness and legacy AGENTS block were not accepted:\n${hybridStatus.stdout}`);
+    }
+  } finally {
+    fs.writeFileSync(path.join(codexHome, "hooks.json"), originalHooksText, "utf8");
+    fs.writeFileSync(path.join(codexHome, "AGENTS.md"), originalAgentsText, "utf8");
+  }
   const lowRiskTask = "实现 dashboard 功能，更新文档，运行测试，准备发布";
   const lowRisk = run(["dispatch", "--task", lowRiskTask, "--json", "--write"]);
   const lowRiskPlan = JSON.parse(lowRisk.stdout);

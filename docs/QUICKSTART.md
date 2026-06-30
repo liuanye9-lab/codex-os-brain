@@ -96,4 +96,4 @@ acob doctor
 - optional local embedding model download through Ollama
 - no private memory packaged
 - no raw prompt stored in public artifacts
-- local runtime state stays under `~/.acob`
+- local runtime state stays under `~/.acob`, with automatic read compatibility for older `~/.codex-os-brain` installs

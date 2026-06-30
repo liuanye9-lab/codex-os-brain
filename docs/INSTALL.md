@@ -95,6 +95,8 @@ status: global_active
 scope: all_codex_prompts_on_this_codex_home
 ```
 
+If an older or private local harness already provides a compatible hook, `acob status` may report `status: hybrid_active`. Treat this as healthy when the scope is still `all_codex_prompts_on_this_codex_home`.
+
 ## Remove
 
 ```bash

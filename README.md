@@ -185,6 +185,8 @@ status: global_active
 scope: all_codex_prompts_on_this_codex_home
 ```
 
+Existing installs that combine ACOB with a compatible private engineering harness may show `status: hybrid_active`. That is also healthy: the public runtime is active, and an external local hook is providing one of the guardrail steps without packaging private memory.
+
 Low-cost runtime profile:
 
 - no hosted backend
