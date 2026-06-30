@@ -1,9 +1,9 @@
 # Public / Private Repository Boundary
 
-ACOB uses two GitHub surfaces:
+ACOB can be used with two repository surfaces:
 
-- `liuanye9-lab/codex-os-brain` is the public package for general users.
-- `liuanye9-lab/codex-brian` is the private workspace for Lay-specific operating habits, personal continuity, and local runtime coordination.
+- this public package for general users
+- a separate private workspace for personal operating habits, continuity, and local runtime coordination
 
 This public repository must stay small, installable, and privacy-safe.
 
@@ -69,6 +69,7 @@ Run before publishing or pushing public release changes:
 npm run privacy:scan
 npm run smoke
 node scripts/check-public-package.mjs
+npm run check
 npm pack --dry-run
 git status -sb
 ```

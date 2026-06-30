@@ -23,18 +23,33 @@ Run:
 
 ```bash
 npm run privacy:scan
+node scripts/check-public-package.mjs
 npm run check
 npm pack --dry-run
 ```
 
-Then inspect the package file list. It should contain only:
+Then inspect the package file list. It should match the allowlist enforced by `scripts/check-public-package.mjs` and `package.json.files`:
 
 - `bin/`
+- `dashboard/`
+- `evals/`
+- `examples/`
+- `os-agent/`
+- `plugins/`
+- `research-reviews/`
 - `runtime/`
+- `schemas/`
+- `scripts/`
+- `skills/`
+- `templates/`
+- `tools/`
+- `v2/` through `v7/`
 - `docs/`
 - `README.md`
 - `LICENSE`
 - `package.json`
+
+The package should stay intentionally small. Do not add a new packaged directory unless it is needed for install, runtime behavior, verification, examples, or public documentation.
 
 ## Hook Safety
 
