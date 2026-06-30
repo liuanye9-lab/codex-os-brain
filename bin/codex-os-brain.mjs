@@ -25,8 +25,12 @@ function usage() {
   console.log(`Agentic Coding OS Brain (ACOB)
 
 Usage:
+  acob init [--skip-embedding]
   acob quickstart [--skip-embedding]
   acob install [--global-agentic] [--skip-embedding]
+  acob demo [--task "..."] [--json] [--write]
+  acob memory-loop [--report] [--candidate "..."] [--public] [--write] [--json]
+  acob metrics [--date YYYY-MM-DD] [--json] [--write]
   acob embedding [--setup] [--status]
   acob benchmark --example
   acob memory-retrieval --example
@@ -40,6 +44,7 @@ Usage:
   acob control [--list]
   acob evolution-apply [--example]
   acob dashboard [--port 8791]
+  acob doctor
   acob check
   acob uninstall [--keep-runtime]
 
@@ -397,6 +402,18 @@ function memoryRetrieval(args = []) {
   runRuntimeOrPackageScript("scripts/memory-retrieval-pipeline.cjs", args);
 }
 
+function valueDemo(args = []) {
+  runRuntimeOrPackageScript("scripts/value-demo.cjs", args);
+}
+
+function memoryLoop(args = []) {
+  runRuntimeOrPackageScript("scripts/memory-loop.cjs", args.length ? args : ["--report"]);
+}
+
+function metrics(args = []) {
+  runRuntimeOrPackageScript("scripts/daily-metrics-report.cjs", args);
+}
+
 function dashboard(args) {
   const portIndex = args.indexOf("--port");
   const port = portIndex >= 0 ? args[portIndex + 1] : "8791";
@@ -457,9 +474,12 @@ const [command, ...args] = process.argv.slice(2);
 
 async function main() {
   if (!command || command === "help" || command === "--help" || command === "-h") usage();
-  else if (command === "quickstart") await quickstart(args);
+  else if (command === "quickstart" || command === "init") await quickstart(args);
   else if (command === "install") await install(args);
   else if (command === "embedding") await setupEmbedding(args.length ? args : ["--status"]);
+  else if (command === "demo" || command === "value") valueDemo(args);
+  else if (command === "memory-loop" || command === "memory") memoryLoop(args);
+  else if (command === "metrics" || command === "daily-report") metrics(args);
   else if (command === "status") runStatus(args);
   else if (command === "agents") agents(args);
   else if (command === "dispatch") dispatch(args);
@@ -472,7 +492,7 @@ async function main() {
   else if (command === "benchmark") benchmark(args);
   else if (command === "memory-retrieval") memoryRetrieval(args);
   else if (command === "dashboard") dashboard(args);
-  else if (command === "check") check();
+  else if (command === "check" || command === "doctor") check();
   else if (command === "uninstall") uninstall(args);
   else {
     console.error(`Unknown command: ${command}`);

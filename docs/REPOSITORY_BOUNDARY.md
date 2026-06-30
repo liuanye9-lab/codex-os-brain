@@ -38,6 +38,7 @@ Private-safe content includes:
 - sanitized memory workflows, schemas, and examples
 - local performance, token-budget, and recall mechanisms
 - private release notes and handoff docs
+- richer local-only metrics reports that may reference personal projects without exposing raw private memory
 
 Still keep out of GitHub, even in private:
 
@@ -56,7 +57,7 @@ Use Kano as the pruning rule for public release:
 | Kano class | Public action |
 |---|---|
 | Basic | Keep privacy scan, local-only storage, installer safety, smoke tests, and minimal docs. |
-| Performance | Improve startup speed, package size, command clarity, and verification coverage. |
+| Performance | Improve startup speed, package size, command clarity, verification coverage, and daily local metrics. |
 | Excitement | Keep optional dashboard, local embedding, and dispatch demos only when they stay lightweight. |
 | Indifferent | Remove duplicate docs, unused examples, generated files, and internal handoff clutter. |
 | Reverse | Block raw private memory, secrets, machine paths, hidden telemetry, and large opaque artifacts. |

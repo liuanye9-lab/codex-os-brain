@@ -16,6 +16,12 @@ npx -y agentic-coding-os-brain@latest quickstart
 
 Quickstart installs the runtime, enables global gated agentic preflight, checks Ollama, and prepares the local embedding model used for memory recall and token reduction.
 
+Short alias:
+
+```bash
+npx -y github:liuanye9-lab/codex-os-brain init
+```
+
 Default local embedding model:
 
 ```text
@@ -34,6 +40,8 @@ npx -y github:liuanye9-lab/codex-os-brain quickstart --skip-embedding
 npx -y agentic-coding-os-brain@latest install --global-agentic
 acob status
 acob embedding --status
+acob demo --task "fix dashboard, update docs, run checks"
+acob metrics --json
 acob dashboard
 ```
 
@@ -43,6 +51,8 @@ acob dashboard
 npx -y agentic-coding-os-brain@latest install --global-agentic
 acob status
 acob embedding --status
+acob demo --task "fix dashboard, update docs, run checks"
+acob metrics --json
 acob dashboard
 ```
 

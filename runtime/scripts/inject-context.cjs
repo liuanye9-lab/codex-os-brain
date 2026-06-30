@@ -7,6 +7,7 @@ const { buildPlan } = require("./agentic-dispatch.cjs");
 const HOME = os.homedir();
 const ROOT = process.env.ACOB_HOME || process.env.CODEX_OS_BRAIN_HOME || path.join(HOME, ".acob");
 const DATA_DIR = path.join(ROOT, "data");
+const CONFIG_FILE = path.join(ROOT, "config.json");
 
 function appendJsonl(file, value) {
   try {
@@ -14,6 +15,14 @@ function appendJsonl(file, value) {
     fs.appendFileSync(file, `${JSON.stringify(value)}\n`, "utf8");
   } catch {
     // Hooks must not block Codex.
+  }
+}
+
+function readJson(file, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return fallback;
   }
 }
 
@@ -108,11 +117,18 @@ process.stdin.on("end", () => {
     const payload = JSON.parse(input || "{}");
     const prompt = payload.prompt || payload.user_message || "";
     const context = buildContext(prompt);
+    const config = readJson(CONFIG_FILE, {});
+    const budget = config.context_budget || {};
+    const contextBudget = Number(budget.max_additional_context_chars || 2800);
+    const contextChars = context.length;
     appendJsonl(path.join(DATA_DIR, "prompt-events.jsonl"), {
       ts: new Date().toISOString(),
       event: "prompt_injected",
       intent: classifyPrompt(prompt),
       prompt_chars: String(prompt || "").length,
+      context_chars: contextChars,
+      context_budget_chars: contextBudget,
+      context_budget_status: contextChars > contextBudget ? "over_budget" : "within_budget",
     });
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {

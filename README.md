@@ -132,6 +132,12 @@ Use the GitHub package today:
 npx -y github:liuanye9-lab/codex-os-brain quickstart
 ```
 
+Lowest-friction alias:
+
+```bash
+npx -y github:liuanye9-lab/codex-os-brain init
+```
+
 Use the npm package after publication:
 
 ```bash
@@ -160,13 +166,16 @@ npx -y github:liuanye9-lab/codex-os-brain quickstart --skip-embedding
 Verify the system:
 
 ```bash
+acob demo --task "fix dashboard, update docs, run checks"
+acob memory-loop --example --json
+acob metrics --json
 acob status
 acob agents
 acob embedding --status
 acob benchmark --example
 acob memory-retrieval --example
 acob dispatch --task "refactor dashboard, update docs, run checks" --json
-acob check
+acob doctor
 ```
 
 Expected:
@@ -211,6 +220,9 @@ ACOB is useful when the problem is not "make one model remember more text", but 
 Current strengths:
 
 - one-command local install for Codex
+- first-minute `acob demo` that shows the memory, dispatch, verification, and self-evolution gates without private data
+- daily `acob metrics` reports for context weight, memory-loop state, dispatch gates, and verification pressure
+- candidate-only `acob memory-loop` so memory can close the loop without unsafe auto-promotion
 - global preflight hook for every Codex prompt
 - local embedding setup for low-cost memory recall
 - bounded working context instead of unlimited context stuffing

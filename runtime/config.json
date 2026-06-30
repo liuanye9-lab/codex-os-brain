@@ -7,6 +7,11 @@
     "max_focus_items": 8,
     "default_ttl_minutes": 120
   },
+  "context_budget": {
+    "max_additional_context_chars": 2800,
+    "warn_at_chars": 2200,
+    "record_context_chars": true
+  },
   "gates": {
     "verification_before_completion": true,
     "candidate_only_memory": true,

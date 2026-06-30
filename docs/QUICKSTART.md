@@ -8,6 +8,12 @@ Use ACOB with one command and no hosted backend.
 npx -y github:liuanye9-lab/codex-os-brain quickstart
 ```
 
+Equivalent low-friction alias:
+
+```bash
+npx -y github:liuanye9-lab/codex-os-brain init
+```
+
 This command:
 
 1. installs the public runtime into `~/.acob`
@@ -72,11 +78,14 @@ If Ollama is not installed, quickstart still finishes and records `ollama_missin
 ## Verify
 
 ```bash
+acob demo --task "fix dashboard, update docs, run checks"
+acob memory-loop --example --json
+acob metrics --json
 acob status
 acob agents
 acob embedding --status
 acob dispatch --task "refactor dashboard, update docs, run checks" --json
-acob check
+acob doctor
 ```
 
 ## Cost And Privacy

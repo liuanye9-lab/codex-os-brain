@@ -66,6 +66,23 @@ try {
   if (!parsedAgents.agents.some((agent) => agent.name === "上下文侦察员")) {
     throw new Error("missing Chinese sub-agent names");
   }
+  const demo = run(["demo", "--task", "fix dashboard, update docs, run checks", "--json"]);
+  const parsedDemo = JSON.parse(demo.stdout);
+  if (parsedDemo.id !== "acob-public-value-demo") {
+    throw new Error("value demo did not return the public demo report");
+  }
+  if (!parsedDemo.memory_context?.included_count || !parsedDemo.efficiency_profile?.token_reduction) {
+    throw new Error("value demo did not show memory and efficiency signals");
+  }
+  const memoryExample = run(["memory-loop", "--example", "--json"]);
+  const parsedMemoryExample = JSON.parse(memoryExample.stdout);
+  if (parsedMemoryExample.id !== "acob-memory-loop-example" || !parsedMemoryExample.candidate?.required_gate?.includes("human approval")) {
+    throw new Error("memory-loop example did not expose the gated memory lifecycle");
+  }
+  const doctor = run(["doctor"]);
+  if (!doctor.stdout.includes("status: global_active")) {
+    throw new Error("doctor alias did not run status summary");
+  }
   const lowRiskTask = "实现 dashboard 功能，更新文档，运行测试，准备发布";
   const lowRisk = run(["dispatch", "--task", lowRiskTask, "--json", "--write"]);
   const lowRiskPlan = JSON.parse(lowRisk.stdout);
@@ -91,6 +108,19 @@ try {
   });
   if (!injected.stdout.includes("Agentic Coding Preflight")) {
     throw new Error("hook injection did not include agentic preflight");
+  }
+  const promptEvents = fs.readFileSync(path.join(brainHome, "data", "prompt-events.jsonl"), "utf8");
+  const latestPrompt = JSON.parse(promptEvents.trim().split("\n").at(-1));
+  if (!latestPrompt.context_chars || !latestPrompt.context_budget_status) {
+    throw new Error("prompt event did not record context budget metrics");
+  }
+  const metrics = run(["metrics", "--json"]);
+  const parsedMetrics = JSON.parse(metrics.stdout);
+  if (parsedMetrics.id !== "acob-daily-effect-metrics" || parsedMetrics.system_slimming.prompt_events < 1) {
+    throw new Error("metrics report did not include observed prompt events");
+  }
+  if (parsedMetrics.memory_loop.auto_promote !== false) {
+    throw new Error("metrics report must preserve candidate-only memory policy");
   }
   run(["uninstall"]);
   const afterUninstallAgents = fs.readFileSync(path.join(codexHome, "AGENTS.md"), "utf8");
