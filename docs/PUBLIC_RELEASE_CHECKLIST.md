@@ -14,6 +14,7 @@ npm pack --dry-run
 Manual checks:
 
 - package name is `agentic-coding-os-brain`
+- `docs/REPOSITORY_BOUNDARY.md` still matches the intended public/private split
 - README has no personal names, private paths, or private agent identity
 - runtime does not read any private personal Brain home
 - installer writes runtime data only under `~/.acob`
