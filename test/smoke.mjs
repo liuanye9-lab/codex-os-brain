@@ -122,6 +122,27 @@ try {
   if (parsedMetrics.memory_loop.auto_promote !== false) {
     throw new Error("metrics report must preserve candidate-only memory policy");
   }
+  const redFlagFile = path.join(brainHome, "data", "red-flag.json");
+  fs.writeFileSync(redFlagFile, `${JSON.stringify({
+    raised_at: "2026-06-30T00:00:00.000Z",
+    reason: "sensitive_boundary",
+    required_action: "verify before completion",
+  })}\n`, "utf8");
+  const redFlagStatus = run(["red-flag", "status", "--json"]);
+  const parsedRedFlagStatus = JSON.parse(redFlagStatus.stdout);
+  if (!parsedRedFlagStatus.active || parsedRedFlagStatus.active_flag?.reason !== "sensitive_boundary") {
+    throw new Error("red flag status did not report active sensitive boundary");
+  }
+  const redFlagClear = run(["red-flag", "clear", "--reason", "verified in smoke", "--verification", "node test/smoke.mjs", "--json"]);
+  const parsedRedFlagClear = JSON.parse(redFlagClear.stdout);
+  if (!parsedRedFlagClear.cleared || fs.existsSync(redFlagFile)) {
+    throw new Error("red flag clear did not archive and remove the active flag");
+  }
+  const metricsAfterClear = run(["metrics", "--json"]);
+  const parsedMetricsAfterClear = JSON.parse(metricsAfterClear.stdout);
+  if (parsedMetricsAfterClear.verification_pressure.red_flag_present || parsedMetricsAfterClear.verification_pressure.red_flag.archived_count < 1) {
+    throw new Error("metrics report did not reflect cleared red flag archive");
+  }
   run(["uninstall"]);
   const afterUninstallAgents = fs.readFileSync(path.join(codexHome, "AGENTS.md"), "utf8");
   if (afterUninstallAgents.includes("ACOB_AGENTIC_START")) {

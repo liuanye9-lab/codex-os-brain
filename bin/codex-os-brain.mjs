@@ -32,6 +32,8 @@ Usage:
   acob demo [--task "..."] [--json] [--write]
   acob memory-loop [--report] [--candidate "..."] [--public] [--write] [--json]
   acob metrics [--date YYYY-MM-DD] [--json] [--write]
+  acob red-flag status [--json]
+  acob red-flag clear --reason "verified" [--verification "..."] [--json]
   acob embedding [--setup] [--status]
   acob benchmark --example
   acob memory-retrieval --example
@@ -456,6 +458,14 @@ function metrics(args = []) {
   });
 }
 
+function redFlag(args = []) {
+  const metricsRoot = resolveMetricsRoot();
+  runRuntimeOrPackageScript("scripts/red-flag.cjs", args.length ? args : ["status"], {
+    root: metricsRoot.root,
+    metricsSelection: metricsRoot.selection,
+  });
+}
+
 function dashboard(args) {
   const portIndex = args.indexOf("--port");
   const port = portIndex >= 0 ? args[portIndex + 1] : "8791";
@@ -522,6 +532,7 @@ async function main() {
   else if (command === "demo" || command === "value") valueDemo(args);
   else if (command === "memory-loop" || command === "memory") memoryLoop(args);
   else if (command === "metrics" || command === "daily-report") metrics(args);
+  else if (command === "red-flag" || command === "redflag") redFlag(args);
   else if (command === "status") runStatus(args);
   else if (command === "agents") agents(args);
   else if (command === "dispatch") dispatch(args);

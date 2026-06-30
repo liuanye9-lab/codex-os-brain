@@ -84,6 +84,19 @@ function sameDay(items, date) {
   return items.filter((item) => eventDate(item) === date);
 }
 
+function redFlagStatus() {
+  const active = readJson(path.join(DATA_DIR, "red-flag.json"), null);
+  const archived = readJsonl("red-flag-archive.jsonl");
+  return {
+    active: Boolean(active),
+    reason: active?.reason || null,
+    raised_at: active?.raised_at || null,
+    required_action: active?.required_action || null,
+    archived_count: archived.length,
+    last_archived_at: archived.length ? archived.at(-1).archived_at || null : null,
+  };
+}
+
 function countBy(items, key) {
   return items.reduce((acc, item) => {
     const value = String(item[key] || "unknown");
@@ -128,6 +141,7 @@ function buildReport(date) {
   const highPrivacyDispatch = dispatch.filter((item) => item.gate?.privacyRisk === "high").length;
   const recommendedDispatch = dispatch.filter((item) => item.recommended).length;
   const observedEvents = prompts.length + dispatch.length + audits.length + candidates.length + approved.length + reviews.length;
+  const redFlag = redFlagStatus();
   return {
     id: "acob-daily-effect-metrics",
     date,
@@ -170,13 +184,14 @@ function buildReport(date) {
     verification_pressure: {
       post_tool_audits: audits.length,
       risk_counts: riskCounts(audits),
-      red_flag_present: fs.existsSync(path.join(DATA_DIR, "red-flag.json")),
+      red_flag_present: redFlag.active,
+      red_flag: redFlag,
     },
     intent_mix: countBy(prompts, "intent"),
     next_actions: [
       overBudget ? "reduce injected context or tighten recall for high-volume prompts" : "keep context budget stable",
       candidates.length ? "review memory candidates before promotion" : "capture useful repeated lessons as candidates",
-      audits.some((item) => (item.risks || []).length) ? "clear verification or privacy red flags before claiming done" : "continue normal verification-before-completion",
+      redFlag.active ? "clear or archive active red flags with acob red-flag clear before claiming done" : "continue normal verification-before-completion",
     ],
   };
 }
@@ -208,6 +223,7 @@ function toMarkdown(report) {
     "## Verification Pressure",
     `- post tool audits: ${report.verification_pressure.post_tool_audits}`,
     `- red flag present: ${report.verification_pressure.red_flag_present}`,
+    `- archived red flags: ${report.verification_pressure.red_flag.archived_count}`,
     "",
     "## Next Actions",
     ...report.next_actions.map((item) => `- ${item}`),

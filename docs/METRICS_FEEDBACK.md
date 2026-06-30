@@ -43,8 +43,24 @@ This keeps current ACOB installs and older `codex-os-brain` installs readable wi
 | System slimming | prompt count, prompt chars, injected context chars, context budget overruns |
 | Memory loop | candidates, approved records, rejected records, pending review, auto-promote status |
 | Agent dispatch | gate-open rate, high-privacy events, average selected agents |
-| Verification pressure | post-tool audits, risk severity counts, active red flag |
+| Verification pressure | post-tool audits, risk severity counts, active and archived red flags |
 | Intent mix | observed prompt intent distribution |
+
+## Red Flag Lifecycle
+
+Check current red-light status:
+
+```bash
+acob red-flag status --json
+```
+
+Archive a verified red flag instead of deleting it by hand:
+
+```bash
+acob red-flag clear --reason "verified and explained before completion" --verification "npm run check" --json
+```
+
+The archive stores only red-flag metadata, clear reason, and verification labels. It does not store raw prompts or tool inputs.
 
 ## Memory Loop
 
