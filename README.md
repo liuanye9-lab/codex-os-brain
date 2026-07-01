@@ -126,7 +126,7 @@ By default, quickstart also prepares the local embedding path used for memory re
 - purpose: local vector retrieval, not final reasoning
 - behavior: auto-detect Ollama, pull the model when available, verify `/api/embed`, then record status under `~/.acob/config.json`
 
-Use the GitHub package today:
+Use the GitHub package today. Until the npm package is published or globally installed, keep using the full `npx -y github:...` command for each CLI call:
 
 ```bash
 npx -y github:liuanye9-lab/codex-os-brain quickstart
@@ -147,14 +147,14 @@ npx -y agentic-coding-os-brain@latest quickstart
 Open the dashboard:
 
 ```bash
-acob dashboard
+npx -y github:liuanye9-lab/codex-os-brain dashboard
 ```
 
 Check local memory retrieval:
 
 ```bash
-acob embedding --status
-acob embedding --setup
+npx -y github:liuanye9-lab/codex-os-brain embedding --status
+npx -y github:liuanye9-lab/codex-os-brain embedding --setup
 ```
 
 Skip embedding setup when you only want the lightweight harness:
@@ -166,21 +166,29 @@ npx -y github:liuanye9-lab/codex-os-brain quickstart --skip-embedding
 Verify the system:
 
 ```bash
-acob prove
-acob demo --task "fix dashboard, update docs, run checks"
-acob memory-loop --example --json
-acob metrics --json
-acob effect
-acob status
-acob agents
-acob embedding --status
-acob benchmark --example
-acob memory-retrieval --example
-acob dispatch --task "refactor dashboard, update docs, run checks" --json
-acob doctor
+npx -y github:liuanye9-lab/codex-os-brain prove
+npx -y github:liuanye9-lab/codex-os-brain demo --task "fix dashboard, update docs, run checks"
+npx -y github:liuanye9-lab/codex-os-brain memory-loop --example --json
+npx -y github:liuanye9-lab/codex-os-brain metrics --json
+npx -y github:liuanye9-lab/codex-os-brain effect
+npx -y github:liuanye9-lab/codex-os-brain status
+npx -y github:liuanye9-lab/codex-os-brain agents
+npx -y github:liuanye9-lab/codex-os-brain embedding --status
+npx -y github:liuanye9-lab/codex-os-brain benchmark --example
+npx -y github:liuanye9-lab/codex-os-brain memory-retrieval --example
+npx -y github:liuanye9-lab/codex-os-brain dispatch --task "refactor dashboard, update docs, run checks" --json
+npx -y github:liuanye9-lab/codex-os-brain doctor
 ```
 
-`acob prove` is the lowest-friction proof command. It does not install, write reports, or read private memory. It shows install status, memory/context value, dispatch behavior, effect score, privacy boundary, and the next useful command in one screen.
+`prove` is the lowest-friction proof command. It does not install, write reports, or read private memory. It shows install status, memory/context value, dispatch behavior, effect score, privacy boundary, and the next useful command in one screen.
+
+After npm publication or a global install, the shorter `acob ...` commands work too:
+
+```bash
+acob prove
+acob dashboard
+acob doctor
+```
 
 Expected:
 
@@ -556,18 +564,20 @@ acob quickstart
 Verify:
 
 ```bash
-acob status
-acob agents
-acob dispatch --task "refactor dashboard, update docs, run checks" --json
+npx -y github:liuanye9-lab/codex-os-brain status
+npx -y github:liuanye9-lab/codex-os-brain agents
+npx -y github:liuanye9-lab/codex-os-brain dispatch --task "refactor dashboard, update docs, run checks" --json
 ```
 
 Start dashboard:
 
 ```bash
-acob dashboard
+npx -y github:liuanye9-lab/codex-os-brain dashboard
 ```
 
 ## CLI Surface
+
+After npm publication or a global install, the CLI surface is:
 
 ```bash
 acob quickstart

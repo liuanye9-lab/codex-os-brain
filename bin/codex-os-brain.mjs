@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
+const githubNpxCommand = "npx -y github:liuanye9-lab/codex-os-brain";
 const sourceRuntime = path.join(packageRoot, "runtime");
 const home = os.homedir();
 const codexHome = process.env.CODEX_HOME || path.join(home, ".codex");
@@ -380,9 +381,11 @@ async function quickstart(args = []) {
   runStatus(["--summary"]);
   console.log("");
   console.log("Next:");
-  console.log("  acob dashboard");
-  console.log("  acob embedding --status");
-  console.log("  acob dispatch --task \"refactor dashboard, update docs, run checks\" --json");
+  console.log(`  ${githubNpxCommand} dashboard`);
+  console.log(`  ${githubNpxCommand} embedding --status`);
+  console.log(`  ${githubNpxCommand} dispatch --task "refactor dashboard, update docs, run checks" --json`);
+  console.log("");
+  console.log("After npm publication or a global install, the same commands are available as: acob dashboard");
 }
 
 function runScript(script, args = [], inherit = false) {
@@ -561,10 +564,12 @@ function buildProofReport(args = []) {
       "performance numbers are deterministic demo signals unless live traces are present",
     ],
     next_commands: [
-      ["global_active", "hybrid_active"].includes(status.status) ? "acob dashboard" : "acob quickstart --skip-embedding",
-      `acob demo --task ${JSON.stringify(parsed.task)}`,
-      "acob effect",
-      "acob doctor",
+      ["global_active", "hybrid_active"].includes(status.status)
+        ? `${githubNpxCommand} dashboard`
+        : `${githubNpxCommand} quickstart --skip-embedding`,
+      `${githubNpxCommand} demo --task ${JSON.stringify(parsed.task)}`,
+      `${githubNpxCommand} effect`,
+      `${githubNpxCommand} doctor`,
     ],
     errors: [
       ...(statusResult.ok ? [] : [`status: ${statusResult.error || statusResult.status}`]),

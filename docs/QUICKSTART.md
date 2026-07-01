@@ -21,7 +21,7 @@ This command:
 3. adds the global ACOB agentic preflight block to `~/.codex/AGENTS.md`
 4. checks local embedding support through Ollama
 5. pulls and verifies `qwen3-embedding:0.6b` when Ollama is available
-6. verifies the install with `acob status --summary`
+6. verifies the install with the packaged status check
 
 Skip the embedding download:
 
@@ -47,7 +47,7 @@ acob quickstart
 ## Run The Dashboard
 
 ```bash
-acob dashboard
+npx -y github:liuanye9-lab/codex-os-brain dashboard
 ```
 
 Dashboard URL:
@@ -69,8 +69,8 @@ qwen3-embedding:0.6b
 Commands:
 
 ```bash
-acob embedding --status
-acob embedding --setup
+npx -y github:liuanye9-lab/codex-os-brain embedding --status
+npx -y github:liuanye9-lab/codex-os-brain embedding --setup
 ```
 
 If Ollama is not installed, quickstart still finishes and records `ollama_missing` in `~/.acob/config.json`.
@@ -78,19 +78,27 @@ If Ollama is not installed, quickstart still finishes and records `ollama_missin
 ## Verify
 
 ```bash
-acob prove
-acob demo --task "fix dashboard, update docs, run checks"
-acob memory-loop --example --json
-acob metrics --json
-acob effect
-acob status
-acob agents
-acob embedding --status
-acob dispatch --task "refactor dashboard, update docs, run checks" --json
-acob doctor
+npx -y github:liuanye9-lab/codex-os-brain prove
+npx -y github:liuanye9-lab/codex-os-brain demo --task "fix dashboard, update docs, run checks"
+npx -y github:liuanye9-lab/codex-os-brain memory-loop --example --json
+npx -y github:liuanye9-lab/codex-os-brain metrics --json
+npx -y github:liuanye9-lab/codex-os-brain effect
+npx -y github:liuanye9-lab/codex-os-brain status
+npx -y github:liuanye9-lab/codex-os-brain agents
+npx -y github:liuanye9-lab/codex-os-brain embedding --status
+npx -y github:liuanye9-lab/codex-os-brain dispatch --task "refactor dashboard, update docs, run checks" --json
+npx -y github:liuanye9-lab/codex-os-brain doctor
 ```
 
-`acob prove` is a read-only one-screen proof. It combines install status, public value demo, daily effect score, privacy boundary, and next commands without writing hooks, reports, prompts, or memory.
+`prove` is a read-only one-screen proof. It combines install status, public value demo, daily effect score, privacy boundary, and next commands without writing hooks, reports, prompts, or memory.
+
+After npm publication or a global install, the shorter commands work too:
+
+```bash
+acob prove
+acob dashboard
+acob doctor
+```
 
 ## Cost And Privacy
 
