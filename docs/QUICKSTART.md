@@ -78,6 +78,7 @@ If Ollama is not installed, quickstart still finishes and records `ollama_missin
 ## Verify
 
 ```bash
+acob prove
 acob demo --task "fix dashboard, update docs, run checks"
 acob memory-loop --example --json
 acob metrics --json
@@ -88,6 +89,8 @@ acob embedding --status
 acob dispatch --task "refactor dashboard, update docs, run checks" --json
 acob doctor
 ```
+
+`acob prove` is a read-only one-screen proof. It combines install status, public value demo, daily effect score, privacy boundary, and next commands without writing hooks, reports, prompts, or memory.
 
 ## Cost And Privacy
 

@@ -29,6 +29,7 @@ Usage:
   acob init [--skip-embedding]
   acob quickstart [--skip-embedding]
   acob install [--global-agentic] [--skip-embedding]
+  acob prove [--task "..."] [--json]
   acob demo [--task "..."] [--json] [--write]
   acob memory-loop [--report] [--candidate "..."] [--public] [--write] [--json]
   acob metrics [--date YYYY-MM-DD] [--json] [--write]
@@ -439,6 +440,176 @@ function runRuntimeOrPackageScript(scriptName, args = [], options = {}) {
   child.on("exit", (code) => { process.exitCode = code || 0; });
 }
 
+function runJsonRuntimeOrPackageScript(scriptName, args = [], options = {}) {
+  const selected = options.root
+    ? { root: options.root, selection: options.metricsSelection || "explicit_option" }
+    : resolveRuntimeRoot();
+  const root = selected.root;
+  const installed = path.join(root, "runtime", scriptName);
+  const packaged = path.join(sourceRuntime, scriptName);
+  const script = options.preferPackage && fs.existsSync(packaged)
+    ? packaged
+    : fs.existsSync(installed) ? installed : packaged;
+  if (!fs.existsSync(script)) {
+    return { ok: false, error: `missing ${scriptName}`, data: null, status: 1 };
+  }
+  const child = spawnSync(process.execPath, [script, ...args], {
+    encoding: "utf8",
+    timeout: options.timeoutMs || 15000,
+    env: {
+      ...process.env,
+      ACOB_HOME: root,
+      CODEX_OS_BRAIN_HOME: root,
+      ACOB_RUNTIME_ROOT_SELECTION: selected.selection,
+      ...(options.metricsSelection ? { ACOB_METRICS_ROOT_SELECTION: options.metricsSelection } : {}),
+    },
+  });
+  try {
+    return {
+      ok: child.status === 0 || options.allowNonZero,
+      status: child.status || 0,
+      data: JSON.parse(child.stdout || "{}"),
+      error: child.stderr || child.error?.message || "",
+      selection: selected.selection,
+      root,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: child.status || 1,
+      data: null,
+      error: error.message,
+      selection: selected.selection,
+      root,
+    };
+  }
+}
+
+function parseProveArgs(args = []) {
+  const parsed = {
+    task: "fix dashboard, update docs, run checks",
+    json: false,
+  };
+  for (let i = 0; i < args.length; i += 1) {
+    const item = args[i];
+    if (item === "--task") parsed.task = args[++i] || parsed.task;
+    else if (item === "--json") parsed.json = true;
+  }
+  return parsed;
+}
+
+function buildProofReport(args = []) {
+  const parsed = parseProveArgs(args);
+  const runtime = resolveRuntimeRoot();
+  const metricsRoot = resolveMetricsRoot();
+  const statusResult = runJsonRuntimeOrPackageScript("scripts/global-hook-status.cjs", [], {
+    root: runtime.root,
+    metricsSelection: runtime.selection,
+    preferPackage: true,
+    allowNonZero: true,
+  });
+  const demoResult = runJsonRuntimeOrPackageScript("scripts/value-demo.cjs", ["--task", parsed.task, "--json"], {
+    root: runtime.root,
+    metricsSelection: runtime.selection,
+    preferPackage: true,
+  });
+  const effectResult = runJsonRuntimeOrPackageScript("scripts/daily-metrics-report.cjs", ["--effect", "--json"], {
+    root: metricsRoot.root,
+    metricsSelection: metricsRoot.selection,
+    preferPackage: true,
+  });
+  const status = statusResult.data || {};
+  const demo = demoResult.data || {};
+  const effectStatus = effectResult.data || {};
+  return {
+    id: "acob-proof",
+    generated_at: new Date().toISOString(),
+    status: demoResult.ok && effectResult.ok ? "ready" : "partial",
+    task: parsed.task,
+    runtime: {
+      install_status: status.status || "not_installed",
+      scope: status.scope || "not_fully_global",
+      selected_home: effectStatus.runtime?.selected_home || "unknown",
+      runtime_selection: metricsRoot.selection,
+      injection_smoke: Boolean(status.injection_smoke?.ok),
+    },
+    value_demo: {
+      memory_included: demo.memory_context?.included_count || 0,
+      memory_dropped: demo.memory_context?.dropped_count || 0,
+      dispatch_recommended: Boolean(demo.dispatch_gate?.recommended),
+      selected_agents: (demo.dispatch_gate?.selected_agents || []).map((agent) => agent.name || agent.id),
+      token_reduction: demo.efficiency_profile?.token_reduction || "n/a",
+      verification_lift: demo.efficiency_profile?.verification_lift || "n/a",
+      self_evolution_auto_apply: Boolean(demo.self_evolution_gate?.auto_apply),
+    },
+    effect: {
+      health: effectStatus.health || "unknown",
+      overall_score: effectStatus.overall_score ?? null,
+      data_quality: effectStatus.data_quality || "unknown",
+      system_slimming: effectStatus.scorecard?.system_slimming ?? null,
+      dispatch_gate: effectStatus.scorecard?.dispatch_gate ?? null,
+      privacy_boundary: effectStatus.scorecard?.privacy_boundary ?? null,
+      high_privacy_blocked_events: effectStatus.evidence?.high_privacy_blocked_events || 0,
+      high_privacy_unsafe_open_events: effectStatus.evidence?.high_privacy_unsafe_open_events || 0,
+      post_tool_audits: effectStatus.evidence?.post_tool_audits || 0,
+    },
+    boundaries: [
+      "public-safe proof only",
+      "does not read private memory bodies",
+      "does not write reports or hooks",
+      "does not upload prompts, files, or metrics",
+      "performance numbers are deterministic demo signals unless live traces are present",
+    ],
+    next_commands: [
+      ["global_active", "hybrid_active"].includes(status.status) ? "acob dashboard" : "acob quickstart --skip-embedding",
+      `acob demo --task ${JSON.stringify(parsed.task)}`,
+      "acob effect",
+      "acob doctor",
+    ],
+    errors: [
+      ...(statusResult.ok ? [] : [`status: ${statusResult.error || statusResult.status}`]),
+      ...(demoResult.ok ? [] : [`demo: ${demoResult.error || demoResult.status}`]),
+      ...(effectResult.ok ? [] : [`effect: ${effectResult.error || effectResult.status}`]),
+    ],
+  };
+}
+
+function printProof(report) {
+  console.log("ACOB Proof");
+  console.log(`status: ${report.status}`);
+  console.log(`install: ${report.runtime.install_status}`);
+  console.log(`scope: ${report.runtime.scope}`);
+  console.log("");
+  console.log("Value demo");
+  console.log(`- memory: ${report.value_demo.memory_included} included, ${report.value_demo.memory_dropped} dropped`);
+  console.log(`- dispatch: ${report.value_demo.dispatch_recommended ? "recommended" : "not recommended"}`);
+  console.log(`- agents: ${report.value_demo.selected_agents.join(", ") || "none"}`);
+  console.log(`- token reduction: ${report.value_demo.token_reduction}`);
+  console.log(`- verification lift: ${report.value_demo.verification_lift}`);
+  console.log("");
+  console.log("Effect");
+  console.log(`- health: ${report.effect.health}`);
+  console.log(`- score: ${report.effect.overall_score ?? "n/a"}/100`);
+  console.log(`- system slimming: ${report.effect.system_slimming ?? "n/a"}/100`);
+  console.log(`- dispatch gate: ${report.effect.dispatch_gate ?? "n/a"}/100`);
+  console.log(`- privacy boundary: ${report.effect.privacy_boundary ?? "n/a"}/100`);
+  console.log(`- high privacy: ${report.effect.high_privacy_blocked_events} blocked, ${report.effect.high_privacy_unsafe_open_events} unsafe open`);
+  console.log("");
+  console.log("Boundaries");
+  for (const item of report.boundaries) console.log(`- ${item}`);
+  console.log("");
+  console.log("Next");
+  for (const command of report.next_commands) console.log(`  ${command}`);
+}
+
+function prove(args = []) {
+  const parsed = parseProveArgs(args);
+  const report = buildProofReport(args);
+  if (parsed.json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  else printProof(report);
+  if (report.status !== "ready") process.exitCode = 1;
+}
+
 function agents(args = []) {
   runRuntimeOrPackageScript("scripts/agentic-dispatch.cjs", ["--list", ...args]);
 }
@@ -584,6 +755,7 @@ async function main() {
   else if (command === "quickstart" || command === "init") await quickstart(args);
   else if (command === "install") await install(args);
   else if (command === "embedding") await setupEmbedding(args.length ? args : ["--status"]);
+  else if (command === "prove" || command === "try") prove(args);
   else if (command === "demo" || command === "value") valueDemo(args);
   else if (command === "memory-loop" || command === "memory") memoryLoop(args);
   else if (command === "metrics" || command === "daily-report") metrics(args);

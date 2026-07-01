@@ -38,6 +38,7 @@ npx -y github:liuanye9-lab/codex-os-brain quickstart --skip-embedding
 
 ```bash
 npx -y agentic-coding-os-brain@latest install --global-agentic
+acob prove
 acob status
 acob embedding --status
 acob demo --task "fix dashboard, update docs, run checks"
@@ -50,6 +51,7 @@ acob dashboard
 
 ```powershell
 npx -y agentic-coding-os-brain@latest install --global-agentic
+acob prove
 acob status
 acob embedding --status
 acob demo --task "fix dashboard, update docs, run checks"

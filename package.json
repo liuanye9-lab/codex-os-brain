@@ -33,6 +33,7 @@
   ],
   "scripts": {
     "quickstart": "node bin/codex-os-brain.mjs quickstart",
+    "prove": "node bin/codex-os-brain.mjs prove",
     "demo": "node bin/codex-os-brain.mjs demo",
     "metrics": "node bin/codex-os-brain.mjs metrics --json",
     "effect": "node bin/codex-os-brain.mjs effect --json",

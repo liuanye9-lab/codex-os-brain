@@ -74,6 +74,24 @@ try {
   if (!parsedDemo.memory_context?.included_count || !parsedDemo.efficiency_profile?.token_reduction) {
     throw new Error("value demo did not show memory and efficiency signals");
   }
+  const proof = run(["prove", "--task", "fix dashboard, update docs, run checks", "--json"]);
+  const parsedProof = JSON.parse(proof.stdout);
+  if (parsedProof.id !== "acob-proof" || parsedProof.status !== "ready") {
+    throw new Error("prove did not return the one-command proof report");
+  }
+  if (parsedProof.runtime.install_status !== "global_active" || !parsedProof.runtime.injection_smoke) {
+    throw new Error("prove did not expose working install status");
+  }
+  if (!parsedProof.value_demo.memory_included || !parsedProof.value_demo.token_reduction) {
+    throw new Error("prove did not expose memory and efficiency value signals");
+  }
+  if (!parsedProof.boundaries.some((item) => item.includes("does not read private memory"))) {
+    throw new Error("prove did not expose public/private safety boundary");
+  }
+  const proofHuman = run(["prove"]);
+  if (!proofHuman.stdout.includes("ACOB Proof") || !proofHuman.stdout.includes("Value demo") || !proofHuman.stdout.includes("Effect")) {
+    throw new Error("prove human output is not a one-screen proof");
+  }
   const memoryExample = run(["memory-loop", "--example", "--json"]);
   const parsedMemoryExample = JSON.parse(memoryExample.stdout);
   if (parsedMemoryExample.id !== "acob-memory-loop-example" || !parsedMemoryExample.candidate?.required_gate?.includes("human approval")) {

@@ -166,6 +166,7 @@ npx -y github:liuanye9-lab/codex-os-brain quickstart --skip-embedding
 Verify the system:
 
 ```bash
+acob prove
 acob demo --task "fix dashboard, update docs, run checks"
 acob memory-loop --example --json
 acob metrics --json
@@ -178,6 +179,8 @@ acob memory-retrieval --example
 acob dispatch --task "refactor dashboard, update docs, run checks" --json
 acob doctor
 ```
+
+`acob prove` is the lowest-friction proof command. It does not install, write reports, or read private memory. It shows install status, memory/context value, dispatch behavior, effect score, privacy boundary, and the next useful command in one screen.
 
 Expected:
 
