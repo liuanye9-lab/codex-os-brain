@@ -61,6 +61,13 @@ This keeps current ACOB installs and older `codex-os-brain` installs readable wi
 | Verification pressure | post-tool audits, risk severity counts, active and archived red flags |
 | Intent mix | observed prompt intent distribution |
 
+High-privacy dispatch is split into two counters:
+
+- `high_privacy_blocked_events`: the dispatch gate saw high privacy risk and kept specialist agents closed.
+- `high_privacy_unsafe_open_events`: the dispatch gate saw high privacy risk but still opened or selected agents.
+
+Only unsafe-open events reduce the privacy score or turn `acob effect` red. Blocked high-privacy events are evidence that the boundary worked.
+
 `acob effect` also maps the same signals into a Kano-style snapshot:
 
 | Kano Type | ACOB Meaning |

@@ -197,7 +197,7 @@ function scoreMemoryLoop(report) {
 function scoreDispatch(report) {
   const data = report.agentic_dispatch;
   if (!data.events) return 55;
-  const privacyPenalty = Math.min(80, data.high_privacy_events * 35);
+  const privacyPenalty = Math.min(80, (data.high_privacy_unsafe_open_events || 0) * 35);
   const fanoutPenalty = data.gate_open_rate > 0.8 ? 10 : 0;
   return clampScore(90 - privacyPenalty - fanoutPenalty);
 }
@@ -223,11 +223,11 @@ function scoreSelfEvolution(report) {
 }
 
 function scorePrivacyBoundary(report) {
-  const highPrivacy = report.agentic_dispatch.high_privacy_events;
+  const highPrivacyUnsafeOpen = report.agentic_dispatch.high_privacy_unsafe_open_events || 0;
   const activeRedFlag = report.verification_pressure.red_flag_present;
   const autoPromote = report.memory_loop.auto_promote;
   const autoApply = report.self_evolution.auto_apply;
-  return clampScore(96 - (highPrivacy * 35) - (activeRedFlag ? 45 : 0) - (autoPromote ? 55 : 0) - (autoApply ? 55 : 0));
+  return clampScore(96 - (highPrivacyUnsafeOpen * 35) - (activeRedFlag ? 45 : 0) - (autoPromote ? 55 : 0) - (autoApply ? 55 : 0));
 }
 
 function buildReport(date) {
@@ -257,7 +257,10 @@ function buildReport(date) {
   const contextChars = prompts.map((item) => Number(item.context_chars || 0)).filter((num) => num > 0);
   const maxContextChars = contextChars.length ? Math.max(...contextChars) : 0;
   const overBudget = prompts.filter((item) => Number(item.context_chars || 0) > contextBudget).length;
-  const highPrivacyDispatch = dispatch.filter((item) => item.gate?.privacyRisk === "high").length;
+  const highPrivacyItems = dispatch.filter((item) => item.gate?.privacyRisk === "high");
+  const highPrivacyDispatch = highPrivacyItems.length;
+  const highPrivacyUnsafeOpen = highPrivacyItems.filter((item) => item.recommended).length;
+  const highPrivacyBlocked = highPrivacyDispatch - highPrivacyUnsafeOpen;
   const recommendedDispatch = dispatch.filter((item) => item.recommended).length;
   const observedEvents = prompts.length + dispatch.length + audits.length + candidates.length + approved.length + reviews.length
     + evolutionCandidates.length + evolutionApplied.length + evolutionReviews.length;
@@ -308,6 +311,8 @@ function buildReport(date) {
       recommended: recommendedDispatch,
       gate_open_rate: percent(recommendedDispatch, dispatch.length),
       high_privacy_events: highPrivacyDispatch,
+      high_privacy_blocked_events: highPrivacyBlocked,
+      high_privacy_unsafe_open_events: highPrivacyUnsafeOpen,
       avg_selected_agents: Math.round((dispatch.reduce((sum, item) => sum + (item.selected_agent_ids || []).length, 0) / Math.max(1, dispatch.length)) * 10) / 10,
     },
     verification_pressure: {
@@ -345,7 +350,7 @@ function buildEffectStatus(date) {
     + (scorecard.privacy_boundary * 0.12),
   );
   const red = report.verification_pressure.red_flag_present
-    || report.agentic_dispatch.high_privacy_events > 0
+    || report.agentic_dispatch.high_privacy_unsafe_open_events > 0
     || report.memory_loop.auto_promote
     || report.self_evolution.auto_apply;
   const yellow = report.data_quality === "no_observed_events_yet"
@@ -393,6 +398,8 @@ function buildEffectStatus(date) {
       pending_memory_candidates: report.memory_loop.pending_signal,
       dispatch_events: report.agentic_dispatch.events,
       high_privacy_events: report.agentic_dispatch.high_privacy_events,
+      high_privacy_blocked_events: report.agentic_dispatch.high_privacy_blocked_events,
+      high_privacy_unsafe_open_events: report.agentic_dispatch.high_privacy_unsafe_open_events,
       post_tool_audits: report.verification_pressure.post_tool_audits,
       red_flag_present: report.verification_pressure.red_flag_present,
       self_evolution_candidates: report.self_evolution.candidates,
@@ -455,6 +462,8 @@ function toMarkdown(report) {
     `- events: ${report.agentic_dispatch.events}`,
     `- gate open rate: ${report.agentic_dispatch.gate_open_rate}`,
     `- high privacy events: ${report.agentic_dispatch.high_privacy_events}`,
+    `- high privacy blocked events: ${report.agentic_dispatch.high_privacy_blocked_events}`,
+    `- high privacy unsafe open events: ${report.agentic_dispatch.high_privacy_unsafe_open_events}`,
     "",
     "## Verification Pressure",
     `- post tool audits: ${report.verification_pressure.post_tool_audits}`,
@@ -478,7 +487,7 @@ function toEffectMarkdown(status) {
     "## Scorecard",
     `- system slimming: ${status.scorecard.system_slimming}/100 (${status.evidence.over_budget_events} over-budget events)`,
     `- memory loop: ${status.scorecard.memory_loop}/100 (${status.evidence.memory_candidates} candidates, ${status.evidence.pending_memory_candidates} pending)`,
-    `- dispatch gate: ${status.scorecard.dispatch_gate}/100 (${status.evidence.high_privacy_events} high-privacy events)`,
+    `- dispatch gate: ${status.scorecard.dispatch_gate}/100 (${status.evidence.high_privacy_blocked_events} high-privacy blocked, ${status.evidence.high_privacy_unsafe_open_events} unsafe open)`,
     `- verification pressure: ${status.scorecard.verification_pressure}/100 (${status.evidence.post_tool_audits} post-tool audits)`,
     `- self-evolution: ${status.scorecard.self_evolution}/100 (${status.evidence.self_evolution_candidates} candidates, ${status.evidence.self_evolution_applied_with_verification} applied with verification)`,
     `- privacy boundary: ${status.scorecard.privacy_boundary}/100`,

@@ -121,7 +121,7 @@ try {
   if (!lowRiskPlan.selected_agents.some((agent) => agent.name === "发布检查员")) {
     throw new Error("low-risk release task did not include release operator");
   }
-  const highRisk = runAny(["dispatch", "--task", "修改 persona 和私密 memory 并发布", "--json"]);
+  const highRisk = runAny(["dispatch", "--task", "修改 persona 和私密 memory 并发布", "--json", "--write"]);
   if (highRisk.status === 0) {
     throw new Error("high-privacy task should not auto-open dispatch gate");
   }
@@ -158,10 +158,19 @@ try {
   if (!parsedMetrics.self_evolution || parsedMetrics.self_evolution.auto_apply !== false) {
     throw new Error("metrics report did not expose gated self-evolution counters");
   }
+  if (parsedMetrics.agentic_dispatch.high_privacy_blocked_events < 1 || parsedMetrics.agentic_dispatch.high_privacy_unsafe_open_events !== 0) {
+    throw new Error("metrics report did not distinguish blocked high-privacy dispatches from unsafe open dispatches");
+  }
   const effect = run(["effect", "--json"]);
   const parsedEffect = JSON.parse(effect.stdout);
   if (parsedEffect.id !== "acob-effect-status" || !["green", "yellow", "red"].includes(parsedEffect.health)) {
     throw new Error("effect status did not return a valid public scorecard");
+  }
+  if (parsedEffect.health === "red") {
+    throw new Error("blocked high-privacy dispatches should not make public effect status red");
+  }
+  if (parsedEffect.evidence.high_privacy_blocked_events < 1 || parsedEffect.evidence.high_privacy_unsafe_open_events !== 0) {
+    throw new Error("effect status did not expose high-privacy blocked/unsafe-open split");
   }
   if (!parsedEffect.kano_snapshot?.basic_needs?.length || parsedEffect.evidence.prompt_events < 1) {
     throw new Error("effect status did not expose Kano framing and observed evidence");
