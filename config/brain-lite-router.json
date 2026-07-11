@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "policyVersion": "brain-lite-router-v1",
+  "enabled": true,
+  "dispatchThreshold": 3,
+  "executionPolicy": {
+    "maxAttempts": 3,
+    "maxInfrastructureRetries": 1,
+    "maxCapabilityEscalations": 2,
+    "totalWallTimeMs": 1800000,
+    "infrastructureFailureThreshold": 2,
+    "infrastructureWindowMs": 3600000,
+    "routeCooldownMs": 1800000
+  },
+  "models": {
+    "sol": {
+      "slug": "gpt-5.6-sol",
+      "contextWindow": 372000,
+      "inputPerMillion": 5,
+      "outputPerMillion": 30,
+      "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"]
+    },
+    "terra": {
+      "slug": "gpt-5.6-terra",
+      "contextWindow": 372000,
+      "inputPerMillion": 2.5,
+      "outputPerMillion": 15,
+      "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"]
+    },
+    "luna": {
+      "slug": "gpt-5.6-luna",
+      "contextWindow": 372000,
+      "inputPerMillion": 1,
+      "outputPerMillion": 6,
+      "efforts": ["low", "medium", "high", "xhigh", "max"]
+    },
+    "spark": {
+      "slug": "gpt-5.3-codex-spark",
+      "contextWindow": 128000,
+      "textOnly": true,
+      "independentQuota": true,
+      "efforts": ["low", "medium", "high", "xhigh"]
+    }
+  },
+  "routes": {
+    "spark-high": {
+      "model": "gpt-5.3-codex-spark",
+      "effort": "high",
+      "independentQuota": true,
+      "timeoutMs": 600000,
+      "infrastructureFallback": "luna-max",
+      "escalation": ["luna-max", "terra-max"]
+    },
+    "luna-low": {
+      "model": "gpt-5.6-luna",
+      "effort": "low",
+      "timeoutMs": 600000,
+      "infrastructureFallback": "terra-medium",
+      "escalation": ["luna-medium", "luna-max"]
+    },
+    "luna-medium": {
+      "model": "gpt-5.6-luna",
+      "effort": "medium",
+      "timeoutMs": 600000,
+      "probe": true,
+      "probeBudget": {
+        "maxEvidenceItems": 8,
+        "maxSuggestedCommands": 4
+      },
+      "infrastructureFallback": "terra-medium",
+      "escalation": ["luna-max", "terra-max"]
+    },
+    "luna-max": {
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "timeoutMs": 900000,
+      "infrastructureFallback": "terra-max",
+      "escalation": ["terra-max", "sol-max"]
+    },
+    "terra-medium": {
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "timeoutMs": 900000,
+      "probe": true,
+      "probeBudget": {
+        "maxEvidenceItems": 8,
+        "maxSuggestedCommands": 4
+      },
+      "infrastructureFallback": "terra-max",
+      "escalation": ["terra-max"]
+    },
+    "terra-max": {
+      "model": "gpt-5.6-terra",
+      "effort": "max",
+      "timeoutMs": 1200000,
+      "infrastructureFallback": "sol-max",
+      "escalation": ["sol-max"]
+    },
+    "sol-max": {
+      "model": "gpt-5.6-sol",
+      "effort": "max",
+      "timeoutMs": 1800000,
+      "infrastructureFallback": null,
+      "escalation": []
+    },
+    "terra-ultra": {
+      "model": "gpt-5.6-terra",
+      "effort": "ultra",
+      "timeoutMs": 2400000,
+      "infrastructureFallback": "sol-max",
+      "escalation": ["sol-max"]
+    },
+    "sol-ultra": {
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "timeoutMs": 2400000,
+      "infrastructureFallback": null,
+      "escalation": []
+    }
+  },
+  "evidenceProfiles": {
+    "gpt56-effort-eval-v2-constraint-satisfaction": {
+      "sourceId": "constraint-calibration-example-2026-07",
+      "sampleCount": 3,
+      "stableRoute": "luna-max",
+      "stablePasses": 3,
+      "trialRoute": "terra-medium",
+      "trialPasses": 2,
+      "finding": "Rules-clear, constraint-dense, batch work with an independent verifier crossed the observed quality line at Luna max with 3/3 complete passes."
+    }
+  },
+  "policyLearning": {
+    "windowSize": 3,
+    "stablePasses": 3,
+    "trialPasses": 2,
+    "minimumRiskForAutomaticUse": "low",
+    "requireVerifier": true
+  },
+  "paths": {
+    "ledger": "data/brain-lite/router-ledger.jsonl",
+    "policyState": "data/brain-lite/router-policy-state.json",
+    "dailyReports": "reports/brain-lite-daily"
+  },
+  "review": {
+    "timeZone": "Asia/Shanghai",
+    "rollingDays": 7,
+    "comparisonDays": 7
+  }
+}

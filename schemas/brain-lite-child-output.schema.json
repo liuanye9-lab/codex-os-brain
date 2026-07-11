@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Brain Lite delegated child output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "evidence",
+    "proposedPatch",
+    "verification",
+    "risks",
+    "needsEscalation",
+    "escalationReason"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 20
+    },
+    "proposedPatch": {
+      "type": ["string", "null"]
+    },
+    "verification": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 20
+    },
+    "risks": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 20
+    },
+    "needsEscalation": {
+      "type": "boolean"
+    },
+    "escalationReason": {
+      "type": ["string", "null"]
+    }
+  }
+}

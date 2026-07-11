@@ -1,0 +1,12 @@
+{
+  "taskFamily": "bounded-coding",
+  "clarity": "clear",
+  "risk": "low",
+  "verifiable": true,
+  "independent": true,
+  "coding": true,
+  "textOnly": true,
+  "boundedChange": true,
+  "sparkQuotaAvailable": true,
+  "estimatedToolCalls": 5
+}

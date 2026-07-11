@@ -1,0 +1,21 @@
+{
+  "name": "brain-lite-model-router",
+  "version": "1.1.0",
+  "description": "A native-first, verifier-gated model router for Codex sub-tasks.",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "check": "node --check scripts/brain-lite-router.js && node --check scripts/brain-lite-delegate.js && node --check scripts/brain-lite-routing-ledger.js && node --check scripts/brain-lite-daily-review.js && npm test"
+  },
+  "keywords": [
+    "codex",
+    "agent",
+    "model-routing",
+    "verification",
+    "llmops"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  }
+}
