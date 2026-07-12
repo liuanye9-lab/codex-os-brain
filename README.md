@@ -1,10 +1,26 @@
 # Agentic Coding Harness — Research Archive
 
-> A privacy-safe record of an agentic-coding harness evolving from V1 through V7, then toward a measured native-first runtime.
+> A privacy-safe record of an agentic-coding harness evolving from V1 through V8: native execution first, augmentation only when evidence says it helps.
 
 This is a research archive, not a one-click agent product and not a claim that every task needs more orchestration. It preserves a real engineering sequence: each version addressed a failure mode seen in longer AI-assisted work; later versions also revealed the cost and limits of earlier control layers.
 
 The current conclusion is deliberately narrow: **keep controls that create independent evidence; make every other layer earn its cost for the task at hand.**
+
+## At a glance
+
+```mermaid
+flowchart LR
+  Request["Task request"] --> Contract{"Clear enough?"}
+  Contract -->|"No signal"| Clarify["Ask for one observable signal"]
+  Contract -->|"Clear"| Parent["Native parent execution"]
+  Parent --> Need{"Prior evidence needed?"}
+  Need -->|"No"| Verify["Independent verifier"]
+  Need -->|"Yes"| Recall["Bounded recall<br/>≤ 900 estimated tokens"]
+  Recall --> Verify
+  Verify --> Outcome{"Verified?"}
+  Outcome -->|"Yes"| Deliver["Deliver + sanitized evidence"]
+  Outcome -->|"No"| Control["Bounded retry, escalation, or stop"]
+```
 
 ## How to read this archive
 
@@ -79,6 +95,47 @@ V8 also measures its own overhead. A policy requires at least three distinct pai
 
 See [V8 design](v8/DESIGN.md), the [synthetic evaluation manifest](evals/v8-control-plane-2026-07-12/cases.json), and the [V8 scripts](scripts/).
 
+### What V8 adds—and what it deliberately does not do
+
+| Component | Activates when | Gives the system | Does not do by default |
+|---|---|---|---|
+| Task Contract | The request is vague or has known constraints. | Clarify, direct, recall, or delegate-candidate decision. | Guess hidden requirements. |
+| Context Economy | Historical evidence is relevant. | Redacted, deduplicated evidence packet with a 900-token cap. | Permanently inject all memory. |
+| Evidence Trace V2 | A control-plane event occurs. | Privacy-safe route, cost, verifier, and outcome evidence. | Store raw prompts, private paths, or hidden reasoning. |
+| Deterministic control | A routed attempt ends. | Bounded retry, escalation, acceptance, or stop. | Let child output override parent budgets. |
+| Harness Tax + Policy Lab | A change is tested against a baseline. | Quality/cost comparison and stable/trial/reject states. | Treat a single success as a policy improvement. |
+| Skill Lifecycle V2 | A workflow repeats successfully. | Candidate → shadow → replay → canary → promoted lifecycle. | Auto-promote external-write workflows. |
+
+```mermaid
+stateDiagram-v2
+  [*] --> Candidate
+  Candidate --> Shadow: repeated workflow
+  Shadow --> Replay: passing replay set
+  Replay --> Canary: stable policy benefit
+  Canary --> Promoted: approved canary pass
+  Candidate --> Candidate: insufficient occurrences
+  Shadow --> Shadow: replay evidence incomplete
+  Replay --> Replay: no measured benefit
+  Replay --> NeedsApproval: external write
+  Promoted --> Revoked: critical failure
+  Canary --> Revoked: critical failure
+```
+
+### The policy gate in one picture
+
+```mermaid
+flowchart TD
+  Change["Candidate route, policy, or Skill"] --> Samples{"Three distinct paired samples?"}
+  Samples -->|"No"| Trial["Keep in shadow / trial"]
+  Samples -->|"Yes"| Quality{"Quality floor preserved?"}
+  Quality -->|"No"| Reject["Reject or revoke"]
+  Quality -->|"Yes"| Benefit{"15% token/latency gain<br/>or an additional verified pass?"}
+  Benefit -->|"Yes"| Stable["Eligible for stable use"]
+  Benefit -->|"No"| Trial
+  Trial --> Overhead["Five no-gain samples<br/>with material overhead"]
+  Overhead --> Disable["Create disable candidate"]
+```
+
 ## What the controlled evaluations changed
 
 The present policy uses external deterministic graders, not model self-reports. Both pilot comparisons held the parent route constant and compared direct work against a routed condition with two read-only child investigators.
@@ -107,19 +164,17 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-  Task["Task"] --> Parent["Native parent agent"]
-  Parent --> Memory{"Historical evidence needed?"}
-  Memory -->|"Yes"| Recall["Bounded local recall"]
-  Memory -->|"No"| Intake["Clarification + dispatch gate"]
-  Recall --> Intake
-  Intake -->|"Direct"| Work["Parent work"]
-  Intake -->|"Clarify"| Ask["Request one signal"]
-  Intake -->|"Delegate"| Child["Read-only ephemeral child"]
-  Child --> Work
-  Work --> Verify["Independent verifier"]
-  Verify --> Ledger["Sanitized routing ledger"]
-  Ledger --> Review["Daily + rolling review"]
-  Review --> Skills["Replay-gated skill candidates"]
+  Task["Task"] --> Contract["Task Contract"]
+  Contract --> Direct["Native parent work"]
+  Contract --> Recall["Context Economy"]
+  Contract --> Delegate["Read-only delegate candidate"]
+  Recall --> Direct
+  Delegate --> Direct
+  Direct --> Verify["Independent verifier"]
+  Verify --> Trace["Evidence Trace V2"]
+  Trace --> Tax["Harness Tax"]
+  Tax --> Lab["Policy Lab"]
+  Lab --> Skills["Skill Lifecycle V2"]
 ```
 
 ## Repository map
