@@ -1,0 +1,9 @@
+{
+  "taskFamily": "general",
+  "promptClarity": "vague",
+  "risk": "low",
+  "hasObservableSignal": false,
+  "hasFailingVerification": false,
+  "hasFileScope": false,
+  "hasRelevantContext": false
+}

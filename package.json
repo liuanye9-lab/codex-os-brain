@@ -1,11 +1,11 @@
 {
   "name": "brain-lite-model-router",
-  "version": "1.1.0",
-  "description": "A native-first, verifier-gated model router for Codex sub-tasks.",
+  "version": "1.2.0",
+  "description": "A verifier-gated Agentic Coding harness research archive with measured routing.",
   "type": "commonjs",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "check": "node --check scripts/brain-lite-router.js && node --check scripts/brain-lite-delegate.js && node --check scripts/brain-lite-routing-ledger.js && node --check scripts/brain-lite-daily-review.js && npm test"
+    "check": "node --check scripts/brain-lite-router.js && node --check scripts/brain-lite-delegate.js && node --check scripts/brain-lite-routing-ledger.js && node --check scripts/brain-lite-daily-review.js && node --check scripts/brain-lite-subagent-ab.js && node --check v7/scripts/evolution-gate.js && node v7/scripts/evolution-gate.js --self-test && npm test"
   },
   "keywords": [
     "codex",

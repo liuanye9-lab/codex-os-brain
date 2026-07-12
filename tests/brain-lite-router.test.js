@@ -26,6 +26,42 @@ test('keeps trivial work in the mother agent', () => {
   assert.equal(decision.routeId, 'mother-direct');
 });
 
+test('asks for one observable signal before routing a vague task with no usable context', () => {
+  const decision = route({
+    promptClarity: 'vague',
+    hasObservableSignal: false,
+    hasFailingVerification: false,
+    hasFileScope: false,
+    hasRelevantContext: false,
+    verifiable: true,
+    independent: true,
+    estimatedToolCalls: 5,
+  });
+
+  assert.equal(decision.dispatch, false);
+  assert.equal(decision.action, 'clarify');
+  assert.equal(decision.routeId, 'mother-clarify');
+  assert.equal(decision.clarificationRequired, true);
+  assert.deepEqual(decision.clarificationFields, ['observable symptom', 'failing command or log', 'reproduction', 'relevant file']);
+});
+
+test('continues normal routing when a vague request has one concrete signal', () => {
+  const decision = route({
+    promptClarity: 'vague',
+    hasObservableSignal: true,
+    hasFailingVerification: false,
+    hasFileScope: false,
+    hasRelevantContext: false,
+    verifiable: true,
+    independent: true,
+    estimatedToolCalls: 5,
+  });
+
+  assert.equal(decision.action, 'delegate');
+  assert.equal(decision.routeId, 'terra-medium');
+  assert.equal(decision.clarificationRequired, false);
+});
+
 test('uses Spark high for bounded text coding on the independent quota', () => {
   const decision = route({
     taskFamily: 'bounded-coding',
@@ -43,7 +79,7 @@ test('uses Spark high for bounded text coding on the independent quota', () => {
   assert.equal(decision.model, 'gpt-5.3-codex-spark');
   assert.equal(decision.effort, 'high');
   assert.equal(decision.independentQuota, true);
-  assert.equal(decision.policyVersion, 'brain-lite-router-v1');
+  assert.equal(decision.policyVersion, 'brain-lite-router-v2');
   assert.equal(decision.executionBudget.maxInfrastructureRetries, 1);
   assert.equal(decision.executionBudget.maxCapabilityEscalations, 2);
 });
@@ -180,9 +216,9 @@ test('uses learned stable routes only for low-risk verifiable work', () => {
   assert.equal(highRisk.routeId, 'sol-max');
 });
 
-test('exports a portable evidence profile without a private attachment path', () => {
+test('exports the configured source fingerprint without a temporary attachment path', () => {
   const profile = config.evidenceProfiles['gpt56-effort-eval-v2-constraint-satisfaction'];
-  assert.equal(profile.sourceId, 'constraint-calibration-example-2026-07');
+  assert.equal(profile.archiveSha256, '66b0a22967ebcc887d281cd9dc296cd8f2bf8fc9cd6ef9b86fd595066bd40dfa');
   assert.equal(JSON.stringify(profile).includes('/tmp/'), false);
   assert.equal(path.isAbsolute(profile.sourceId), false);
 });

@@ -7,9 +7,25 @@ description: Decide whether a bounded independent task should stay with the pare
 
 Default to parent execution. Run the deterministic gate only when delegation has a plausible advantage.
 
+## Clarify before dispatch
+
+When a request is vague, encode whether there is a concrete symptom, failing check, file scope, or relevant prior context. If all are absent, the gate returns `mother-clarify`: ask for one of those signals and do not start child agents to guess unseen business rules.
+
+```json
+{
+  "promptClarity": "vague",
+  "hasObservableSignal": false,
+  "hasFailingVerification": false,
+  "hasFileScope": false,
+  "hasRelevantContext": false
+}
+```
+
+Once any signal exists, use the normal route.
+
 1. Encode known task features in a small JSON file.
 2. Run `$BRAIN_LITE_HOME/scripts/brain-lite-router.js --features-file <file>`.
-3. Stop if the result is `mother-direct`.
+3. Stop if the result is `mother-clarify` or `mother-direct`.
 4. For a delegated route, send only the goal, hard constraints, relevant files, output contract, verification commands, and read-only permission boundary.
 5. Run the child through `brain-lite-delegate.js`; never give it external side effects.
 6. The parent runs the independent verifier and appends a final verified event with `brain-lite-routing-ledger.js`.

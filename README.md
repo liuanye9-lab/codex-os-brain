@@ -1,120 +1,146 @@
-# Brain Lite Model Router
+# Codex Brain — Harness Research Archive
 
-A small, dependency-free reference harness for routing Codex sub-tasks across GPT-5.6 Sol, Terra, Luna, and GPT-5.3-Codex-Spark without restoring an always-on hook stack.
+> A privacy-safe record of an agentic-coding harness evolving from V1 through V7, then toward a measured native-first runtime.
 
-The core rule is simple: keep ordinary work in the parent agent, and delegate only when a task is independent and has a clear verification, model-specialization, quota, batching, or parallelism advantage.
+This is a research archive, not a one-click agent product and not a claim that every task needs more orchestration. It preserves a real engineering sequence: each version addressed a failure mode seen in longer AI-assisted work; later versions also revealed the cost and limits of earlier control layers.
 
-## Why this exists
+The current conclusion is deliberately narrow: **keep controls that create independent evidence; make every other layer earn its cost for the task at hand.**
 
-Modern coding models need less orchestration than older harnesses assumed. Always-on prompt hooks, mandatory multi-agent fan-out, long policy injections, and automatic self-review can consume tokens while reducing model freedom. Brain Lite keeps only the pieces that still pay for themselves:
+## How to read this archive
 
-- a deterministic dispatch gate that makes no model call;
-- task-family model and effort boundaries;
-- read-only, ephemeral delegated workers;
-- independent verification before acceptance;
-- a sanitized, idempotent routing ledger;
-- daily and rolling seven-day outcome reviews;
-- bounded policy adaptation from distinct verified samples.
-
-It intentionally ships no global hooks, neural router, gateway, graph engine, or raw memory layer.
-
-## Routing policy
-
-| Start route | Intended boundary |
-|---|---|
-| Spark high | Bounded, local, text-only coding with a mechanical check and an independent quota advantage |
-| Luna low | Trivial extraction, classification, or formatting with immediate verification |
-| Luna medium | Clear, repeated, low-risk work in one module |
-| Luna max | Rules-clear, constraint-dense, batch work with deterministic verification |
-| Terra medium | Everyday multi-condition development or research; use as a bounded probe |
-| Terra max | Cross-file, cross-table, or cross-time reconciliation, including a failed Terra-medium probe |
-| Sol max | Unfamiliar, open-ended, architectural, high-value, high-cost-of-failure, or hard-to-verify work |
-| Ultra | Only after a verified max failure, at least three independent lanes, and a merge verifier |
-
-Effort is an investment control, not a quality guarantee. The router does not mechanically climb through every effort level.
+The v1–v7 directories preserve concise, de-identified records in the version layout used during the work. Account names, machine-specific paths, runtime state, prompts, and other private material have been removed or generalized. The technical sequence, original constraints, and unresolved limitations are retained; later conclusions do not rewrite earlier decisions as if they were obvious from the start.
 
 ```mermaid
 flowchart LR
-  Task["Task"] --> Gate{"Deterministic dispatch gate"}
-  Gate -->|"benefit below threshold"| Parent["Parent agent executes"]
-  Gate -->|"independent and worthwhile"| Route["Choose lowest credible passing route"]
-  Route --> Child["Read-only ephemeral child"]
-  Child --> Verify["Independent verifier"]
-  Verify -->|"pass"| Accept["Parent applies or accepts"]
-  Verify -->|"capability failure"| Escalate["Bounded non-mechanical escalation"]
-  Verify -->|"infrastructure failure"| Fallback["One retry, then availability fallback"]
-  Accept --> Ledger["Sanitized outcome ledger"]
-  Escalate --> Ledger
-  Fallback --> Ledger
-  Ledger --> Review["Daily + rolling seven-day review"]
+  V1["V1<br/>Persistent context"] --> V2["V2<br/>Honesty / uncertainty loop"]
+  V2 --> V3["V3<br/>Stuck-loop intervention"]
+  V3 --> V4["V4<br/>Task posture routing"]
+  V4 --> V5["V5<br/>Multimodal evidence sidecar"]
+  V5 --> V6["V6<br/>Post-tool engineering harness"]
+  V6 --> V7["V7<br/>Evidence-gated evolution"]
+  V7 --> Now["Native-first<br/>measured augmentation"]
 ```
 
-## Safety and cost boundaries
+## V1–V7: the actual exploration path
 
-- Delegated workers use explicit argv, stdin task packets, read-only sandboxing, ephemeral sessions, and a structured output schema.
-- The parent agent owns every workspace mutation and runs the final verifier.
-- Model self-reports never count as completion evidence.
-- Three different representative samples must pass 3/3 before a route becomes stable; 2/3 remains trial-only.
-- Infrastructure failures are excluded from capability statistics. Repeated recent failures open an expiring route circuit.
-- A task is capped at three attempts, one infrastructure retry, two capability escalations, and a total wall-time budget.
-- Low-risk, independently verifiable task families may adopt a stable route automatically. High-risk, private, external-write, strategic, and unverifiable tasks never auto-downgrade.
+| Version | Starting problem | Mechanism introduced | What improved | Evidence and boundary | Why the next version was needed |
+|---|---|---|---|---|---|
+| [V1](v1/README.md) | Long tasks lost project context and repeated corrections disappeared after a session. | Small Markdown state, lessons, a lightweight index, and conditional context injection. | Context and corrections gained a durable, inspectable home rather than remaining only in chat history. | Operational baseline, not a controlled quality or token benchmark. Always-on injection could become noisy. | Storing context did not tell the agent when its confidence was unsupported. |
+| [V2](v2/README.md) | The agent could sound certain or declare completion without calibrated evidence. | Honest-loop protocol: multiple confidence signals, adversarial probing, and sleep-time re-evaluation. | Uncertainty became an explicit choice: answer, hedge, or ask for verification. | The archived protocol and scaffolding were real; several signal implementations remained roadmap work. | A more honest agent could still keep pursuing one bad local path. |
+| [V3](v3/DESIGN.md) | When blocked, the agent tended to keep varying the same approach. | Pre-action alternatives, a stuck-signal trigger, and a breakthrough checklist. | It added a concrete interruption point for single-track loops rather than generic reflection. | The archived implementation record reports five offline synthetic cases passing; it also records harmless meta-discussion false positives. | The appropriate posture still depended on task type and could drift under pressure. |
+| [V4](v4/DESIGN.md) | The agent could know the right engineering principle but revert to a narrow worker mode. | A small deterministic router for owner, operator, reviewer, and coach contexts. | Context injection became selective and short rather than a permanent monolithic instruction block. | It was designed to guide posture, not create facts or mutate memory; no accuracy ranking is claimed. | Text-only context still lost screenshots and PDFs as future evidence. |
+| [V5](v5/DESIGN.md) | Images and PDFs affected a task in the moment, then vanished from recall. | Multimodal sidecar index with metadata, user context, and extractable text. | Evidence could be referenced later without claiming unseen pixels or unextracted text had been understood. | Metadata is not OCR; no full-document prompt dump or secret indexing. | Better evidence intake did not catch structural debt created after tool use. |
+| [V6](v6/DESIGN.md) | A locally convenient edit could create routing, verification, dependency, or maintenance debt. | Post-tool engineering harness with pure detectors, red-light records, throttling, and focused verification prompts. | It made several failure patterns visible close to the causal edit instead of waiting for later breakage. | Historical regression cases included false-positive controls. The hook runtime is preserved as legacy design, not restored as a default. | The framework still needed safe criteria for adopting changes to itself. |
+| [V7](v7/DESIGN.md) | Research-inspired self-improvement could otherwise rewrite memory, persona, or runtime without proof. | Candidate-based evolution gate: sandboxing, verification, human approval, long-horizon metrics, and challenge/verification roles. | Sensitive changes became reviewable candidate records instead of automatic mutation. | The included self-test demonstrates an unsafe memory rewrite being held and an evidence-backed candidate being accepted. It is a gate, not proof that self-evolution improves every task. | Stronger coding models made persistent injection, default fan-out, and continuous hook stacks increasingly expensive relative to their benefit. |
 
-## Quick start
+### What the version chain shows
 
-Requires Node.js 20 or newer and a Codex executable for live delegation.
+The point of V1–V7 was never “add mechanisms because mechanisms look intelligent.” Each version protected against a specific failure mode:
+
+```mermaid
+flowchart TD
+  Context["V1: forgotten context"] --> Confidence["V2: unsupported certainty"]
+  Confidence --> Stuck["V3: single-track loops"]
+  Stuck --> Posture["V4: task-posture drift"]
+  Posture --> Evidence["V5: lost multimodal evidence"]
+  Evidence --> Debt["V6: post-tool engineering debt"]
+  Debt --> Evolution["V7: unsafe self-modification"]
+  Evolution --> Question["Do these layers still earn their cost?"]
+```
+
+That sequence also explains the later subtraction. V1–V7 established enduring requirements—observable work, independent verification, privacy boundaries, human correction, and evidence-backed learning. They did **not** prove that hooks, full context packs, or multi-agent fan-out should run on every turn.
+
+## Why the strategy changed after V7
+
+More capable coding models can plan, inspect repositories, call tools, and retain local task state without external orchestration on many ordinary tasks. Applying every historical layer by default began to introduce new failure modes:
+
+- permanent context injection consumed task budget before work began;
+- always-on hooks competed with local model judgment and increased maintenance surface;
+- automatic multi-agent fan-out multiplied coordination and token cost;
+- broad self-review and automatic learning could turn weak signals into noisy policy.
+
+The current runtime therefore uses **native-first, measured augmentation**:
+
+| Decision area | V1–V7 tendency | Current default | What remains non-negotiable |
+|---|---|---|---|
+| Ordinary implementation | External workflow layers were readily available. | Parent agent works directly. | Independent verification before acceptance. |
+| Context | Proactive injection and persistent state. | Bounded recall only when prior evidence is relevant. | Do not invent historical facts. |
+| Subagents | Extra perspective could be dispatched easily. | Delegate only independent, verifiable work with a credible advantage. | Parent retains writes and final verification. |
+| Ambiguous request | More reasoning layers might attempt to recover intent. | Ask for one concrete signal before delegating. | Do not guess undisclosed business rules. |
+| Reuse and learning | Broad replay/evolution machinery was explored. | Promote only repeated, successful, replayable, permission-safe patterns. | Human and privacy gates for consequential change. |
+| Hooks | Used as experimental control points. | No always-on hook stack. | A future hook must be bounded, measurable, removable, and justified. |
+
+## What the controlled evaluations changed
+
+The present policy uses external deterministic graders, not model self-reports. Both pilot comparisons held the parent route constant and compared direct work against a routed condition with two read-only child investigators.
+
+| Evaluation | Parent-only | Routed children | Resulting rule |
+|---|---:|---:|---|
+| Clear, verifier-gated coding tasks | 3/3 verified; median 80,474 tokens; 43.714 s | 3/3 verified; median 224,312 tokens; 78.929 s | Do not dispatch by default when the parent already crosses the quality line. |
+| Vague request with no observable signal | 0/3 verified; median 93,411 tokens; 43.520 s | 0/3 verified; median 251,834 tokens; 94.000 s | Extra agents cannot infer undisclosed rules; request one concrete signal first. |
+
+These are exploratory paired samples, not a universal model ranking. Their valid conclusion is local and practical: **more agents are an organizational choice, not a default quality multiplier.** Full method and limitations: [harness-evolution report](docs/research/2026-07-12-harness-evolution.md), [clear-task pilot](docs/research/2026-07-12-subagent-ab-pilot.md), and [vague-request pilot](docs/research/2026-07-12-vague-prompt-subagent-ab-pilot.md).
+
+```mermaid
+flowchart TD
+  Request["Request"] --> Vague{"Vague and missing all<br/>concrete evidence?"}
+  Vague -->|"Yes"| Clarify["Ask for one symptom, failing check,<br/>reproduction, file, or relevant context"]
+  Vague -->|"No"| Benefit{"Independent and<br/>verifiable benefit?"}
+  Benefit -->|"No"| Direct["Parent works directly"]
+  Benefit -->|"Yes"| Route["Choose lowest credible route"]
+  Route --> Child["Read-only child investigation"]
+  Child --> Verify["Parent + independent verifier"]
+  Direct --> Verify
+  Verify --> Ledger["Sanitized outcome ledger<br/>and rolling review"]
+```
+
+## Current research architecture
+
+```mermaid
+flowchart LR
+  Task["Task"] --> Parent["Native parent agent"]
+  Parent --> Memory{"Historical evidence needed?"}
+  Memory -->|"Yes"| Recall["Bounded local recall"]
+  Memory -->|"No"| Intake["Clarification + dispatch gate"]
+  Recall --> Intake
+  Intake -->|"Direct"| Work["Parent work"]
+  Intake -->|"Clarify"| Ask["Request one signal"]
+  Intake -->|"Delegate"| Child["Read-only ephemeral child"]
+  Child --> Work
+  Work --> Verify["Independent verifier"]
+  Verify --> Ledger["Sanitized routing ledger"]
+  Ledger --> Review["Daily + rolling review"]
+  Review --> Skills["Replay-gated skill candidates"]
+```
+
+## Repository map
+
+```text
+v1/ ... v7/  de-identified historical design records
+config/        deterministic routing, model, and budget policy
+scripts/       router, delegate, ledger, review, and A/B runner
+skills/        bounded routing guidance
+schemas/       structured child-output contract
+evals/         synthetic fixtures and deterministic checkers
+tests/         regression and privacy-safe tests
+docs/history/  historical synthesis
+docs/research/ model-routing and paired-evaluation evidence
+```
+
+## Reproduce the public core
+
+Requires Node.js 20 or newer. Live delegation also requires a Codex executable available as codex or through CODEX_PATH.
 
 ```bash
-npm test
+npm run check
 node scripts/brain-lite-router.js --features-file examples/features.json
+node scripts/brain-lite-subagent-ab.js --preflight --output reports/example
 ```
 
-Example feature packet:
+The router is deterministic and never launches a model by itself. A delegated worker is read-only; the parent owns writes and the final verifier.
 
-```json
-{
-  "taskFamily": "bounded-coding",
-  "clarity": "clear",
-  "risk": "low",
-  "verifiable": true,
-  "independent": true,
-  "coding": true,
-  "textOnly": true,
-  "boundedChange": true,
-  "sparkQuotaAvailable": true,
-  "estimatedToolCalls": 5
-}
-```
+## Archive and privacy boundary
 
-Delegate only after the gate returns `dispatch: true`:
-
-```bash
-node scripts/brain-lite-delegate.js \
-  --route-file route.json \
-  --task-file task.json \
-  --cwd /path/to/project \
-  --ledger data/router-ledger.jsonl
-```
-
-Derive bounded policy state and generate a review:
-
-```bash
-node scripts/brain-lite-routing-ledger.js derive \
-  --ledger data/router-ledger.jsonl \
-  --output data/router-policy-state.json
-node scripts/brain-lite-daily-review.js \
-  --ledger data/router-ledger.jsonl \
-  --policy-state data/router-policy-state.json \
-  --output reports/daily-review.md
-```
-
-## Calibration note
-
-The included constraint-satisfaction profile is an example derived from a small three-case calibration in which max was the observed passing effort and lower efforts were non-monotonic. It is a task-family starting point, not a universal ranking. Replace or disable it when local representative samples disagree.
-
-The research and adoption audit is in [docs/research/2026-07-12-model-routing-audit.md](docs/research/2026-07-12-model-routing-audit.md).
-
-## Repository boundary
-
-This public package contains generic source, synthetic tests, schemas, and documentation only. Do not commit raw prompts, model outputs, personal profiles, memories, rollout archives, credentials, local account paths, generated ledgers, or daily reports.
+This public archive contains only generic source, de-identified historical design records, synthetic fixtures, aggregate evidence, and documentation. It excludes personal profiles, memories, account identifiers, credentials, local paths, raw prompts, raw model outputs, vector indexes, generated ledgers, and deployment-specific automation.
 
 MIT licensed.

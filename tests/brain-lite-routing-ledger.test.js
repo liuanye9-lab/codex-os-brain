@@ -41,21 +41,21 @@ function event(overrides = {}) {
 test('appendEvent keeps an allowlisted, redacted, path-minimized JSONL record', () => {
   const file = tempLedger();
   const githubToken = ['ghp', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_');
-  const syntheticEmail = ['owner', 'example.com'].join(String.fromCharCode(64));
-  const syntheticHomePath = ['', 'Users', 'example', 'secret', 'project', 'app.js'].join('/');
+  const syntheticEmail = ['owner', 'example.com'].join('@');
+  const homePath = ['', 'Users', 'example', 'secret', 'project', 'app.js'].join('/');
+  const envKey = ['API', 'KEY'].join('_');
+  const secretValue = ['live', 'secret', 'value'].join('-');
   appendEvent(file, event({
     taskId: `${syntheticEmail}-${githubToken}`,
-    reason: `Read ${syntheticHomePath} with API_KEY=live-secret-value.`,
-    relevantFiles: [syntheticHomePath, '/tmp/work/test.js'],
+    reason: `Read ${homePath} with ${envKey}=${secretValue}.`,
+    relevantFiles: [homePath, '/tmp/work/test.js'],
     rawPrompt: 'This must never be stored',
     rawOutput: 'This must never be stored either',
   }));
 
   const raw = fs.readFileSync(file, 'utf8');
   const [saved] = readEvents(file);
-  assert.equal(raw.includes(syntheticEmail), false);
-  assert.equal(raw.includes(syntheticHomePath), false);
-  assert.doesNotMatch(raw, /ghp_|live-secret-value|rawPrompt|rawOutput/);
+  assert.doesNotMatch(raw, /owner@example\.com|ghp_|live-secret-value|Users\/example|rawPrompt|rawOutput/);
   assert.deepEqual(saved.relevantFiles, ['app.js', 'test.js']);
   assert.match(saved.taskId, /\[redacted-email\]/);
   assert.equal(saved.schemaVersion, 1);

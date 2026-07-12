@@ -1,8 +1,24 @@
 {
-  "version": 1,
-  "policyVersion": "brain-lite-router-v1",
+  "version": 2,
+  "policyVersion": "brain-lite-router-v2",
   "enabled": true,
   "dispatchThreshold": 3,
+  "clarificationGate": {
+    "enabled": true,
+    "promptClarity": "vague",
+    "missingSignals": [
+      "hasObservableSignal",
+      "hasFailingVerification",
+      "hasFileScope",
+      "hasRelevantContext"
+    ],
+    "requestedEvidence": [
+      "observable symptom",
+      "failing command or log",
+      "reproduction",
+      "relevant file"
+    ]
+  },
   "executionPolicy": {
     "maxAttempts": 3,
     "maxInfrastructureRetries": 1,
@@ -120,7 +136,8 @@
   },
   "evidenceProfiles": {
     "gpt56-effort-eval-v2-constraint-satisfaction": {
-      "sourceId": "constraint-calibration-example-2026-07",
+      "sourceId": "gpt56-effort-eval-v2-2026-07-11",
+      "archiveSha256": "66b0a22967ebcc887d281cd9dc296cd8f2bf8fc9cd6ef9b86fd595066bd40dfa",
       "sampleCount": 3,
       "stableRoute": "luna-max",
       "stablePasses": 3,

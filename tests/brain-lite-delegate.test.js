@@ -86,6 +86,11 @@ test('classifies timeout, quota, network, auth, and process failures separately'
   assert.equal(classifyInfrastructureFailure({ exitCode: 1, stderr: 'authentication required' }), 'auth');
   assert.equal(classifyInfrastructureFailure({ exitCode: 1, stderr: 'unexpected child failure' }), 'process');
   assert.equal(classifyInfrastructureFailure({ exitCode: 0, stderr: '' }), null);
+  assert.equal(
+    classifyInfrastructureFailure({ exitCode: 0, stdout: '{"summary":"Discusses quota and network limits."}', stderr: '' }),
+    null,
+    'a successful model response must not be reclassified from incidental prose',
+  );
 });
 
 test('runDelegatedTask uses argv plus stdin, returns structured output and a ledger-ready event', async () => {

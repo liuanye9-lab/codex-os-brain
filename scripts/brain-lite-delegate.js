@@ -88,6 +88,10 @@ function parseUsageEvents(stdout = '') {
 function classifyInfrastructureFailure(result = {}) {
   if (result.timedOut) return 'timeout';
   if (result.outputContractFailed) return 'output-contract';
+  // A zero exit code means transport and the worker process completed normally.
+  // Do not scan successful model prose: it can legitimately discuss quota,
+  // network, authentication, or model availability as task content.
+  if (Number(result.exitCode) === 0) return null;
   const text = `${result.stderr || ''}\n${result.stdout || ''}`.toLowerCase();
   if (/429|rate.?limit|quota|credit limit|usage limit/.test(text)) return 'quota';
   if (/connection|network|dns|socket|econn|timed? out|reset by peer|transport/.test(text)) return 'network';

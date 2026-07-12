@@ -83,6 +83,38 @@ function isStrongDispatchSignal(features) {
     );
 }
 
+function requiresClarification(features, config) {
+  const gate = config?.clarificationGate;
+  if (gate?.enabled !== true || features.promptClarity !== gate.promptClarity) return false;
+  const signals = Array.isArray(gate.missingSignals) ? gate.missingSignals : [];
+  return signals.length > 0 && signals.every((field) => !bool(features[field]));
+}
+
+function clarificationDecision(features, config, score, signals, executionBudget) {
+  const gate = config.clarificationGate || {};
+  return {
+    dispatch: false,
+    action: 'clarify',
+    clarificationRequired: true,
+    clarificationFields: [...(gate.requestedEvidence || [])],
+    score,
+    signals: [...signals, 'missing-observable-task-signal'],
+    routeId: 'mother-clarify',
+    model: null,
+    effort: null,
+    reason: 'task wording is vague and lacks an observable symptom, failing verification, file scope, or relevant context; obtain one concrete signal before routing',
+    escalation: [],
+    evidenceProfile: null,
+    independentQuota: false,
+    ultraEligible: false,
+    policyVersion: config.policyVersion || `brain-lite-router-v${config.version || 1}`,
+    executionBudget,
+    probe: false,
+    probeBudget: null,
+    availabilityFallbackFrom: null,
+  };
+}
+
 function ultraRoute(features, config) {
   const previous = features.previousRoute || {};
   const eligible = bool(features.previousVerifiedFailure)
@@ -175,6 +207,9 @@ function routeTask(features = {}, config, policyState = {}) {
   };
   const executionBudget = { ...(config.executionPolicy || {}) };
   const { score, signals } = dispatchScore(normalized);
+  if (requiresClarification(normalized, config)) {
+    return clarificationDecision(normalized, config, score, signals, executionBudget);
+  }
   const forcedDirect = isForcedDirect(normalized);
   const dispatch = config.enabled !== false
     && !forcedDirect
@@ -183,6 +218,9 @@ function routeTask(features = {}, config, policyState = {}) {
   if (!dispatch) {
     return {
       dispatch: false,
+      action: 'direct',
+      clarificationRequired: false,
+      clarificationFields: [],
       score,
       signals,
       routeId: 'mother-direct',
@@ -221,6 +259,9 @@ function routeTask(features = {}, config, policyState = {}) {
 
   return {
     dispatch: true,
+    action: 'delegate',
+    clarificationRequired: false,
+    clarificationFields: [],
     score,
     signals,
     routeId: selectedRouteId,
@@ -320,7 +361,9 @@ if (require.main === module) {
 module.exports = {
   DEFAULT_CONFIG_PATH,
   dispatchScore,
+  clarificationDecision,
   nextRouteAfterOutcome,
+  requiresClarification,
   routeTask,
   routeIdFor,
 };
