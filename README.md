@@ -1,4 +1,4 @@
-# Codex Brain — Harness Research Archive
+# Agentic Coding Harness — Research Archive
 
 > A privacy-safe record of an agentic-coding harness evolving from V1 through V7, then toward a measured native-first runtime.
 
@@ -18,7 +18,8 @@ flowchart LR
   V4 --> V5["V5<br/>Multimodal evidence sidecar"]
   V5 --> V6["V6<br/>Post-tool engineering harness"]
   V6 --> V7["V7<br/>Evidence-gated evolution"]
-  V7 --> Now["Native-first<br/>measured augmentation"]
+  V7 --> V8["V8<br/>Native control plane"]
+  V8 --> Now["Measured augmentation"]
 ```
 
 ## V1–V7: the actual exploration path
@@ -69,6 +70,14 @@ The current runtime therefore uses **native-first, measured augmentation**:
 | Ambiguous request | More reasoning layers might attempt to recover intent. | Ask for one concrete signal before delegating. | Do not guess undisclosed business rules. |
 | Reuse and learning | Broad replay/evolution machinery was explored. | Promote only repeated, successful, replayable, permission-safe patterns. | Human and privacy gates for consequential change. |
 | Hooks | Used as experimental control points. | No always-on hook stack. | A future hook must be bounded, measurable, removable, and justified. |
+
+## V8: Native Harness Control Plane
+
+V8 turns the native parent-agent path into the baseline. A task contract asks for clarification when a vague request lacks observable evidence; bounded context packets cap injected recall at 900 estimated tokens; privacy-safe traces record outcomes without raw prompts or hidden reasoning. Delegation, policies, and Skill promotion remain evidence-gated rather than default behavior.
+
+V8 also measures its own overhead. A policy requires at least three distinct paired samples with no quality regression and a measurable token, latency, or verification benefit before it can become stable. Five no-gain samples with material overhead become a disable candidate. Hooks are disabled by default.
+
+See [V8 design](v8/DESIGN.md), the [synthetic evaluation manifest](evals/v8-control-plane-2026-07-12/cases.json), and the [V8 scripts](scripts/).
 
 ## What the controlled evaluations changed
 

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Brain Lite V8 Task Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "taskId", "taskFamily", "action", "risk", "verifiable", "independent", "dispatchEligible", "requiresApproval", "contextBudget", "requestedEvidence"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "taskId": { "type": "string", "minLength": 1 },
+    "taskFamily": { "type": "string", "minLength": 1 },
+    "action": { "enum": ["mother-direct", "mother-clarify", "recall-then-direct", "delegate-candidate"] },
+    "risk": { "enum": ["low", "medium", "high"] },
+    "verifiable": { "type": "boolean" },
+    "independent": { "type": "boolean" },
+    "dispatchEligible": { "type": "boolean" },
+    "requiresApproval": { "type": "boolean" },
+    "externalWrite": { "type": "boolean" },
+    "parallelLanes": { "type": "integer", "minimum": 0 },
+    "contextBudget": { "type": "integer", "minimum": 0, "maximum": 900 },
+    "requestedEvidence": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+  }
+}

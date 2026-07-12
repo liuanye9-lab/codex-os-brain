@@ -1,0 +1,54 @@
+{
+  "version": 8,
+  "policyVersion": "brain-lite-v8",
+  "enabled": true,
+  "persistentInstructionBudget": 800,
+  "hooks": {
+    "enabled": false
+  },
+  "taskContract": {
+    "enabled": true,
+    "clarificationSignals": [
+      "hasObservableSignal",
+      "hasFailingVerification",
+      "hasFileScope",
+      "hasRelevantContext"
+    ]
+  },
+  "contextEconomy": {
+    "enabled": true,
+    "tokenBudget": 900,
+    "maxItems": 4,
+    "maxItemsPerSource": 2,
+    "semanticDuplicateThreshold": 0.92
+  },
+  "trace": {
+    "enabled": true,
+    "schemaVersion": 2,
+    "storeRawContent": false
+  },
+  "harnessTax": {
+    "enabled": true,
+    "disableWindow": 5,
+    "overheadThreshold": 0.1
+  },
+  "policyLab": {
+    "enabled": true,
+    "minimumDistinctSamples": 3,
+    "tokenBenefitThreshold": 0.15,
+    "latencyBenefitThreshold": 0.15,
+    "minimumAdditionalPasses": 1
+  },
+  "skillLifecycle": {
+    "enabled": true,
+    "minimumOccurrences": 3,
+    "minimumPassingReplays": 3,
+    "criticalFailureRevokes": true
+  },
+  "paths": {
+    "trace": "data/brain-lite/v8-trace.jsonl",
+    "experiments": "data/brain-lite/v8-policy-experiments.json",
+    "skillLifecycle": "data/brain-lite/v8-skill-lifecycle.json",
+    "reports": "reports/brain-lite-v8"
+  }
+}

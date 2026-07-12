@@ -5,7 +5,9 @@
   "type": "commonjs",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "check": "node --check scripts/brain-lite-router.js && node --check scripts/brain-lite-delegate.js && node --check scripts/brain-lite-routing-ledger.js && node --check scripts/brain-lite-daily-review.js && node --check scripts/brain-lite-subagent-ab.js && node --check v7/scripts/evolution-gate.js && node v7/scripts/evolution-gate.js --self-test && npm test"
+    "check": "node --check scripts/brain-lite-router.js && node --check scripts/brain-lite-delegate.js && node --check scripts/brain-lite-routing-ledger.js && node --check scripts/brain-lite-daily-review.js && node --check scripts/brain-lite-subagent-ab.js && node --check scripts/brain-lite-task-contract.js && node --check scripts/brain-lite-context-economy.js && node --check scripts/brain-lite-trace-v2.js && node --check scripts/brain-lite-harness-tax.js && node --check scripts/brain-lite-policy-lab.js && node --check scripts/brain-lite-skill-lifecycle-v2.js && node --check scripts/brain-lite-v8-eval.js && node --check v7/scripts/evolution-gate.js && node v7/scripts/evolution-gate.js --self-test && npm test",
+    "test:v8": "node --test tests/brain-lite-v8-*.test.js",
+    "eval:v8:preflight": "node scripts/brain-lite-v8-eval.js --preflight --cases evals/v8-control-plane-2026-07-12/cases.json"
   },
   "keywords": [
     "codex",
