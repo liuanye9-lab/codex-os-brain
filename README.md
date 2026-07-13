@@ -105,6 +105,25 @@ See [V8 design](v8/DESIGN.md), the [synthetic evaluation manifest](evals/v8-cont
 | Deterministic control | A routed attempt ends. | Bounded retry, escalation, acceptance, or stop. | Let child output override parent budgets. |
 | Harness Tax + Policy Lab | A change is tested against a baseline. | Quality/cost comparison and stable/trial/reject states. | Treat a single success as a policy improvement. |
 | Skill Lifecycle V2 | A workflow repeats successfully. | Candidate → shadow → replay → canary → promoted lifecycle. | Auto-promote external-write workflows. |
+| Behavioral Memory (optional) | Repeated explicit corrections produce a reviewed rule candidate. | Evidence-gated replay, paired evaluation, explicit canary approval, and ≤300-token promoted recall. | Persist raw corrections, learn from quoted text, or turn hooks on. |
+
+### Optional behavioral memory: learning without permanent injection
+
+Behavioral memory is an **off-by-default V8 experiment**, not a restored hook stack. Host adapters are sensor-only. They normalize user-visible text, remove known injected/quoted blocks, and create a candidate only after a correction signal. The raw correction and session identifier never enter the candidate store.
+
+```mermaid
+flowchart LR
+  Correction["Explicit correction"] --> Sensor["Sensor-only normalizer"]
+  Sensor --> Candidate["Private candidate store"]
+  Candidate --> Evidence{"Repeated evidence +<br/>fixed-verifier replay?"}
+  Evidence -->|"No"| Hold["Candidate / replay"]
+  Evidence -->|"Yes"| Canary["Explicit canary approval"]
+  Canary -->|"Pass"| Promoted["Promoted, conflict-free rule"]
+  Canary -->|"Critical failure"| Revoked["Revoked"]
+  Promoted --> Context["Context Economy<br/>≤ 300 tokens, ≤ 2 items"]
+```
+
+Storage uses a short-lived writer lock and monotonic revision to detect stale updates. Corrupt JSON is preserved and blocks writes. Research export is a strict text-free allowlist with caller-supplied HMAC salt. See the [integration guide](INTEGRATION.md) and [audit record](docs/research/2026-07-13-behavioral-memory-audit.md).
 
 ```mermaid
 stateDiagram-v2
@@ -197,6 +216,7 @@ Requires Node.js 20 or newer. Live delegation also requires a Codex executable a
 
 ```bash
 npm run check
+npm run test:behavioral-memory
 node scripts/brain-lite-router.js --features-file examples/features.json
 node scripts/brain-lite-subagent-ab.js --preflight --output reports/example
 ```
