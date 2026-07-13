@@ -45,10 +45,25 @@
     "minimumPassingReplays": 3,
     "criticalFailureRevokes": true
   },
+  "behavioralMemory": {
+    "enabled": false,
+    "sensorOnly": true,
+    "storeRawCorrectionText": false,
+    "requireExplicitRule": true,
+    "contextTokenBudget": 300,
+    "maxContextItems": 2,
+    "hostAdapters": {
+      "claudeCode": false,
+      "codex": false,
+      "zcode": false
+    }
+  },
   "paths": {
     "trace": "data/brain-lite/v8-trace.jsonl",
     "experiments": "data/brain-lite/v8-policy-experiments.json",
     "skillLifecycle": "data/brain-lite/v8-skill-lifecycle.json",
+    "behavioralMemory": "data/brain-lite/v8-behavioral-memory.json",
+    "behavioralMemoryExports": "reports/brain-lite-v8/behavioral-memory",
     "reports": "reports/brain-lite-v8"
   }
 }

@@ -9,5 +9,6 @@ V8 keeps the mother Agent and native Codex loop as the default execution path. I
 - **Harness Tax:** compares quality, token use, latency and correction cost against a native baseline.
 - **Policy Lab:** policy changes stay in trial until distinct paired samples prove quality and a measurable benefit.
 - **Skill Lifecycle V2:** repeated workflows move through candidate, shadow, replay and canary stages; critical failures revoke them.
+- **Evidence-Gated Behavioral Memory:** optional host sensors can turn explicit user corrections into privacy-safe rule candidates. Candidates require repeated evidence, replay passes, a fixed-verifier paired comparison and an explicit canary pass before bounded recall.
 
-Hooks remain disabled by default. V8 does not retain the previous semantic bridge or diary sidecar as active compatibility layers. Historical records remain in version history and archives, while the active runtime contains only the native-first control plane.
+Hooks and behavioral-memory host adapters remain disabled by default. V8 does not retain the previous semantic bridge or diary sidecar as active compatibility layers. Historical records remain in version history and archives, while the active runtime contains only the native-first control plane.

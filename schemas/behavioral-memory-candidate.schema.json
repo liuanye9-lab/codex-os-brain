@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/codex-os-brain/behavioral-memory-candidate.schema.json",
+  "title": "Evidence-Gated Behavioral Memory Candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "candidateId",
+    "state",
+    "scopeKey",
+    "rule",
+    "ruleHash",
+    "risk",
+    "occurrences",
+    "firstSeenDate",
+    "lastSeenDate",
+    "evidenceHashes",
+    "triggers",
+    "hosts",
+    "confidenceMax",
+    "reviewRequired",
+    "conflictsWith",
+    "replays",
+    "experiment"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "candidateId": { "type": "string", "pattern": "^bm_[a-f0-9]{20}$" },
+    "state": {
+      "enum": [
+        "needs-synthesis",
+        "candidate",
+        "shadow",
+        "replay",
+        "canary",
+        "promoted",
+        "needs-approval",
+        "rejected",
+        "revoked"
+      ]
+    },
+    "scopeKey": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "rule": { "type": ["string", "null"], "maxLength": 1200 },
+    "ruleHash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "risk": { "enum": ["read-only", "external-write", "high"] },
+    "occurrences": { "type": "integer", "minimum": 1 },
+    "firstSeenDate": { "type": ["string", "null"], "format": "date" },
+    "lastSeenDate": { "type": ["string", "null"], "format": "date" },
+    "evidenceHashes": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+      "uniqueItems": true
+    },
+    "triggers": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "hosts": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "confidenceMax": { "type": "number", "minimum": 0, "maximum": 1 },
+    "reviewRequired": { "type": "boolean" },
+    "conflictsWith": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "replays": { "type": "array", "items": { "type": "object" } },
+    "experiment": { "type": ["object", "null"] }
+  }
+}
