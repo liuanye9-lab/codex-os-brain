@@ -45,6 +45,12 @@ const policy = {
   latencyBenefitThreshold: 0.15,
   minimumAdditionalPasses: 1,
   criticalFailureRevokes: true,
+  orthogonalityGate: {
+    enabled: true,
+    requireUniqueFailureMode: true,
+    requireBudgets: true,
+    requireDisableCondition: true,
+  },
 };
 
 test('does not advance a candidate with insufficient repeated corrections', () => {
@@ -72,6 +78,7 @@ test('rejects a candidate when any paired run falls below the quality floor', ()
 test('advances a repeated rule with passing replays and stable paired benefit to canary', () => {
   const result = evaluateBehavioralCandidate(candidate(), [sample('1'), sample('2'), sample('3')], policy);
   assert.equal(result.experiment.state, 'stable');
+  assert.equal(result.experiment.orthogonality.passed, true);
   assert.equal(result.experiment.benefit, 'tokens');
   assert.equal(result.evaluation.lifecycleDecision, 'eligible');
   assert.equal(result.state, 'canary');

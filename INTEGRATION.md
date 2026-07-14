@@ -1,6 +1,52 @@
-# Evidence-Gated Behavioral Memory Integration
+# External Integration Guide
 
-This package adds an optional behavioral-memory layer to Codex OS Brain V8. It keeps native parent execution as the default and treats host hooks as disabled, sensor-only adapters.
+Brain Lite V8 exposes deterministic CommonJS modules and a small JSON CLI. It does not start a model, install a hook, discover private memory, or write outside a caller-supplied path.
+
+## Supported public surfaces
+
+| Surface | Stability | Contract |
+|---|---|---|
+| `index.js` | Public | Namespaced module exports; no import-time writes |
+| `bin/brain-lite.js` | Public | JSON stdout, errors on stderr, non-zero exit on invalid input |
+| `config/brain-lite-v8.json` | Public defaults | Hooks and behavioral memory disabled; automatic lifecycle changes disabled |
+| `schemas/` | Public | JSON schemas for trace, task contract, policy experiment, and behavioral candidates |
+
+### Library embedding
+
+```js
+const harness = require('brain-lite-agent-harness');
+
+const orthogonality = harness.policyLab.evaluateOrthogonality({
+  id: 'example-control',
+  failureModeId: 'example-failure',
+  overlapsWith: [],
+  tokenBudget: 0,
+  latencyBudgetMs: 5,
+  verifierId: 'example-verifier-v1',
+  disableCondition: 'disable after repeated verified no-benefit samples',
+  independentlyDisableable: true,
+});
+```
+
+### CLI embedding
+
+```bash
+brain-lite self-check
+brain-lite contract --features ./examples/clarification-needed.json
+brain-lite index-health --config ./config/brain-lite.json
+```
+
+For a one-off GitHub invocation:
+
+```bash
+npx --yes --package=github:liuanye9-lab/codex-os-brain brain-lite self-check
+```
+
+`index-health` expects the configured index to exist. A missing index is returned as structured `unhealthy` JSON; the command never creates or repairs one.
+
+## Host adapter boundary
+
+The optional behavioral-memory layer supports Claude Code, Codex, ZCode, and generic event normalization. Native parent execution remains the default and host adapters remain disabled, sensor-only adapters.
 
 ## What it adds
 

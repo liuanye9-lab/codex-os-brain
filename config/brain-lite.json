@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "recall": {
+    "indexPath": "data/brain-lite/index.json",
+    "sources": [
+      "knowledge"
+    ]
+  }
+}

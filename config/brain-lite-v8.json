@@ -39,11 +39,19 @@
     "latencyBenefitThreshold": 0.15,
     "minimumAdditionalPasses": 1
   },
-  "skillLifecycle": {
+  "orthogonalityGate": {
     "enabled": true,
-    "minimumOccurrences": 3,
-    "minimumPassingReplays": 3,
-    "criticalFailureRevokes": true
+    "requireUniqueFailureMode": true,
+    "requireBudgets": true,
+    "requireDisableCondition": true
+  },
+  "outcomeAttribution": {
+    "enabled": true,
+    "minimumDistinctTasks": 5,
+    "minimumVerifierCoverage": 0.8,
+    "qualityFloor": 0.8,
+    "correctionRateCeiling": 0.2,
+    "automaticLifecycleChanges": false
   },
   "behavioralMemory": {
     "enabled": false,
@@ -57,6 +65,17 @@
       "codex": false,
       "zcode": false
     }
+  },
+  "indexHealth": {
+    "enabled": true,
+    "staleAfterHours": 48,
+    "autoRepair": false
+  },
+  "skillLifecycle": {
+    "enabled": true,
+    "minimumOccurrences": 3,
+    "minimumPassingReplays": 3,
+    "criticalFailureRevokes": true
   },
   "paths": {
     "trace": "data/brain-lite/v8-trace.jsonl",

@@ -1,10 +1,15 @@
 'use strict';
 
+const { buildV8Review } = require('./brain-lite-v8-review');
+
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const { resolveRuntimePaths } = require('./brain-lite-common');
+const { inspectIndexHealth } = require('./brain-lite-index-health');
 const { readEvents } = require('./brain-lite-routing-ledger');
+const { readTrace } = require('./brain-lite-trace-v2');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -183,7 +188,7 @@ function buildReview(events, now = new Date(), options = {}) {
   if (baselineAccumulating && progress.length === 0) progress.push('基线积累中，暂不宣称趋势改善');
   if (baselineAccumulating && weaknesses.length === 0) weaknesses.push('样本不足，暂不能稳定识别退化任务族');
 
-  return {
+  const review = {
     schemaVersion: 1,
     generatedAt: new Date(now).toISOString(),
     reportDate: dateKey(now, timeZone),
@@ -202,6 +207,10 @@ function buildReview(events, now = new Date(), options = {}) {
       '基础设施失败不计入模型能力通过率。',
     ],
   };
+  if (options.v8) {
+    review.v8 = buildV8Review(options.v8.traceEvents || [], options.v8.experiments || [], options.v8.lifecycle || [], options.v8);
+  }
+  return review;
 }
 
 function formatPercent(value) {
@@ -244,6 +253,18 @@ function renderReview(review) {
       const action = candidate.type === 'stable' ? '可在低风险且可验证任务中自动采用' : '仅记录候选，不自动采用';
       lines.push(`- ${candidate.taskFamily}: ${candidate.routeId} · ${candidate.type} · ${action}`);
     }
+  }
+  if (review.v8) {
+    const attribution = review.v8.attribution.summary;
+    const health = review.v8.indexHealth;
+    lines.push(
+      '',
+      '## V8 控制面',
+      '',
+      `- Evidence/Skill 归因：total=${attribution.total} · review-candidate=${attribution['review-candidate']} · insufficient=${attribution['insufficient-evidence'] + attribution['insufficient-verification']} · retain=${attribution.retain}`,
+      `- 索引健康：${health.status} · stale=${health.stale === null || health.stale === undefined ? 'unknown' : health.stale} · dataless=${Number(health.warningCounts?.dataless || 0)} · unindexed=${Number(health.unindexedSources || 0)} · missing=${Number(health.missingIndexedSources || 0)} · temp=${Number(health.temporaryFiles || 0)}`,
+      '- 归因结果只生成观察或 review candidate，不自动改变 Evidence、Skill 或长期记忆生命周期。',
+    );
   }
   lines.push('', '## 数据边界', '', ...review.dataNotes.map((item) => `- ${item}`), '');
   return lines.join('\n');
@@ -299,6 +320,43 @@ function loadJsonIfPresent(filePath, fallback) {
   return filePath && fs.existsSync(filePath) ? JSON.parse(fs.readFileSync(filePath, 'utf8')) : fallback;
 }
 
+function listFrom(value, key) {
+  if (Array.isArray(value)) return value;
+  return value && Array.isArray(value[key]) ? value[key] : [];
+}
+
+function loadV8Inputs(options = {}) {
+  const runtime = resolveRuntimePaths();
+  const v8ConfigPath = path.resolve(options.v8ConfigPath || runtime.v8ConfigPath);
+  const recallConfigPath = path.resolve(options.recallConfigPath || runtime.configPath);
+  if (!fs.existsSync(v8ConfigPath)) return null;
+  const config = JSON.parse(fs.readFileSync(v8ConfigPath, 'utf8'));
+  if (config.enabled === false) return null;
+  const brainRoot = path.resolve(path.dirname(v8ConfigPath), '..');
+  const storedPath = (value) => value ? path.resolve(brainRoot, value) : null;
+  const experimentsRaw = loadJsonIfPresent(storedPath(config.paths?.experiments), []);
+  const lifecycleRaw = loadJsonIfPresent(storedPath(config.paths?.skillLifecycle), []);
+  const tracePath = storedPath(config.paths?.trace);
+  const traceEvents = tracePath && fs.existsSync(tracePath) ? readTrace(tracePath) : [];
+  let indexHealth = { status: 'disabled', stale: null, warningCounts: {}, unindexedSources: 0, missingIndexedSources: 0, temporaryFiles: 0, fullPathsExposed: false, autoRepairApplied: false };
+  if (config.indexHealth?.enabled !== false && fs.existsSync(recallConfigPath)) {
+    const recallConfig = JSON.parse(fs.readFileSync(recallConfigPath, 'utf8'));
+    indexHealth = inspectIndexHealth({
+      indexPath: recallConfig.recall?.indexPath,
+      sources: recallConfig.recall?.sources || [],
+      now: options.now || new Date(),
+      staleAfterHours: Number(config.indexHealth?.staleAfterHours || 48),
+    });
+  }
+  return {
+    traceEvents,
+    experiments: listFrom(experimentsRaw, 'experiments'),
+    lifecycle: listFrom(lifecycleRaw, 'skills'),
+    outcomeAttribution: config.outcomeAttribution || {},
+    indexHealth,
+  };
+}
+
 function parseCli(argv) {
   const options = { rolloutRoots: [] };
   for (let index = 0; index < argv.length; index += 1) {
@@ -310,6 +368,9 @@ function parseCli(argv) {
     else if (arg === '--output') options.output = path.resolve(argv[++index]);
     else if (arg === '--date') options.date = new Date(argv[++index]);
     else if (arg === '--timezone') options.timeZone = argv[++index];
+    else if (arg === '--v8-config') options.v8Config = path.resolve(argv[++index]);
+    else if (arg === '--recall-config') options.recallConfig = path.resolve(argv[++index]);
+    else if (arg === '--no-v8') options.noV8 = true;
     else if (arg === '--json') options.json = true;
     else if (arg === '--help') options.help = true;
     else throw new Error(`Unknown argument: ${arg}`);
@@ -318,7 +379,7 @@ function parseCli(argv) {
 }
 
 function usage() {
-  return 'Usage: node scripts/brain-lite-daily-review.js --ledger FILE [--policy-state FILE] [--rollout-root DIR] [--output FILE]';
+  return 'Usage: node scripts/brain-lite-daily-review.js --ledger FILE [--policy-state FILE] [--rollout-root DIR] [--output FILE] [--v8-config FILE] [--recall-config FILE] [--no-v8]';
 }
 
 if (require.main === module) {
@@ -337,6 +398,11 @@ if (require.main === module) {
       timeZone: options.timeZone || 'Asia/Shanghai',
       directSignals,
       policyState: loadJsonIfPresent(options.policyState, {}),
+      v8: options.noV8 ? null : loadV8Inputs({
+        v8ConfigPath: options.v8Config,
+        recallConfigPath: options.recallConfig,
+        now: options.date || new Date(),
+      }),
     });
     const rendered = options.json ? `${JSON.stringify(review, null, 2)}\n` : renderReview(review);
     if (options.output) {
@@ -355,5 +421,6 @@ module.exports = {
   collectDirectTaskSignals,
   dateKey,
   derivePolicyCandidates,
+  loadV8Inputs,
   renderReview,
 };

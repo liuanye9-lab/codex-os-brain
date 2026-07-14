@@ -28,6 +28,16 @@ function evaluateBehavioralCandidate(candidate, samples = [], policy = {}) {
 
   const experimentInput = {
     candidateId: candidate.candidateId,
+    mechanism: {
+      id: 'behavioral-memory',
+      failureModeId: 'repeated-correction-not-retained',
+      overlapsWith: [],
+      tokenBudget: Number(policy.contextTokenBudget || 300),
+      latencyBudgetMs: Number(policy.latencyBudgetMs || 0),
+      verifierId: 'paired-fixed-verifier',
+      disableCondition: 'critical failure or repeated verified no-benefit samples',
+      independentlyDisableable: true,
+    },
     samples,
     externalWrite: candidate.risk === 'external-write',
     risk: candidate.risk === 'high' ? 'high' : 'low',

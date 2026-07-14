@@ -1,9 +1,24 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema", "title": "Brain Lite V8 Policy Experiment", "type": "object", "additionalProperties": false,
-  "required": ["experimentId", "policyVersion", "baselinePolicyVersion", "risk", "reversible", "externalWrite", "samples"],
+  "required": ["experimentId", "policyVersion", "baselinePolicyVersion", "risk", "reversible", "externalWrite", "mechanism", "samples"],
   "properties": {
     "experimentId": { "type": "string", "minLength": 1 }, "policyVersion": { "type": "string", "minLength": 1 }, "baselinePolicyVersion": { "type": "string", "minLength": 1 },
     "risk": { "enum": ["low", "medium", "high"] }, "reversible": { "type": "boolean" }, "externalWrite": { "type": "boolean" },
+    "mechanism": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "failureModeId", "overlapsWith", "tokenBudget", "latencyBudgetMs", "verifierId", "disableCondition", "independentlyDisableable"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "failureModeId": { "type": "string", "minLength": 1 },
+        "overlapsWith": { "type": "array", "maxItems": 0, "items": { "type": "string", "minLength": 1 } },
+        "tokenBudget": { "type": "integer", "minimum": 0 },
+        "latencyBudgetMs": { "type": "number", "minimum": 0 },
+        "verifierId": { "type": "string", "minLength": 1 },
+        "disableCondition": { "type": "string", "minLength": 1 },
+        "independentlyDisableable": { "const": true }
+      }
+    },
     "samples": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["sampleId", "verifierHash", "baseline", "candidate", "criticalFailure"], "properties": { "sampleId": { "type": "string", "minLength": 1 }, "verifierHash": { "type": "string", "minLength": 1 }, "criticalFailure": { "type": "boolean" }, "baseline": { "$ref": "#/$defs/result" }, "candidate": { "$ref": "#/$defs/result" } } } }
   },
   "$defs": { "result": { "type": "object", "additionalProperties": false, "required": ["passed", "tokens", "durationMs"], "properties": { "passed": { "type": "boolean" }, "tokens": { "type": "integer", "minimum": 0 }, "durationMs": { "type": "number", "minimum": 0 }, "corrections": { "type": "integer", "minimum": 0 } } } }

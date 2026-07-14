@@ -4,10 +4,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { appendTraceEvent, readTrace, sanitizeTraceEvent } = require('../scripts/brain-lite-trace-v2');
+const { appendTraceEvent, readTrace, sanitizeTraceEvent, skillId } = require('../scripts/brain-lite-trace-v2');
 
 test('trace keeps parent-child evidence while dropping raw private content', () => {
-  const event = sanitizeTraceEvent({ traceId: 'trace_1', parentEventId: 'evt_parent', taskId: 'task_1', kind: 'dispatch', policyVersion: 'brain-lite-v8', routeId: 'terra-medium', inputTokens: 100, rawPrompt: 'private prompt', chainOfThought: 'private reasoning', path: 'workspace/repo/file.js', credential: 'credential-placeholder' });
+  const event = sanitizeTraceEvent({ traceId: 'trace_1', parentEventId: 'evt_parent', taskId: 'task_1', kind: 'dispatch', policyVersion: 'brain-lite-v8', routeId: 'terra-medium', inputTokens: 100, rawPrompt: 'private prompt', chainOfThought: 'private reasoning', path: '/workspace/private/repo/file.js', credential: 'credential-placeholder' });
   assert.equal(event.parentEventId, 'evt_parent');
   assert.equal(event.kind, 'dispatch');
   assert.equal(event.inputTokens, 100);
@@ -15,6 +15,14 @@ test('trace keeps parent-child evidence while dropping raw private content', () 
   assert.equal(event.chainOfThought, undefined);
   assert.equal(event.credential, undefined);
   assert.equal(event.path, undefined);
+});
+
+test('trace keeps only hashed skill ids and a boolean correction signal', () => {
+  const id = skillId('codex-brain-recall');
+  const event = sanitizeTraceEvent({ traceId: 'trace_skill', taskId: 'task_skill', kind: 'skill_lifecycle', skillIds: [id, 'codex-brain-recall'], userCorrected: true });
+  assert.match(id, /^sk_[a-f0-9]{20}$/);
+  assert.deepEqual(event.skillIds, [id]);
+  assert.equal(event.userCorrected, true);
 });
 
 test('append is idempotent for the same event identity', () => {

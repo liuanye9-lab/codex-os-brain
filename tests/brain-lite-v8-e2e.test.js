@@ -14,5 +14,5 @@ test('active V8 is native-first and previous V8 runtime is absent', () => {
 });
 test('all V8 modules expose a disabled-safe path through configuration', () => {
   const config = JSON.parse(fs.readFileSync(path.join(root, 'config', 'brain-lite-v8.json'), 'utf8'));
-  for (const name of ['taskContract','contextEconomy','trace','harnessTax','policyLab','skillLifecycle']) assert.equal(typeof config[name].enabled, 'boolean');
+  for (const name of ['taskContract','contextEconomy','trace','harnessTax','policyLab','skillLifecycle','orthogonalityGate','outcomeAttribution','indexHealth']) assert.equal(typeof config[name].enabled, 'boolean');
 });

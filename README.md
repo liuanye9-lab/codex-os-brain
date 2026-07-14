@@ -1,10 +1,50 @@
-# Agentic Coding Harness — Research Archive
+# Brain Lite V8 — Native-first Agent Harness
+
+[![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Hooks: off by default](https://img.shields.io/badge/hooks-off%20by%20default-5b6573)](config/brain-lite-v8.json)
+[![Lifecycle: evidence gated](https://img.shields.io/badge/lifecycle-evidence--gated-7c3aed)](v8/DESIGN.md)
 
 > A privacy-safe record of an agentic-coding harness evolving from V1 through V8: native execution first, augmentation only when evidence says it helps.
 
-This is a research archive, not a one-click agent product and not a claim that every task needs more orchestration. It preserves a real engineering sequence: each version addressed a failure mode seen in longer AI-assisted work; later versions also revealed the cost and limits of earlier control layers.
+This repository is both a privacy-safe research archive and an externally consumable Node.js harness. It preserves the V1–V8 engineering sequence while exposing deterministic library and CLI surfaces for task contracts, bounded context, evidence traces, policy experiments, outcome attribution, index health, and optional behavioral memory.
 
 The current conclusion is deliberately narrow: **keep controls that create independent evidence; make every other layer earn its cost for the task at hand.**
+
+## Start in two minutes
+
+```bash
+git clone https://github.com/liuanye9-lab/codex-os-brain.git
+cd codex-os-brain
+npm install
+npm run check:entrypoint
+node bin/brain-lite.js self-check
+node bin/brain-lite.js contract --features examples/clarification-needed.json
+```
+
+Or install directly from GitHub and use the stable CommonJS entrypoint:
+
+```bash
+npm install github:liuanye9-lab/codex-os-brain
+npx brain-lite self-check
+```
+
+One-off invocation without adding a project dependency:
+
+```bash
+npx --yes --package=github:liuanye9-lab/codex-os-brain brain-lite self-check
+```
+
+```js
+const brainLite = require('brain-lite-agent-harness');
+
+const contract = brainLite.taskContract.buildTaskContract(
+  { promptClarity: 'clear', verifiable: true },
+  { enabled: true, clarificationSignals: ['hasObservableSignal'] },
+);
+```
+
+See [External Integration](INTEGRATION.md) for embedding boundaries and supported interfaces.
 
 ## At a glance
 
@@ -20,7 +60,36 @@ flowchart LR
   Verify --> Outcome{"Verified?"}
   Outcome -->|"Yes"| Deliver["Deliver + sanitized evidence"]
   Outcome -->|"No"| Control["Bounded retry, escalation, or stop"]
+  Deliver --> Trace["Privacy-safe Trace V2"]
+  Trace --> Attribute["Offline outcome attribution"]
+  Attribute --> Review["Daily review"]
 ```
+
+### Three control planes, one native path
+
+```mermaid
+flowchart TB
+  subgraph Runtime["Runtime · deterministic and bounded"]
+    Task["Task"] --> Contract["Task contract"] --> Native["Native parent work"] --> Verify["Independent verifier"]
+  end
+  subgraph Experiment["Experiment · before adoption"]
+    Proposal["Proposed mechanism"] --> Orthogonal{"Unique failure mode?\nBudget + verifier + off switch?"}
+    Orthogonal -->|"No"| Reject["Reject"]
+    Orthogonal -->|"Yes"| Trial["Bounded paired trial"]
+  end
+  subgraph Offline["Offline · observational by default"]
+    Verify --> SafeTrace["Sanitized trace"] --> Attribution["Evidence / Skill attribution"] --> Daily["Daily review"]
+    Index["Read-only index health"] --> Daily
+  end
+  Trial --> SafeTrace
+```
+
+| External surface | Use it for | Side effects |
+|---|---|---|
+| `require('brain-lite-agent-harness')` | Embed deterministic modules | None unless the caller invokes an explicit storage API |
+| `brain-lite contract` | Turn task features into a bounded route decision | Read-only |
+| `brain-lite index-health` | Inspect an existing local index | Read-only; paths are returned as hashes |
+| Behavioral-memory CLI | Local candidate capture and explicit canary workflow | Writes only to the caller-supplied local store |
 
 ## How to read this archive
 
@@ -106,6 +175,9 @@ See [V8 design](v8/DESIGN.md), the [synthetic evaluation manifest](evals/v8-cont
 | Harness Tax + Policy Lab | A change is tested against a baseline. | Quality/cost comparison and stable/trial/reject states. | Treat a single success as a policy improvement. |
 | Skill Lifecycle V2 | A workflow repeats successfully. | Candidate → shadow → replay → canary → promoted lifecycle. | Auto-promote external-write workflows. |
 | Behavioral Memory (optional) | Repeated explicit corrections produce a reviewed rule candidate. | Evidence-gated replay, paired evaluation, explicit canary approval, and ≤300-token promoted recall. | Persist raw corrections, learn from quoted text, or turn hooks on. |
+| Orthogonality Gate | A new mechanism enters Policy Lab. | Requires a unique failure mode, budget, verifier, disable condition, and off switch. | Allow overlapping, unbounded harness layers into trial. |
+| Outcome Attribution | Sanitized verifier traces are reviewed offline. | Evidence/Skill pass, correction, false-green, and coverage signals. | Make causal claims or automatically change lifecycle state. |
+| Index Health | Daily review inspects a configured local index. | Staleness, missing/unindexed/temp counts and hashed source refs. | Repair files or expose full source paths. |
 
 ### Optional behavioral memory: learning without permanent injection
 
@@ -215,8 +287,13 @@ docs/research/ model-routing and paired-evaluation evidence
 Requires Node.js 20 or newer. Live delegation also requires a Codex executable available as codex or through CODEX_PATH.
 
 ```bash
+npm install
+npm run build:cli
+npm run check:entrypoint
+npm run check:v8
 npm run check
 npm run test:behavioral-memory
+node bin/brain-lite.js self-check
 node scripts/brain-lite-router.js --features-file examples/features.json
 node scripts/brain-lite-subagent-ab.js --preflight --output reports/example
 ```

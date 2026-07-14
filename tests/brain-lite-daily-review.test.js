@@ -2,9 +2,14 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const {
   buildReview,
+  loadV8Inputs,
   renderReview,
 } = require('../scripts/brain-lite-daily-review');
 
@@ -160,4 +165,79 @@ test('policy state becomes readable candidates without silently changing base po
   assert.ok(review.policyCandidates.some((item) => item.type === 'unavailable' && item.routeId === 'spark-high'));
   assert.match(markdown, /候选/);
   assert.match(markdown, /luna-low/);
+});
+
+test('daily review surfaces attribution and index health without automatic lifecycle changes', () => {
+  const now = new Date('2026-07-14T12:00:00.000Z');
+  const evidenceId = 'ev_aaaaaaaaaaaaaaaaaaaa';
+  const traceEvents = Array.from({ length: 5 }, (_, index) => {
+    const taskId = `v8-task-${index}`;
+    const traceId = `v8-trace-${index}`;
+    return [
+      { taskId, traceId, kind: 'recall', evidenceIds: [evidenceId] },
+      { taskId, traceId, kind: 'verification', verifierPassed: index < 3, modelClaimedSuccess: true, finalDelivered: index < 3, userCorrected: index === 4 },
+    ];
+  }).flat();
+  const review = buildReview([], now, {
+    timeZone: 'UTC',
+    v8: {
+      traceEvents,
+      experiments: [],
+      lifecycle: [],
+      outcomeAttribution: { minimumDistinctTasks: 5, minimumVerifierCoverage: 0.8, qualityFloor: 0.8, correctionRateCeiling: 0.2, automaticLifecycleChanges: false },
+      indexHealth: { status: 'degraded', stale: false, warningCounts: { dataless: 3 }, unindexedSources: 0, missingIndexedSources: 0, temporaryFiles: 0, fullPathsExposed: false },
+    },
+  });
+  const markdown = renderReview(review);
+  assert.equal(review.v8.attribution.summary['review-candidate'], 1);
+  assert.equal(review.v8.indexHealth.status, 'degraded');
+  assert.match(markdown, /V8 控制面/);
+  assert.match(markdown, /review-candidate/);
+  assert.match(markdown, /索引健康.*degraded/);
+  assert.match(markdown, /不自动改变/);
+});
+
+test('daily review CLI loads V8 trace and index health from explicit configs', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-daily-v8-'));
+  const configDir = path.join(root, 'config');
+  const dataDir = path.join(root, 'data');
+  const source = path.join(root, 'memory.md');
+  const indexPath = path.join(dataDir, 'index.json');
+  const ledgerPath = path.join(dataDir, 'ledger.jsonl');
+  const tracePath = path.join(dataDir, 'trace.jsonl');
+  const experimentsPath = path.join(dataDir, 'experiments.json');
+  const lifecyclePath = path.join(dataDir, 'lifecycle.json');
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(source, '# memory\n');
+  fs.writeFileSync(indexPath, JSON.stringify({ builtAt: '2026-07-14T00:00:00.000Z', sourceFiles: [{ path: source, mtimeMs: fs.statSync(source).mtimeMs }], chunks: [], warnings: [] }));
+  fs.writeFileSync(ledgerPath, '');
+  fs.writeFileSync(tracePath, JSON.stringify({ traceId: 'trace-1', taskId: 'task-1', kind: 'recall', evidenceIds: ['ev_aaaaaaaaaaaaaaaaaaaa'] }) + '\n');
+  fs.writeFileSync(experimentsPath, '[]');
+  fs.writeFileSync(lifecyclePath, '[]');
+  const v8ConfigPath = path.join(configDir, 'brain-lite-v8.json');
+  const recallConfigPath = path.join(configDir, 'brain-lite.json');
+  fs.writeFileSync(v8ConfigPath, JSON.stringify({
+    outcomeAttribution: { enabled: true, minimumDistinctTasks: 5, minimumVerifierCoverage: 0.8, qualityFloor: 0.8, correctionRateCeiling: 0.2, automaticLifecycleChanges: false },
+    indexHealth: { enabled: true, staleAfterHours: 48, autoRepair: false },
+    paths: { trace: 'data/trace.jsonl', experiments: 'data/experiments.json', skillLifecycle: 'data/lifecycle.json' },
+  }));
+  fs.writeFileSync(recallConfigPath, JSON.stringify({ recall: { indexPath, sources: [source] } }));
+
+  const loaded = loadV8Inputs({ v8ConfigPath, recallConfigPath, now: new Date('2026-07-14T12:00:00.000Z') });
+  assert.equal(loaded.traceEvents.length, 1);
+  assert.equal(loaded.indexHealth.status, 'healthy');
+  assert.equal(loaded.outcomeAttribution.automaticLifecycleChanges, false);
+
+  const result = spawnSync(process.execPath, [
+    path.resolve(__dirname, '..', 'scripts', 'brain-lite-daily-review.js'),
+    '--ledger', ledgerPath,
+    '--v8-config', v8ConfigPath,
+    '--recall-config', recallConfigPath,
+    '--date', '2026-07-14T12:00:00.000Z',
+    '--timezone', 'UTC',
+  ], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /V8 控制面/);
+  assert.match(result.stdout, /索引健康：healthy/);
 });

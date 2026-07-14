@@ -11,6 +11,7 @@ const {
 } = require('../scripts/brain-lite-common');
 
 const configPath = path.resolve(__dirname, '..', 'config', 'brain-lite-v8.json');
+const experimentSchemaPath = path.resolve(__dirname, '..', 'schemas', 'brain-lite-policy-experiment.schema.json');
 
 test('V8 config keeps native-first budgets and hooks disabled', () => {
   const config = readV8Config(configPath);
@@ -23,6 +24,8 @@ test('V8 config keeps native-first budgets and hooks disabled', () => {
   assert.equal(config.policyLab.tokenBenefitThreshold, 0.15);
   assert.equal(config.harnessTax.disableWindow, 5);
   assert.equal(config.harnessTax.overheadThreshold, 0.10);
+  assert.equal(config.orthogonalityGate.enabled, true);
+  assert.equal(config.orthogonalityGate.requireUniqueFailureMode, true);
 });
 
 test('runtime paths resolve on macOS without committed user paths', () => {
@@ -50,4 +53,19 @@ test('V8 configuration contains only relative persisted paths', () => {
   assert.doesNotMatch(raw, /\/Users\/|[A-Z]:\\\\Users\\\\/i);
   const config = JSON.parse(raw);
   for (const value of Object.values(config.paths)) assert.equal(path.isAbsolute(value), false);
+});
+
+test('policy experiment schema requires an orthogonal mechanism declaration', () => {
+  const schema = JSON.parse(fs.readFileSync(experimentSchemaPath, 'utf8'));
+  assert.ok(schema.required.includes('mechanism'));
+  assert.deepEqual(schema.properties.mechanism.required, [
+    'id',
+    'failureModeId',
+    'overlapsWith',
+    'tokenBudget',
+    'latencyBudgetMs',
+    'verifierId',
+    'disableCondition',
+    'independentlyDisableable',
+  ]);
 });

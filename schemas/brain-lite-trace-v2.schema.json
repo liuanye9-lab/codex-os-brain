@@ -11,8 +11,8 @@
     "policyVersion": { "type": "string", "minLength": 1 }, "timestamp": { "type": "string", "format": "date-time" }, "privacyClass": { "enum": ["public", "private", "sensitive"] },
     "routeId": { "type": ["string", "null"] }, "model": { "type": ["string", "null"] }, "effort": { "type": ["string", "null"] },
     "attempt": { "type": "integer", "minimum": 0 }, "inputTokens": { "type": "integer", "minimum": 0 }, "cachedInputTokens": { "type": "integer", "minimum": 0 }, "outputTokens": { "type": "integer", "minimum": 0 }, "durationMs": { "type": "number", "minimum": 0 }, "toolCalls": { "type": "integer", "minimum": 0 },
-    "verifierCommandHash": { "type": ["string", "null"] }, "verifierPassed": { "type": ["boolean", "null"] }, "finalDelivered": { "type": ["boolean", "null"] }, "modelClaimedSuccess": { "type": ["boolean", "null"] }, "failureClass": { "type": ["string", "null"] },
-    "evidenceIds": { "type": "array", "items": { "type": "string", "pattern": "^ev_[a-f0-9]{20}$" }, "uniqueItems": true }, "artifactHash": { "type": ["string", "null"] },
+    "verifierCommandHash": { "type": ["string", "null"] }, "verifierPassed": { "type": ["boolean", "null"] }, "finalDelivered": { "type": ["boolean", "null"] }, "modelClaimedSuccess": { "type": ["boolean", "null"] }, "userCorrected": { "type": ["boolean", "null"] }, "failureClass": { "type": ["string", "null"] },
+    "evidenceIds": { "type": "array", "items": { "type": "string", "pattern": "^ev_[a-f0-9]{20}$" }, "uniqueItems": true }, "skillIds": { "type": "array", "items": { "type": "string", "pattern": "^sk_[a-f0-9]{20}$" }, "uniqueItems": true }, "artifactHash": { "type": ["string", "null"] },
     "contextPrecision": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }, "contextUtilization": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }, "harnessTokens": { "type": "integer", "minimum": 0 }, "harnessDurationMs": { "type": "number", "minimum": 0 },
     "candidateRef": { "type": "string", "pattern": "^bmc_[a-f0-9]{20}$" }, "behavioralAction": { "type": "string" }, "behavioralState": { "type": "string" }
   }

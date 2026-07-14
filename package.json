@@ -1,12 +1,39 @@
 {
-  "name": "brain-lite-model-router",
-  "version": "1.3.0",
-  "description": "A verifier-gated Agentic Coding harness research archive with measured routing and optional evidence-gated behavioral memory.",
+  "name": "brain-lite-agent-harness",
+  "version": "1.4.0",
+  "description": "A native-first, verifier-gated agent harness with bounded recall, measurable policies, and optional behavioral memory.",
   "type": "commonjs",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./config/v8": "./config/brain-lite-v8.json"
+  },
+  "bin": {
+    "brain-lite": "bin/brain-lite.js"
+  },
+  "files": [
+    "bin/",
+    "config/",
+    "docs/",
+    "evals/",
+    "examples/",
+    "index.js",
+    "INTEGRATION.md",
+    "LICENSE",
+    "README.md",
+    "schemas/",
+    "scripts/",
+    "skills/",
+    "v8/"
+  ],
   "scripts": {
+    "cli": "node bin/brain-lite.js",
+    "build:cli": "node --check index.js && node --check bin/brain-lite.js && npm pack --dry-run",
     "test": "node --test tests/*.test.js",
-    "check": "node --check scripts/brain-lite-router.js && node --check scripts/brain-lite-delegate.js && node --check scripts/brain-lite-routing-ledger.js && node --check scripts/brain-lite-daily-review.js && node --check scripts/brain-lite-subagent-ab.js && node --check scripts/brain-lite-task-contract.js && node --check scripts/brain-lite-context-economy.js && node --check scripts/brain-lite-trace-v2.js && node --check scripts/brain-lite-harness-tax.js && node --check scripts/brain-lite-policy-lab.js && node --check scripts/brain-lite-skill-lifecycle-v2.js && node --check scripts/brain-lite-v8-eval.js && npm run check:behavioral-memory && node --check v7/scripts/evolution-gate.js && node v7/scripts/evolution-gate.js --self-test && npm test",
-    "test:v8": "node --test tests/brain-lite-v8-*.test.js",
+    "check": "node --check scripts/brain-lite-router.js && node --check scripts/brain-lite-delegate.js && node --check scripts/brain-lite-routing-ledger.js && node --check scripts/brain-lite-subagent-ab.js && node --check scripts/brain-lite-task-contract.js && node --check scripts/brain-lite-context-economy.js && node --check scripts/brain-lite-harness-tax.js && node --check scripts/brain-lite-skill-lifecycle-v2.js && node --check scripts/brain-lite-v8-eval.js && npm run check:entrypoint && npm run check:v8 && npm run check:behavioral-memory && node --check v7/scripts/evolution-gate.js && node v7/scripts/evolution-gate.js --self-test && npm test",
+    "test:v8": "node --test tests/brain-lite-v8-*.test.js tests/brain-lite-daily-review.test.js",
+    "check:v8": "node --check scripts/brain-lite-policy-lab.js && node --check scripts/brain-lite-outcome-attribution.js && node --check scripts/brain-lite-index-health.js && node --check scripts/brain-lite-trace-v2.js && node --check scripts/brain-lite-v8-review.js && node --check scripts/brain-lite-daily-review.js && npm run test:v8",
+    "check:entrypoint": "node --check index.js && node --check bin/brain-lite.js && node --test tests/public-entrypoint.test.js",
     "eval:v8:preflight": "node scripts/brain-lite-v8-eval.js --preflight --cases evals/v8-control-plane-2026-07-12/cases.json",
     "test:behavioral-memory": "node --test tests/brain-lite-behavioral-memory-*.test.js",
     "check:behavioral-memory": "node --check scripts/brain-lite-behavioral-memory.js && node --check scripts/brain-lite-behavioral-memory-cli.js && node --check scripts/brain-lite-behavioral-policy.js && node --check scripts/brain-lite-behavioral-context.js && node --check scripts/brain-lite-behavioral-privacy-export.js && node --check scripts/brain-lite-behavioral-trace.js && node --check scripts/brain-lite-candidate-store.js && node --check scripts/brain-lite-correction-detector.js && node --check scripts/brain-lite-host-event-normalizer.js"
@@ -17,8 +44,15 @@
     "model-routing",
     "verification",
     "llmops",
-    "behavioral-memory"
+    "behavioral-memory",
+    "agent-harness"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuanye9-lab/codex-os-brain.git"
+  },
+  "homepage": "https://github.com/liuanye9-lab/codex-os-brain#readme",
+  "bugs": "https://github.com/liuanye9-lab/codex-os-brain/issues",
   "license": "MIT",
   "engines": {
     "node": ">=20"
