@@ -2,7 +2,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const FIELDS = new Set(['traceId','parentEventId','taskId','taskFingerprint','kind','policyVersion','timestamp','privacyClass','routeId','model','effort','attempt','inputTokens','cachedInputTokens','outputTokens','durationMs','toolCalls','verifierCommandHash','verifierPassed','finalDelivered','modelClaimedSuccess','failureClass','evidenceIds','artifactHash','contextPrecision','contextUtilization','harnessTokens','harnessDurationMs']);
+const FIELDS = new Set(['traceId','parentEventId','taskId','taskFingerprint','kind','policyVersion','timestamp','privacyClass','routeId','model','effort','attempt','inputTokens','cachedInputTokens','outputTokens','durationMs','toolCalls','verifierCommandHash','verifierPassed','finalDelivered','modelClaimedSuccess','failureClass','evidenceIds','artifactHash','contextPrecision','contextUtilization','harnessTokens','harnessDurationMs','candidateRef','behavioralAction','behavioralState']);
 
 function eventId(event) {
   const identity = [event.traceId, event.parentEventId || '', event.taskId, event.kind, Number(event.attempt || 1), String(event.verifierPassed), String(event.finalDelivered)].join('\u0000');
@@ -13,6 +13,7 @@ function sanitizeTraceEvent(event = {}) {
   for (const [key, value] of Object.entries(event)) {
     if (!FIELDS.has(key)) continue;
     if (key === 'evidenceIds') { output[key] = Array.isArray(value) ? value.filter((item) => /^ev_[a-f0-9]{20}$/.test(item)) : []; continue; }
+    if (key === 'candidateRef') { if (/^bmc_[a-f0-9]{20}$/.test(String(value))) output[key] = value; continue; }
     if (typeof value === 'string' || typeof value === 'boolean' || value === null) output[key] = value;
     if (typeof value === 'number' && Number.isFinite(value)) output[key] = value;
   }
