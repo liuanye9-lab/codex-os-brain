@@ -11,6 +11,7 @@ Reviewed on 2026-07-14. V9 adapts public design ideas; it does not copy private 
 | [Letta Code](https://github.com/letta-ai/letta-code) | main reviewed 2026-07-14 | Apache-2.0 | Durable state and explicit memory boundaries | Server architecture and implementation code |
 | [OpenHands](https://github.com/OpenHands/OpenHands) | main reviewed 2026-07-14 | Repository metadata returned NOASSERTION | Action/observation separation and sandbox-oriented thinking | Code, branding, and deployment stack |
 | [LangGraph](https://github.com/langchain-ai/langgraph) | main reviewed 2026-07-14 | MIT | Checkpoint and resumable-state concepts | Graph runtime and dependency |
+| [Ollama](https://github.com/ollama/ollama) and its [embedding API](https://docs.ollama.com/api/embed) | local 0.32.0 and official docs reviewed 2026-07-15 | MIT (engine repository) | Loopback embedding backend, batch input, optional dimensions, explicit model lifecycle | Runtime engine, model weights, installer, remote service |
 
 No source code from these projects is included in V9. Their licenses and architectures were checked before adopting only generic concepts.
 
@@ -38,3 +39,4 @@ The real-world study reports 20,574 sessions. The observed symptom distribution 
 - Compaction recovery injects a bounded task checkpoint rather than a full transcript.
 - Hooks, CLI, and MCP share one policy core.
 - Public release uses a clean-room allowlist instead of sanitizing a private tree in place.
+- Optional semantic recall is local-only, fingerprinted, and kept outside the hook hot path; a stale vector index falls back to lexical retrieval.

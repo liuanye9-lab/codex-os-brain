@@ -53,6 +53,21 @@ node scripts/probe-v9-mcp.mjs
 
 Safe read tools include `brain_get_status`, `brain_get_task_contract`, `brain_verify_task`, `brain_list_failures`, and `brain_list_events`. Controlled task mutations are `brain_create_task`, `brain_checkpoint_task`, `brain_attach_evidence`, and `brain_close_task`.
 
+Embedding reads add `brain_get_embedding_status` and `brain_get_embedding_adaptation_prompt`. Model download, configuration, and index promotion remain CLI-only confirmation gates.
+
+## Optional local embeddings
+
+```bash
+brain embeddings recommend --profile zh-light --json
+brain embeddings doctor --json
+brain embeddings pull --model qwen3-embedding:0.6b --confirm-download --json
+brain embeddings configure --model qwen3-embedding:0.6b --confirm --json
+brain embeddings probe --text "retrieval canary" --json
+brain embeddings prompt --json
+```
+
+Changing the model, loopback endpoint, or dimensions invalidates the vector index. Rebuild it completely, verify `failedCount: 0`, then run `brain embeddings mark-indexed --manifest /path/to/index-manifest.json --confirm`. See [the local embedding guide](local-embeddings.md).
+
 ## Disable or fall back
 
 - Disable project hooks with `brain hooks disable --confirm`.

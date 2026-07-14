@@ -15,6 +15,8 @@ function resolveV9Paths(env = process.env, options = {}) {
     eventsRoot: pathImpl.join(runtimeRoot, 'events'),
     evidenceRoot: pathImpl.join(runtimeRoot, 'evidence'),
     failuresRoot: pathImpl.join(runtimeRoot, 'failures'),
+    embeddingsRoot: pathImpl.join(runtimeRoot, 'embeddings'),
+    embeddingConfigPath: pathImpl.join(runtimeRoot, 'embeddings', 'config.json'),
     migrationRoot: pathImpl.join(runtimeRoot, 'migration'),
     configPath: pathImpl.join(brainHome, 'config', 'brain-lite-v9.json'),
   };

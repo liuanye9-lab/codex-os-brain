@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "provider": "ollama",
+  "endpoint": "http://127.0.0.1:11434/api/embed",
+  "profiles": {
+    "zh-light": {
+      "model": "qwen3-embedding:0.6b",
+      "approximateDownload": "639 MB",
+      "fit": "Default for private Chinese, multilingual, and code recall on laptops."
+    },
+    "zh-balanced": {
+      "model": "qwen3-embedding:4b",
+      "approximateDownload": "2.5 GB",
+      "fit": "Use after a retrieval canary shows a material quality gain and memory latency is acceptable."
+    },
+    "zh-quality": {
+      "model": "qwen3-embedding:8b",
+      "approximateDownload": "4.7 GB",
+      "fit": "Quality-oriented option for capable local hardware; never select only because it is larger."
+    }
+  }
+}

@@ -9,6 +9,7 @@ const { createTaskContract } = require('./task-contract');
 const { attachEvidence, evaluateCompletion } = require('./verification');
 const { advanceCircuit, classifyFailure } = require('./failure-controller');
 const migration = require('./migration');
+const { createEmbeddingService } = require('./embeddings');
 
 const EVENT_FIELDS = ['eventId', 'kind', 'taskId', 'turnId', 'status', 'reasonCode', 'signature', 'evidenceId', 'durationMs', 'createdAt'];
 
@@ -22,6 +23,7 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config() } = {}
   const activeTaskFile = path.join(paths.tasksRoot, 'active.json');
   const eventsFile = path.join(paths.eventsRoot, 'events.jsonl');
   const failuresFile = path.join(paths.failuresRoot, 'circuit.json');
+  const embeddings = createEmbeddingService({ paths });
 
   function activeTask() {
     if (!enabled) return null;
@@ -98,6 +100,7 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config() } = {}
     events,
     verification,
     failures,
+    embeddings,
     migration,
     paths,
     config,

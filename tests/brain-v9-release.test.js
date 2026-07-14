@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..');
 
 test('README documents Version 9 external surfaces and adaptive lifecycle', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  for (const required of ['Version 9', '```mermaid', 'brain status', 'brain mcp serve', 'PreToolUse', 'Stop', 'V1–V8']) assert.ok(readme.includes(required), required);
+  for (const required of ['Version 9', '```mermaid', 'brain status', 'brain mcp serve', 'PreToolUse', 'Stop', 'V1–V8', 'Ollama', 'brain embeddings configure']) assert.ok(readme.includes(required), required);
   assert.equal((readme.match(/```mermaid/g) || []).length >= 2, true);
 });
 

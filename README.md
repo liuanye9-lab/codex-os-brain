@@ -23,6 +23,9 @@ flowchart LR
   Core --> Events["Sanitized Event Ledger"]
   Core --> Evidence["Evidence + Verification Gate"]
   Core --> Circuit["Typed Failure Circuit"]
+  Core --> EmbedContract["Optional Embedding Contract\nmodel + endpoint + dimensions"]
+  EmbedContract --> Ollama["Local Ollama\nsemantic candidate recall"]
+  Hooks -. "never calls" .-> Ollama
   Legacy["V1–V8 read-only assets"] --> Migration["Hash + backup + copy migration"]
   Migration --> Core
 ```
@@ -77,6 +80,31 @@ brain status --json
 codex-brain status --json
 ```
 
+### Optional local embeddings with Ollama
+
+The reasoning model should not carry the entire long-term memory in every prompt. A small local embedding model can first select a few semantically relevant candidates; the Agent then reasons over and verifies those candidates. This combination reduces irrelevant context and repeated token use, supports meaning-based recall beyond exact keywords, and keeps raw memory queries on the local machine. It remains optional, with lexical fallback when Ollama or the vector index is unavailable.
+
+V9 does not silently install Ollama or choose the largest model. It provides three starting profiles and lets the Agent re-evaluate them against Chinese/code recall quality, latency, RAM/VRAM, disk, and privacy requirements:
+
+```bash
+brain embeddings recommend --profile zh-light --json
+brain embeddings pull --model qwen3-embedding:0.6b --confirm-download --json
+brain embeddings configure --model qwen3-embedding:0.6b --confirm --json
+brain embeddings doctor --json
+brain embeddings probe --text "中文和代码召回探针" --json
+brain embeddings prompt --json
+```
+
+Model, endpoint, and requested dimensions form one fingerprint. Changing any of them sets `requiresReindex`; vector recall stays unavailable until all readable sources are rebuilt and a zero-embedding-failure manifest with the matching fingerprint is confirmed. Unavailable sources remain visible as `sourceWarningCount`. Indexing and querying must use the same model. Hot hooks never call Ollama.
+
+Copy this prompt when asking an Agent to adapt the local model:
+
+```text
+请为当前项目重新适配 Ollama 本地嵌入后端。先检查 OS、内存/显存、磁盘、Ollama 与 localhost API；下载前必须获得确认。用固定的中文、英文和代码召回 canary 比较质量、延迟与资源占用，不因模型更大就默认升级。确保索引与查询使用同一模型、端点和 dimensions，并记录配置指纹；任一身份字段改变都要重建全部可读来源，只有零嵌入失败的匹配 manifest 才能标记 indexed，无法读取的来源必须单独报告。保留词法检索回退，限制注入条数与 token，把召回内容当作待核验证据，不把私有记忆发往远程端点。
+```
+
+See [local embedding installation and adaptation](docs/v9/local-embeddings.md).
+
 ### Enable project-scoped hooks
 
 Hooks are off until a project explicitly opts in. This command writes only `<project>/.codex/hooks.json`; it does not install global or Claude Code hooks.
@@ -108,7 +136,7 @@ Example client configuration:
 }
 ```
 
-MCP can read status, contracts, failures, events, and verification state. Its four controlled mutations create a task, checkpoint it, attach an evidence reference, and close it after verification. MCP cannot approve Canary promotion, apply or roll back migration, publish a repository, change visibility, delete audit data, or bypass policy.
+MCP can read status, contracts, failures, events, verification state, the embedding contract, and its adaptation prompt. Its four controlled mutations create a task, checkpoint it, attach an evidence reference, and close it after verification. MCP cannot install or pull models, change embedding configuration, mark an index current, approve Canary promotion, apply or roll back migration, publish a repository, change visibility, delete audit data, or bypass policy.
 
 ## V1–V8 preservation
 
@@ -139,6 +167,7 @@ The public tree is generated from an explicit allowlist. It excludes runtime sta
 ## Documentation
 
 - [CLI, hooks, and MCP quickstart](docs/v9/quickstart.md)
+- [Optional Ollama local embeddings](docs/v9/local-embeddings.md)
 - [V1–V8 migration and rollback](docs/v9/migration.md)
 - [Privacy and threat model](docs/v9/privacy-and-threat-model.md)
 - [Research and open-source attribution](docs/v9/research-and-attribution.md)

@@ -8,8 +8,10 @@
     "bin/brain.js",
     "bin/package.json",
     "config/brain-lite-v9.json",
+    "config/embedding-model-presets.json",
     "config/public-export-allowlist.json",
     "config/public-package.json",
+    "docs/v9/local-embeddings.md",
     "docs/v9/migration.md",
     "docs/v9/privacy-and-threat-model.md",
     "docs/v9/quickstart.md",
@@ -18,6 +20,7 @@
     "mcp/server.mjs",
     "mcp/tools.mjs",
     "package.json",
+    "schemas/brain-v9-embedding-index-manifest.schema.json",
     "schemas/brain-v9-event.schema.json",
     "schemas/brain-v9-migration-manifest.schema.json",
     "schemas/brain-v9-task-contract.schema.json",
@@ -26,6 +29,7 @@
     "scripts/probe-v9-mcp.mjs",
     "scripts/v9/cli.js",
     "scripts/v9/core.js",
+    "scripts/v9/embeddings.js",
     "scripts/v9/failure-controller.js",
     "scripts/v9/hook-config.js",
     "scripts/v9/hook-dispatch.js",
@@ -42,6 +46,7 @@
     "scripts/verify-v9-release.js",
     "tests/brain-v9-cli.test.js",
     "tests/brain-v9-cross-surface.test.mjs",
+    "tests/brain-v9-embeddings.test.js",
     "tests/brain-v9-failure-controller.test.js",
     "tests/brain-v9-hook-config.test.js",
     "tests/brain-v9-hooks.test.js",
@@ -70,8 +75,8 @@
     },
     {
       "path": "README.md",
-      "sha256Base64Url": "dfGg3MgOFszbPP_46iGpsoFrfpTMh76K1JzA2yoPOPE",
-      "bytes": 5919
+      "sha256Base64Url": "Vk4ilbL4JOwF5eQVOl_kzfnYqijKTjCIo4HyIW-JMQI",
+      "bytes": 8636
     },
     {
       "path": "bin/brain-hook.js",
@@ -90,18 +95,28 @@
     },
     {
       "path": "config/brain-lite-v9.json",
-      "sha256Base64Url": "CFYZj00kQZmeeKdN1TS3DDyJrg0amCPVuW59AnADPho",
-      "bytes": 658
+      "sha256Base64Url": "72d5Cf4TawTvdqwWp5U2SwurAp-heg4028P07d-VqeY",
+      "bytes": 851
+    },
+    {
+      "path": "config/embedding-model-presets.json",
+      "sha256Base64Url": "us4XJT9nPV-zrmXbORyCZPR0ikBcGUg88PrwEaPB8pM",
+      "bytes": 730
     },
     {
       "path": "config/public-export-allowlist.json",
-      "sha256Base64Url": "cILAvNtutFtjOGIAHNZZX_RCTzCJusn5ZsRl9Y17j0k",
-      "bytes": 1498
+      "sha256Base64Url": "VlQcEHeVgPeDkstUpGrdvYUuGjs-D15mA3-YiITmeCw",
+      "bytes": 1645
     },
     {
       "path": "config/public-package.json",
-      "sha256Base64Url": "h2gsbG5-caIfCs3itQbEMmNqiHR2mPPYjj-bTUI6IgM",
-      "bytes": 1392
+      "sha256Base64Url": "J-QxSZ8nYciVe4eBLfkE0-ZCdgeHQPKRWMRqvBSsv5E",
+      "bytes": 1469
+    },
+    {
+      "path": "docs/v9/local-embeddings.md",
+      "sha256Base64Url": "BNRDYEfiRCZFXDZee_jowwAEuhmx7KER2Ls6PSx2ErE",
+      "bytes": 4276
     },
     {
       "path": "docs/v9/migration.md",
@@ -115,13 +130,13 @@
     },
     {
       "path": "docs/v9/quickstart.md",
-      "sha256Base64Url": "X5oybP7KyvUeuQqGdgIe5u7VzJxAm1lAhV-0tnpwbds",
-      "bytes": 1869
+      "sha256Base64Url": "DY0TGU8EZn_-vqk2OEZbv9Lh1IeS0ljGzaAOoleri4g",
+      "bytes": 2693
     },
     {
       "path": "docs/v9/research-and-attribution.md",
-      "sha256Base64Url": "PbSRFylIbWHOlG29mxRo56d4Cb4N0VWil4j--n9-zlY",
-      "bytes": 4078
+      "sha256Base64Url": "zzxzjE9BRyE927TROmLfwOeu3aOnIxk51KV69EfEI7o",
+      "bytes": 4558
     },
     {
       "path": "hooks/hooks.json",
@@ -135,13 +150,18 @@
     },
     {
       "path": "mcp/tools.mjs",
-      "sha256Base64Url": "-zPQYOKBE6m4FyTfzNYEyuhBO3o1Y6_6FNeAYauT3ls",
-      "bytes": 4576
+      "sha256Base64Url": "q_ng4RBq5HX6H3al4TgNff-OXhSN3K4Xh4Y8eZvasig",
+      "bytes": 5094
     },
     {
       "path": "package.json",
-      "sha256Base64Url": "h2gsbG5-caIfCs3itQbEMmNqiHR2mPPYjj-bTUI6IgM",
-      "bytes": 1392
+      "sha256Base64Url": "J-QxSZ8nYciVe4eBLfkE0-ZCdgeHQPKRWMRqvBSsv5E",
+      "bytes": 1469
+    },
+    {
+      "path": "schemas/brain-v9-embedding-index-manifest.schema.json",
+      "sha256Base64Url": "3cGyEKKnykidTPe3ehTcTJd_J2Jmh84h5nAKgah06QU",
+      "bytes": 683
     },
     {
       "path": "schemas/brain-v9-event.schema.json",
@@ -175,13 +195,18 @@
     },
     {
       "path": "scripts/v9/cli.js",
-      "sha256Base64Url": "s14wlVQtEpj8anMgJlqxJuJW4yC32hYPoeeI23jtvMA",
-      "bytes": 4625
+      "sha256Base64Url": "7SPpr81cQHPkYGfaZnwLQ1U4zeXRqKMEuuAnVRdH5Cs",
+      "bytes": 6127
     },
     {
       "path": "scripts/v9/core.js",
-      "sha256Base64Url": "F2YkDAeyepTWz0HcsziED-_mM8k8MsuQ9yEZzBU4rDE",
-      "bytes": 4270
+      "sha256Base64Url": "OlSqgjk_dOhPdB2C72R-fiW4elpdHXdip40hDUTQDKI",
+      "bytes": 4402
+    },
+    {
+      "path": "scripts/v9/embeddings.js",
+      "sha256Base64Url": "wzPk7SGy1kBSA3OgMxDN4Q_JqWwgz8GuQoudc2689Kk",
+      "bytes": 9628
     },
     {
       "path": "scripts/v9/failure-controller.js",
@@ -230,8 +255,8 @@
     },
     {
       "path": "scripts/v9/paths.js",
-      "sha256Base64Url": "iJWPC6gCD5v0DH5gJ8lzKqYfFo502Y9hcWUZjXmxa9M",
-      "bytes": 839
+      "sha256Base64Url": "5tDlRF5Yk4gnJGh53mTwQPPolJS3bDqTKSOim0rf3ko",
+      "bytes": 983
     },
     {
       "path": "scripts/v9/store.js",
@@ -255,13 +280,18 @@
     },
     {
       "path": "tests/brain-v9-cli.test.js",
-      "sha256Base64Url": "uVICpN2DdvGfPETFnddcGVuCp2xvrSFzhFGsliCtcZQ",
-      "bytes": 1603
+      "sha256Base64Url": "aLjNT2Xb8N6qN4BZHkocflPWDn0nGAKT2CfANzLqS_s",
+      "bytes": 2334
     },
     {
       "path": "tests/brain-v9-cross-surface.test.mjs",
       "sha256Base64Url": "-m5yYIOSKPEwWNTjutX_ybHq29cOMRZOkE1RHUQuHMg",
       "bytes": 1565
+    },
+    {
+      "path": "tests/brain-v9-embeddings.test.js",
+      "sha256Base64Url": "94_mSmh4tgMJV5QGMwBX4tYpMJREuQuQwPujJCTM9Ns",
+      "bytes": 4957
     },
     {
       "path": "tests/brain-v9-failure-controller.test.js",
@@ -280,8 +310,8 @@
     },
     {
       "path": "tests/brain-v9-mcp.test.mjs",
-      "sha256Base64Url": "7AnlUt1QJWZ0ehRktlg6aqjyX4D07VYpI-_ocLFByqs",
-      "bytes": 1736
+      "sha256Base64Url": "Q7mC6cAFAhI0iyRhqQ26Ac6u34u_8qGXmrSjkq6BJB4",
+      "bytes": 1807
     },
     {
       "path": "tests/brain-v9-migration.test.js",
@@ -295,8 +325,8 @@
     },
     {
       "path": "tests/brain-v9-release.test.js",
-      "sha256Base64Url": "fSIE4WtxZG5zpwvB3RhXXqUQIOcKLzMskUaAk5HAvYA",
-      "bytes": 1506
+      "sha256Base64Url": "KD2w7OEVeaoPsVUpVzrxx09NSOG9eNSQEeb0hH0wXJ8",
+      "bytes": 1546
     },
     {
       "path": "tests/brain-v9-store.test.js",

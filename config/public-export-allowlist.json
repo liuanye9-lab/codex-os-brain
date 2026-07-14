@@ -5,6 +5,7 @@
     { "source": "README.md", "target": "README.md" },
     { "source": "LICENSE", "target": "LICENSE" },
     { "source": "config/brain-lite-v9.json", "target": "config/brain-lite-v9.json" },
+    { "source": "config/embedding-model-presets.json", "target": "config/embedding-model-presets.json" },
     { "source": "config/public-export-allowlist.json", "target": "config/public-export-allowlist.json" }
   ],
   "patterns": [
@@ -28,6 +29,7 @@
     "tests/brain-v9-task-contract.test.js",
     "tests/brain-v9-verification.test.js",
     "tests/brain-v9-failure-controller.test.js",
+    "tests/brain-v9-embeddings.test.js",
     "tests/brain-v9-migration.test.js",
     "tests/brain-v9-hooks.test.js",
     "tests/brain-v9-hook-config.test.js",

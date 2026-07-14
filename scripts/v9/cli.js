@@ -62,6 +62,25 @@ async function runCli(argv, io = defaultIo(), services = {}) {
     return io.json(core.verification.attach(args.criterion, { id: args.id, status: args.status, provenance: { kind: args.kind || 'command', ref: args.ref || args.id } }));
   }
   if (group === 'failures') return io.json(core.failures.status());
+  if (group === 'embeddings' && (!action || action === 'status')) return io.json(core.embeddings.status());
+  if (group === 'embeddings' && action === 'recommend') return io.json(core.embeddings.recommend(args.profile || 'zh-light'));
+  if (group === 'embeddings' && action === 'configure') {
+    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
+    if (!args.model) return io.error('model is required', EXIT.usage);
+    return io.json(core.embeddings.configure({ model: args.model, endpoint: args.endpoint, dimensions: args.dimensions, batchSize: args['batch-size'], confirm: true }));
+  }
+  if (group === 'embeddings' && action === 'mark-indexed') {
+    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
+    if (!args.manifest) return io.error('manifest is required', EXIT.usage);
+    return io.json(core.embeddings.markIndexed({ manifestPath: args.manifest, confirm: true }));
+  }
+  if (group === 'embeddings' && action === 'doctor') return io.json(await core.embeddings.doctor());
+  if (group === 'embeddings' && action === 'probe') return io.json(await core.embeddings.probe({ text: args.text }));
+  if (group === 'embeddings' && action === 'pull') {
+    if (!args['confirm-download']) return io.error('confirm-download is required', EXIT.blocked);
+    return io.json(core.embeddings.pull({ model: args.model, confirm: true }));
+  }
+  if (group === 'embeddings' && action === 'prompt') return io.json({ prompt: core.embeddings.adaptationPrompt() });
   if (group === 'hooks' && (!action || action === 'doctor')) return io.json(doctorHooks({ projectRoot: args.project || process.cwd() }));
   if (group === 'hooks' && ['enable', 'disable'].includes(action)) {
     if (!args.confirm) return io.error('confirm is required', EXIT.blocked);

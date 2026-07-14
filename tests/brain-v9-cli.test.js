@@ -34,3 +34,15 @@ test('task create, show, and verify share persisted core state', () => {
   const verified = run(['verify', '--json'], home);
   assert.equal(JSON.parse(verified.stdout).status, 'partial');
 });
+
+test('embedding configure is confirmation-gated and visible through status', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-cli-embed-'));
+  const blocked = run(['embeddings', 'configure', '--model', 'qwen3-embedding:0.6b', '--json'], home);
+  assert.equal(blocked.status, 3);
+  assert.match(blocked.stderr, /confirm/);
+  const configured = run(['embeddings', 'configure', '--model', 'qwen3-embedding:0.6b', '--confirm', '--json'], home);
+  assert.equal(configured.status, 0, configured.stderr);
+  assert.equal(JSON.parse(configured.stdout).requiresReindex, true);
+  const status = run(['embeddings', 'status', '--json'], home);
+  assert.equal(JSON.parse(status.stdout).model, 'qwen3-embedding:0.6b');
+});

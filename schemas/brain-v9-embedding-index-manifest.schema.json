@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/brain-v9-embedding-index-manifest.schema.json",
+  "title": "Brain V9 embedding index evidence",
+  "type": "object",
+  "required": ["embeddingFingerprint", "vectorCount", "failedCount"],
+  "properties": {
+    "embeddingFingerprint": { "type": "string", "pattern": "^emb_[a-f0-9]{24}$" },
+    "vectorCount": { "type": "integer", "minimum": 1 },
+    "failedCount": { "const": 0 },
+    "sourceWarningCount": { "type": "integer", "minimum": 0 },
+    "model": { "type": "string" },
+    "dimensions": { "type": ["integer", "null"], "minimum": 1 }
+  },
+  "additionalProperties": true
+}

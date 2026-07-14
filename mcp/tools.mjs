@@ -31,6 +31,14 @@ export function toolDefinitions(core) {
       handler: async ({ limit = 20 } = {}) => result({ events: core.events.list().slice(-limit) }),
     },
     {
+      name: 'brain_get_embedding_status', description: 'Read the local embedding configuration and reindex state without contacting Ollama.', inputSchema: {}, readOnly: true,
+      handler: async () => result(core.embeddings.status()),
+    },
+    {
+      name: 'brain_get_embedding_adaptation_prompt', description: 'Return the bounded prompt for adapting a local Ollama embedding model.', inputSchema: {}, readOnly: true,
+      handler: async () => result({ prompt: core.embeddings.adaptationPrompt() }),
+    },
+    {
       name: 'brain_create_task', description: 'Create a bounded task contract in the local V9 namespace.', inputSchema: { taskId: z.string(), objective: z.string().min(1), criterionIds: z.array(z.string()).max(20).optional() }, readOnly: false,
       handler: async ({ taskId, objective, criterionIds = [] }) => result(core.contracts.create({ taskId, objective, criteria: criterionIds.map(id => ({ id, required: true, verifier: 'external' })) }), 'Task contract created; completion remains evidence-gated.'),
     },

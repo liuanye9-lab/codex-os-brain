@@ -14,6 +14,7 @@
     "bin/brain-hook.js",
     "bin/package.json",
     "config/brain-lite-v9.json",
+    "config/embedding-model-presets.json",
     "config/public-export-allowlist.json",
     "config/public-package.json",
     "hooks/hooks.json",
@@ -30,7 +31,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test tests/brain-v9-store.test.js tests/brain-v9-task-contract.test.js tests/brain-v9-verification.test.js tests/brain-v9-failure-controller.test.js tests/brain-v9-migration.test.js tests/brain-v9-hooks.test.js tests/brain-v9-hook-config.test.js tests/brain-v9-cli.test.js tests/brain-v9-mcp.test.mjs tests/brain-v9-cross-surface.test.mjs",
+    "test": "node --test tests/brain-v9-store.test.js tests/brain-v9-task-contract.test.js tests/brain-v9-verification.test.js tests/brain-v9-failure-controller.test.js tests/brain-v9-embeddings.test.js tests/brain-v9-migration.test.js tests/brain-v9-hooks.test.js tests/brain-v9-hook-config.test.js tests/brain-v9-cli.test.js tests/brain-v9-mcp.test.mjs tests/brain-v9-cross-surface.test.mjs",
     "check": "npm test && node scripts/probe-v9-mcp.mjs",
     "mcp:probe": "node scripts/probe-v9-mcp.mjs"
   },
