@@ -3,6 +3,7 @@ const { blockDecision } = require('./input');
 
 async function handleStop(input, core) {
   if (!input.completionClaim) return {};
+  if (core.contracts?.active && !core.contracts.active()) return {};
   const result = core.verification.evaluateActive();
   if (result.status === 'complete') return {};
   const remaining = [...result.missing, ...result.failed, ...result.unverified];

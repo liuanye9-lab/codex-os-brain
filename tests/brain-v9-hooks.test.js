@@ -54,3 +54,11 @@ test('Stop rejects completion without evidence', async () => {
   assert.equal(output.decision, 'block');
   assert.equal(output.reason_code, 'completion_unverified');
 });
+
+test('Stop stays silent when no V9 task contract is active', async () => {
+  const core = {
+    contracts: { active: () => null },
+    verification: { evaluateActive: () => { throw new Error('must not evaluate'); } },
+  };
+  assert.deepEqual(await handleStop({ event: 'Stop', completionClaim: true }, core), {});
+});

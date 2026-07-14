@@ -220,8 +220,8 @@
     },
     {
       "path": "scripts/v9/hooks/stop.js",
-      "sha256Base64Url": "PKbMbBQM8qz2PtLS6ZsG3qxawJvGd73x3wVkV5jdmqA",
-      "bytes": 462
+      "sha256Base64Url": "IDR7sRaZTcmZxOCNgBB6NjfCv4jbnMxbVfncBGpGe4o",
+      "bytes": 531
     },
     {
       "path": "scripts/v9/migration.js",
@@ -275,8 +275,8 @@
     },
     {
       "path": "tests/brain-v9-hooks.test.js",
-      "sha256Base64Url": "NJnSpxHVzcNe-xQuCRF9hFtPqcK5MsTnNG8i6EG9KyU",
-      "bytes": 3327
+      "sha256Base64Url": "KE4Cu6aL-llO_Xs5RFA4vxrGN4cT8agKQvy-yC8DBPY",
+      "bytes": 3645
     },
     {
       "path": "tests/brain-v9-mcp.test.mjs",
