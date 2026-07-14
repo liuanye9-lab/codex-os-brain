@@ -1,0 +1,6 @@
+{
+  "name": "codex-brain-v9",
+  "version": "0.9.0",
+  "description": "Adaptive, evidence-gated reliability hooks for Codex projects",
+  "hooks": "./hooks/hooks.json"
+}

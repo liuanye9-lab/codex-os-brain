@@ -1,0 +1,29 @@
+{
+  "version": 9,
+  "policyVersion": "brain-lite-v9-adaptive-reliability",
+  "enabled": true,
+  "fallbackVersion": 8,
+  "hooks": {
+    "enabled": false,
+    "projectScoped": true,
+    "silentByDefault": true,
+    "preToolUseBudgetMs": 100,
+    "postToolUseBudgetMs": 150,
+    "contextTokenBudget": 250
+  },
+  "failureCircuit": {
+    "warningAfter": 2,
+    "openAfter": 3
+  },
+  "migration": {
+    "mode": "copy",
+    "preserveVersions": [1, 2, 3, 4, 5, 6, 7, 8],
+    "requireVerifiedBackup": true,
+    "requireExplicitConfirmation": true
+  },
+  "privacy": {
+    "storeRawPrompts": false,
+    "storeRawToolOutput": false,
+    "storePrivatePaths": false
+  }
+}

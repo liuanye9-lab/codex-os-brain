@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "SessionStart": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "BRAIN_V9_HOOKS=1 node \"${PLUGIN_ROOT}/bin/brain-hook.js\"", "timeout": 2 }] }],
+    "UserPromptSubmit": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "BRAIN_V9_HOOKS=1 node \"${PLUGIN_ROOT}/bin/brain-hook.js\"", "timeout": 2 }] }],
+    "PreToolUse": [{ "matcher": "Write|Edit|Bash|Shell|Task", "hooks": [{ "type": "command", "command": "BRAIN_V9_HOOKS=1 node \"${PLUGIN_ROOT}/bin/brain-hook.js\"", "timeout": 2 }] }],
+    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "BRAIN_V9_HOOKS=1 node \"${PLUGIN_ROOT}/bin/brain-hook.js\"", "timeout": 2 }] }],
+    "PreCompact": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "BRAIN_V9_HOOKS=1 node \"${PLUGIN_ROOT}/bin/brain-hook.js\"", "timeout": 2 }] }],
+    "PostCompact": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "BRAIN_V9_HOOKS=1 node \"${PLUGIN_ROOT}/bin/brain-hook.js\"", "timeout": 2 }] }],
+    "Stop": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "BRAIN_V9_HOOKS=1 node \"${PLUGIN_ROOT}/bin/brain-hook.js\"", "timeout": 2 }] }]
+  }
+}

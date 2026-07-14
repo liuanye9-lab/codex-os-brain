@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/codex-brain/brain-v9-migration-manifest.schema.json",
+  "title": "Codex Brain V9 Migration Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sourceRoot", "outputRoot", "createdAt", "records"],
+  "properties": {
+    "schemaVersion": { "const": 9 },
+    "sourceRoot": { "type": "string" },
+    "outputRoot": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["relativePath", "detectedVersion", "sensitivity", "disposition"],
+        "properties": {
+          "relativePath": { "type": "string" },
+          "detectedVersion": { "type": "integer", "minimum": 1, "maximum": 8 },
+          "bytes": { "type": "integer", "minimum": 0 },
+          "sourceHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "sensitivity": { "enum": ["internal", "private"] },
+          "disposition": { "enum": ["migrate", "unavailable_dataless"] }
+        }
+      }
+    }
+  }
+}

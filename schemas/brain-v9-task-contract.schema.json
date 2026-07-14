@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/codex-brain/brain-v9-task-contract.schema.json",
+  "title": "Codex Brain V9 Task Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "revision", "taskId", "objective", "lifecycle", "constraints", "scope", "criteria", "unresolved", "risk", "externalWrite", "compactionGeneration", "updatedAt"],
+  "properties": {
+    "schemaVersion": { "const": 9 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "taskId": { "type": "string", "minLength": 1 },
+    "objective": { "type": "string" },
+    "lifecycle": { "enum": ["active", "blocked", "complete", "abandoned"] },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text", "source", "explicit"],
+        "properties": {
+          "id": { "type": "string" }, "text": { "type": "string" },
+          "source": { "enum": ["user", "project", "policy", "inference"] }, "explicit": { "type": "boolean" }
+        }
+      }
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false, "required": ["allowed", "forbidden"],
+      "properties": { "allowed": { "type": "array", "items": { "type": "string" } }, "forbidden": { "type": "array", "items": { "type": "string" } } }
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "required", "status", "evidence"],
+        "properties": {
+          "id": { "type": "string" }, "required": { "type": "boolean" }, "verifier": { "type": "string" },
+          "status": { "enum": ["pending", "passed", "failed", "unverified", "waived"] },
+          "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } }
+        }
+      }
+    },
+    "unresolved": { "type": "array", "items": { "type": "string" } },
+    "risk": { "enum": ["low", "medium", "high", "critical"] },
+    "externalWrite": { "type": "boolean" },
+    "compactionGeneration": { "type": "integer", "minimum": 0 },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object", "additionalProperties": false, "required": ["id", "status", "provenance"],
+      "properties": {
+        "id": { "type": "string" }, "status": { "enum": ["passed", "failed", "unverified"] },
+        "provenance": { "type": "object", "required": ["kind", "ref"], "properties": { "kind": { "type": "string" }, "ref": { "type": "string" } }, "additionalProperties": false }
+      }
+    }
+  }
+}
