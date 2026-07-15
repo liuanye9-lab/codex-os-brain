@@ -7,15 +7,15 @@ const { verifyReadmeLinks, verifyPackageContents } = require('../scripts/verify-
 
 const root = path.resolve(__dirname, '..');
 
-test('README documents Version 9 external surfaces and adaptive lifecycle', () => {
+test('README documents V9 external surfaces and adaptive lifecycle', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  for (const required of ['Version 9', '```mermaid', 'brain status', 'brain mcp serve', 'PreToolUse', 'Stop', 'V1–V8', 'Ollama', 'brain embeddings configure']) assert.ok(readme.includes(required), required);
+  for (const required of ['Codex Brain V9', '```mermaid', 'brain status', 'brain mcp serve', 'PreToolUse', 'Stop', 'V1–V8', 'Ollama', 'brain embeddings configure']) assert.ok(readme.includes(required), required);
   assert.equal((readme.match(/```mermaid/g) || []).length >= 2, true);
 });
 
-test('README preserves the public V1 through V9 design journey', () => {
+test('README explains V9 core ideas in plain Chinese with familiar analogies', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  for (const required of ['## V1 → V9: design journey', 'durable state', 'V9 — evidence-gated control plane', 'Control must earn its cost', 'Evidence must outrank self-report', 'https://github.com/liuanye9-lab/codex-os-brain/blob/main/v1/README.md']) assert.ok(readme.includes(required), required);
+  for (const required of ['安全副驾驶', '办事前先写清单', '先翻资料柜再回答', '红绿灯', '随身小抄', 'https://github.com/liuanye9-lab/codex-os-brain/blob/main/v1/README.md']) assert.ok(readme.includes(required), required);
 });
 
 test('research attribution records source, date, license, adoption, and limits', () => {
