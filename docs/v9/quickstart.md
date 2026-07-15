@@ -9,23 +9,64 @@ git clone https://github.com/liuanye9-lab/codex-os-brain.git
 cd codex-os-brain
 npm install
 npm test
+npm run eval:reliability
 npm link
 brain status --json
 ```
 
-Set `CODEX_BRAIN_HOME` to isolate runtime state. If unset, the CLI uses the current user's `.codex-brain` directory.
+Set `CODEX_BRAIN_HOME` to isolate runtime state. If unset, the CLI uses `~/.codex-brain`.
 
-## Task and evidence flow
+## Task and evidence flow (P0)
 
 ```bash
-brain task create --task-id release-v9 --objective "verify release" --criterion tests,privacy --json
+brain task create --task-id release-v9 --objective "verify release" --criterion tests --json
 brain task show --json
-brain evidence attach --criterion tests --id evidence-tests --status passed --kind command --ref npm-test --json
+
+# Agent may only claim (always unverified)
+brain evidence claim --criterion tests --id evidence-tests --kind claim --ref agent --json
+
+# Harness re-runs executable verifiers — the only path to "passed"
 brain verify --json
-brain task checkpoint --json
+
+# Stored evaluation only (no re-run)
+brain verify --status-only --json
+
+brain task checkpoint --summary "mid-flight" --json
 ```
 
-Evidence is a provenance reference, not raw command output. A task cannot close while any required criterion is missing, failed, or unverified.
+`brain evidence attach` remains for compatibility but is treated as a claim unless an internal harness path sets `harnessVerified` with `allowHarnessAttach`.
+
+## Session handoff (P1)
+
+```bash
+brain handoff init --objective "verify release" --json
+brain handoff status --json
+brain handoff progress --summary "finished smoke path" --json
+```
+
+Creates `.brain/feature-backlog.json`, `.brain/progress.md`, and `.brain/smoke.sh`.
+
+## Skills (P4)
+
+```bash
+brain skill list --json
+brain skill activate --id brain-lite-model-router --criterion tests --budget 2000 --json
+```
+
+## Memory (P6)
+
+```bash
+brain memory add --text "prefer local embeddings" --tags embed --json
+brain memory recall --query "embed" --json
+brain memory list --json
+```
+
+## Hosts (P5)
+
+```bash
+brain hosts list --json
+# BRAIN_HOST=codex|claude|mcp node bin/brain-hook.js
+```
 
 ## Project hooks
 
@@ -35,42 +76,37 @@ brain hooks enable --project "$PWD" --confirm --json
 brain hooks disable --project "$PWD" --confirm --json
 ```
 
-Only the project's `.codex/hooks.json` is written. Hook commands are local, bounded, network-free, and model-free. `PreToolUse` and `Stop` may deny an action at a deterministic policy boundary; advisory observer failures return an empty result.
+Only the project's `.codex/hooks.json` is written. Hook commands are local, bounded, network-free, and model-free.
 
 ## MCP
 
-Run the stdio server:
-
 ```bash
 brain mcp serve
-```
-
-Probe it independently:
-
-```bash
 node scripts/probe-v9-mcp.mjs
 ```
 
-Safe read tools include `brain_get_status`, `brain_get_task_contract`, `brain_verify_task`, `brain_list_failures`, and `brain_list_events`. Controlled task mutations are `brain_create_task`, `brain_checkpoint_task`, `brain_attach_evidence`, and `brain_close_task`.
+Read tools include status, task, verify (re-run), failures, events, embeddings, handoff, skills, memory recall.  
+Mutations: create task, checkpoint, claim evidence, activate skill, close (after harness verify).  
+Never: self-certify passed, download models, migrate, bypass policy.
 
-Embedding reads add `brain_get_embedding_status` and `brain_get_embedding_adaptation_prompt`. Model download, configuration, and index promotion remain CLI-only confirmation gates.
+## Reliability eval (P2)
+
+```bash
+npm run eval:reliability
+```
 
 ## Optional local embeddings
 
 ```bash
 brain embeddings recommend --profile zh-light --json
 brain embeddings doctor --json
-brain embeddings pull --model qwen3-embedding:0.6b --confirm-download --json
-brain embeddings configure --model qwen3-embedding:0.6b --confirm --json
-brain embeddings probe --text "retrieval canary" --json
-brain embeddings prompt --json
 ```
 
-Changing the model, loopback endpoint, or dimensions invalidates the vector index. Rebuild it completely, verify `failedCount: 0`, then run `brain embeddings mark-indexed --manifest /path/to/index-manifest.json --confirm`. See [the local embedding guide](local-embeddings.md).
+See [local embeddings](local-embeddings.md).
 
 ## Disable or fall back
 
-- Disable project hooks with `brain hooks disable --confirm`.
-- Set V9 `enabled` to false to keep the runtime read-only.
-- V8 stays selectable through `fallbackVersion: 8`.
-- Migration and publication are never exposed as MCP mutations.
+- `brain hooks disable --confirm`
+- Set V9 `enabled` to false for read-only runtime
+- `fallbackVersion: 8` keeps V8 selectable
+- Migration / publish never exposed as MCP mutations

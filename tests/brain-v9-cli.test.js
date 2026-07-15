@@ -31,7 +31,8 @@ test('task create, show, and verify share persisted core state', () => {
   assert.equal(created.status, 0, created.stderr);
   const shown = run(['task', 'show', '--json'], home);
   assert.equal(JSON.parse(shown.stdout).taskId, 'task_cli');
-  const verified = run(['verify', '--json'], home);
+  // Without harness re-run, required criteria remain partial (claims alone never complete).
+  const verified = run(['verify', '--status-only', '--json'], home);
   assert.equal(JSON.parse(verified.stdout).status, 'partial');
 });
 

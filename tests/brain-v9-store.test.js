@@ -32,7 +32,9 @@ test('safe JSON preserves corrupt source and atomic writes are private', () => {
   assert.equal(fs.readFileSync(file, 'utf8'), '{broken');
   atomicWriteJson(file, { clean: true });
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { clean: true });
-  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  }
   assert.equal(sha256File(file).length, 64);
 });
 

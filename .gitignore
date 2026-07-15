@@ -4,3 +4,6 @@ reports/
 *.log
 .env*
 .DS_Store
+
+.brain/
+

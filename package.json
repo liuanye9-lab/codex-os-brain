@@ -1,6 +1,6 @@
 {
   "name": "codex-brain-v9",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Adaptive, evidence-gated reliability harness for coding agents with project hooks, CLI, and MCP.",
   "type": "module",
   "license": "MIT",
@@ -26,13 +26,15 @@
     "scripts/probe-v9-mcp.mjs",
     "scripts/build-public-export.js",
     "scripts/verify-v9-release.js",
+    "evals/v9-reliability",
     "docs/v9",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test tests/ci-workflow.test.js tests/brain-v9-store.test.js tests/brain-v9-task-contract.test.js tests/brain-v9-verification.test.js tests/brain-v9-failure-controller.test.js tests/brain-v9-embeddings.test.js tests/brain-v9-migration.test.js tests/brain-v9-hooks.test.js tests/brain-v9-hook-config.test.js tests/brain-v9-cli.test.js tests/brain-v9-mcp.test.mjs tests/brain-v9-cross-surface.test.mjs",
+    "test": "node --test tests/ci-workflow.test.js tests/brain-v9-store.test.js tests/brain-v9-task-contract.test.js tests/brain-v9-verification.test.js tests/brain-v9-failure-controller.test.js tests/brain-v9-embeddings.test.js tests/brain-v9-migration.test.js tests/brain-v9-hooks.test.js tests/brain-v9-hook-config.test.js tests/brain-v9-cli.test.js tests/brain-v9-mcp.test.mjs tests/brain-v9-cross-surface.test.mjs tests/brain-v9-p0-p6.test.js",
     "check": "npm test && node scripts/probe-v9-mcp.mjs",
+    "eval:reliability": "node evals/v9-reliability/runner.cjs",
     "mcp:probe": "node scripts/probe-v9-mcp.mjs"
   },
   "dependencies": {

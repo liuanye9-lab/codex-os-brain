@@ -35,7 +35,9 @@ test('changing model identity marks the complete index for rebuild', () => {
   const changed = service.configure({ model: 'qwen3-embedding:4b', confirm: true });
   assert.equal(changed.requiresReindex, true);
   assert.notEqual(changed.fingerprint, first.fingerprint);
-  assert.equal(fs.statSync(paths.embeddingConfigPath).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(paths.embeddingConfigPath).mode & 0o777, 0o600);
+  }
 });
 
 test('reindex state clears only for the configured fingerprint with confirmation', () => {

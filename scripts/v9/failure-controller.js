@@ -23,9 +23,14 @@ function classifyFailure(input = {}) {
   return { ...failure, signature: failureSignature({ ...failure, operation: input.operation }) };
 }
 
-function advanceCircuit(state = {}, failure) {
+function advanceCircuit(state = {}, failure, circuitConfig = {}) {
+  const warningAfter = Number(circuitConfig.warningAfter || 2);
+  const openAfter = Number(circuitConfig.openAfter || 3);
   const consecutive = state.signature === failure.signature ? Number(state.consecutive || 0) + 1 : 1;
-  return { signature: failure.signature, consecutive, status: consecutive >= 3 ? 'open' : consecutive === 2 ? 'warning' : 'closed' };
+  let status = 'closed';
+  if (consecutive >= openAfter) status = 'open';
+  else if (consecutive >= warningAfter) status = 'warning';
+  return { signature: failure.signature, consecutive, status };
 }
 
 function shouldRetry(failure, state) {

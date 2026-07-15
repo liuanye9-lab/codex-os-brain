@@ -32,19 +32,37 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   const paths = services.paths || resolveV9Paths();
   const core = services.core || createV9Core({ paths });
   const pluginRoot = services.pluginRoot || path.resolve(__dirname, '..', '..');
+  const projectRoot = args.project || process.cwd();
 
   if (group === 'status') return io.json(core.status());
   if (group === 'doctor') return io.json({
     v8: { selectable: core.config.fallbackVersion === 8 },
     v9: core.status(),
-    hooks: doctorHooks({ projectRoot: args.project || process.cwd() }),
+    hooks: doctorHooks({ projectRoot }),
     cli: { binaries: ['brain', 'codex-brain'] },
     mcp: { probeCommand: 'brain:v9:mcp:probe' },
+    hosts: core.hosts.list(),
+    handoff: core.handoff.statusHandoff({ projectRoot }),
   });
   if (group === 'task' && action === 'create') {
     if (!args.objective) return io.error('objective is required', EXIT.usage);
-    const criteria = args.criterion ? String(args.criterion).split(',').map(id => ({ id, required: true, verifier: 'command' })) : [];
-    return io.json(core.contracts.create({ taskId: args['task-id'], objective: args.objective, criteria, risk: args.risk, externalWrite: args['external-write'] === true }));
+    const criteria = args.criterion ? String(args.criterion).split(',').map(id => ({
+      id,
+      required: true,
+      verifier: id === 'tests' ? 'test_runner' : id === 'scope' ? 'git_diff_bounded' : 'command_exit_0',
+      verifierSpec: id === 'tests' ? { command: args.command || 'npm test' } : undefined,
+    })) : [];
+    return io.json(core.contracts.create({
+      taskId: args['task-id'],
+      objective: args.objective,
+      criteria,
+      risk: args.risk,
+      externalWrite: args['external-write'] === true,
+      scope: {
+        allowed: args.allowed ? String(args.allowed).split(',') : [],
+        forbidden: args.forbidden ? String(args.forbidden).split(',') : [],
+      },
+    }));
   }
   if (group === 'task' && (!action || action === 'show')) {
     const task = core.contracts.active();
@@ -54,14 +72,87 @@ async function runCli(argv, io = defaultIo(), services = {}) {
     const task = core.contracts.active();
     if (!task) return io.error('active task not found', EXIT.failed);
     core.events.append({ kind: 'checkpoint', taskId: task.taskId, status: 'observed' });
+    core.handoff.writeProgress({
+      projectRoot,
+      taskId: task.taskId,
+      objective: task.objective,
+      sessionSummary: args.summary || 'Manual checkpoint',
+    });
     return io.json({ taskId: task.taskId, checkpointed: true });
   }
-  if (group === 'verify') return io.json(core.verification.evaluateActive());
+  if (group === 'verify') {
+    // Default: re-run executable verifiers (P0). Use --status-only for stored evaluation.
+    if (args['status-only']) return io.json(core.verification.evaluateActive());
+    return io.json(core.verification.run({
+      cwd: projectRoot,
+      attestationToken: args['attest-token'],
+      providedToken: args['provided-token'],
+    }));
+  }
+  if (group === 'evidence' && action === 'claim') {
+    if (!args.criterion || !args.id) return io.error('criterion and id are required', EXIT.usage);
+    return io.json(core.verification.claim(args.criterion, {
+      id: args.id,
+      provenance: { kind: args.kind || 'claim', ref: args.ref || args.id },
+    }));
+  }
   if (group === 'evidence' && action === 'attach') {
+    // Compat: treat attach as claim unless internal harness path.
     if (!args.criterion || !args.id || !args.status) return io.error('criterion, id, and status are required', EXIT.usage);
-    return io.json(core.verification.attach(args.criterion, { id: args.id, status: args.status, provenance: { kind: args.kind || 'command', ref: args.ref || args.id } }));
+    return io.json(core.verification.attach(args.criterion, {
+      id: args.id,
+      status: args.status,
+      provenance: { kind: args.kind || 'command', ref: args.ref || args.id },
+    }));
   }
   if (group === 'failures') return io.json(core.failures.status());
+  if (group === 'handoff' && (!action || action === 'status')) return io.json(core.handoff.statusHandoff({ projectRoot }));
+  if (group === 'handoff' && action === 'init') {
+    return io.json(core.handoff.initHandoff({
+      projectRoot,
+      objective: args.objective || core.contracts.active()?.objective || '',
+      force: args.force === true,
+    }));
+  }
+  if (group === 'handoff' && action === 'progress') {
+    const task = core.contracts.active();
+    return io.json(core.handoff.writeProgress({
+      projectRoot,
+      taskId: task?.taskId,
+      objective: task?.objective || args.objective,
+      sessionSummary: args.summary || args._[2] || 'Progress update',
+    }));
+  }
+  if (group === 'skill' && (!action || action === 'list')) return io.json(core.skills.list());
+  if (group === 'skill' && action === 'activate') {
+    if (!args.id) return io.error('id is required', EXIT.usage);
+    const criteria = args.criterion ? String(args.criterion).split(',') : [];
+    return io.json(core.skills.activate({
+      skillId: args.id,
+      expectedCriteria: criteria,
+      costBudgetTokens: args.budget ? Number(args.budget) : 2000,
+      reason: args.reason || '',
+    }));
+  }
+  if (group === 'skill' && action === 'deactivate') {
+    if (!args.id) return io.error('id is required', EXIT.usage);
+    return io.json(core.skills.deactivate(args.id));
+  }
+  if (group === 'memory' && (!action || action === 'list')) return io.json({ entries: core.memory.list() });
+  if (group === 'memory' && action === 'add') {
+    if (!args.text) return io.error('text is required', EXIT.usage);
+    return io.json(core.memory.add({
+      text: args.text,
+      source: args.source || 'cli',
+      confidence: args.confidence ? Number(args.confidence) : 0.5,
+      tags: args.tags ? String(args.tags).split(',') : [],
+    }));
+  }
+  if (group === 'memory' && action === 'recall') {
+    const entries = core.memory.recall({ query: args.query || '', limit: args.limit ? Number(args.limit) : 5 });
+    return io.json({ entries, injection: core.memory.formatForInjection(entries) });
+  }
+  if (group === 'hosts' && (!action || action === 'list')) return io.json({ hosts: core.hosts.list() });
   if (group === 'embeddings' && (!action || action === 'status')) return io.json(core.embeddings.status());
   if (group === 'embeddings' && action === 'recommend') return io.json(core.embeddings.recommend(args.profile || 'zh-light'));
   if (group === 'embeddings' && action === 'configure') {
@@ -81,10 +172,10 @@ async function runCli(argv, io = defaultIo(), services = {}) {
     return io.json(core.embeddings.pull({ model: args.model, confirm: true }));
   }
   if (group === 'embeddings' && action === 'prompt') return io.json({ prompt: core.embeddings.adaptationPrompt() });
-  if (group === 'hooks' && (!action || action === 'doctor')) return io.json(doctorHooks({ projectRoot: args.project || process.cwd() }));
+  if (group === 'hooks' && (!action || action === 'doctor')) return io.json(doctorHooks({ projectRoot }));
   if (group === 'hooks' && ['enable', 'disable'].includes(action)) {
     if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
-    return io.json(setProjectHooks({ projectRoot: args.project || process.cwd(), pluginRoot, enabled: action === 'enable', confirm: true }));
+    return io.json(setProjectHooks({ projectRoot, pluginRoot, enabled: action === 'enable', confirm: true }));
   }
   if (group === 'migrate' && action === 'inventory') {
     if (!args['brain-root']) return io.error('brain-root is required', EXIT.usage);

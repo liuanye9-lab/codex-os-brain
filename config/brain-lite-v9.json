@@ -15,6 +15,27 @@
     "warningAfter": 2,
     "openAfter": 3
   },
+  "verification": {
+    "requireHarnessReRun": true,
+    "agentClaimsAreUnverified": true
+  },
+  "handoff": {
+    "enabled": true,
+    "dir": ".brain",
+    "requireSmokeBeforeNewFeature": true
+  },
+  "skills": {
+    "requireExpectedCriteria": true,
+    "outputsAreEvidenceCandidates": true
+  },
+  "memory": {
+    "injectionBanner": "UNVERIFIED MEMORY",
+    "promoteOnlyFromVerifiedOutcomes": true
+  },
+  "hosts": {
+    "default": "codex",
+    "supported": ["codex", "claude", "generic-mcp"]
+  },
   "embeddings": {
     "optional": true,
     "provider": "ollama",

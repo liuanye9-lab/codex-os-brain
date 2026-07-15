@@ -19,7 +19,10 @@ function normalizeHookInput(input = {}) {
     toolInput: boundedObject(input.tool_input || input.toolInput),
     toolResult,
     errorType: input.error_type || input.errorType || toolResult.errorType,
-    completionClaim: input.completion_claim === true || input.completionClaim === true || input.hook_event_name === 'Stop',
+    completionClaim: input.completion_claim === true || input.completionClaim === true || input.hook_event_name === 'Stop' || input.event === 'Stop',
+    projectRoot: input.project_root || input.projectRoot || input.cwd || process.cwd(),
+    host: input.host || 'codex',
+    forceVerify: input.force_verify === true || input.forceVerify === true,
   };
 }
 

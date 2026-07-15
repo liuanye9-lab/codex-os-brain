@@ -33,8 +33,13 @@
         "type": "object", "additionalProperties": false,
         "required": ["id", "required", "status", "evidence"],
         "properties": {
-          "id": { "type": "string" }, "required": { "type": "boolean" }, "verifier": { "type": "string" },
+          "id": { "type": "string" }, "required": { "type": "boolean" },
+          "verifier": { "type": "string" },
+          "verifierSpec": { "type": "object" },
           "status": { "enum": ["pending", "passed", "failed", "unverified", "waived"] },
+          "lastVerifiedAt": { "type": ["string", "null"] },
+          "lastVerifierFingerprint": { "type": ["string", "null"] },
+          "harnessVerified": { "type": "boolean" },
           "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } }
         }
       }
@@ -43,14 +48,26 @@
     "risk": { "enum": ["low", "medium", "high", "critical"] },
     "externalWrite": { "type": "boolean" },
     "compactionGeneration": { "type": "integer", "minimum": 0 },
+    "lastVerifiedAt": { "type": ["string", "null"] },
     "updatedAt": { "type": "string", "format": "date-time" }
   },
   "$defs": {
     "evidence": {
-      "type": "object", "additionalProperties": false, "required": ["id", "status", "provenance"],
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "status", "provenance"],
       "properties": {
-        "id": { "type": "string" }, "status": { "enum": ["passed", "failed", "unverified"] },
-        "provenance": { "type": "object", "required": ["kind", "ref"], "properties": { "kind": { "type": "string" }, "ref": { "type": "string" } }, "additionalProperties": false }
+        "id": { "type": "string" },
+        "status": { "enum": ["passed", "failed", "unverified"] },
+        "harnessVerified": { "type": "boolean" },
+        "fingerprint": { "type": ["string", "null"] },
+        "verifiedAt": { "type": ["string", "null"] },
+        "summary": {},
+        "provenance": {
+          "type": "object",
+          "required": ["kind", "ref"],
+          "properties": { "kind": { "type": "string" }, "ref": { "type": "string" } },
+          "additionalProperties": false
+        }
       }
     }
   }
