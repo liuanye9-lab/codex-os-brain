@@ -18,6 +18,11 @@ test('README explains V9 core ideas in plain Chinese with familiar analogies', (
   for (const required of ['安全副驾驶', '办事前先写清单', '先翻资料柜再回答', '红绿灯', '随身小抄', 'https://github.com/liuanye9-lab/codex-os-brain/blob/main/v1/README.md']) assert.ok(readme.includes(required), required);
 });
 
+test('README names the AI engineering disciplines behind the plain-language metaphors', () => {
+  const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+  for (const required of ['RAG（检索增强生成）', 'Prompt Engineering（提示词工程）', 'Loop Engineering（循环工程）', '数据分析', '知识工程', '不是一个通用 BI 平台']) assert.ok(readme.includes(required), required);
+});
+
 test('research attribution records source, date, license, adoption, and limits', () => {
   const text = fs.readFileSync(path.join(root, 'docs', 'v9', 'research-and-attribution.md'), 'utf8');
   for (const heading of ['Source', 'Version or date', 'License', 'Adopted', 'Not copied']) assert.ok(text.includes(heading), heading);
