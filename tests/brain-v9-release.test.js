@@ -13,6 +13,11 @@ test('README documents Version 9 external surfaces and adaptive lifecycle', () =
   assert.equal((readme.match(/```mermaid/g) || []).length >= 2, true);
 });
 
+test('README preserves the public V1 through V9 design journey', () => {
+  const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+  for (const required of ['## V1 → V9: design journey', 'durable state', 'V9 — evidence-gated control plane', 'Control must earn its cost', 'Evidence must outrank self-report', 'https://github.com/liuanye9-lab/codex-os-brain/blob/main/v1/README.md']) assert.ok(readme.includes(required), required);
+});
+
 test('research attribution records source, date, license, adoption, and limits', () => {
   const text = fs.readFileSync(path.join(root, 'docs', 'v9', 'research-and-attribution.md'), 'utf8');
   for (const heading of ['Source', 'Version or date', 'License', 'Adopted', 'Not copied']) assert.ok(text.includes(heading), heading);

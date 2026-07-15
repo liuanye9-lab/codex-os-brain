@@ -44,6 +44,48 @@ stateDiagram-v2
   Verify --> Block: missing, failed, or unverified criterion
 ```
 
+## V1 → V9: design journey
+
+This repository keeps the version history as an engineering record, not a claim that each newer layer is automatically better. Each version addressed a concrete agent failure, then exposed a cost, ambiguity, or safety boundary that shaped the next one. The enduring direction is: preserve the useful control, remove the always-on tax, and require evidence before a system treats its own output as truth.
+
+```mermaid
+flowchart LR
+  V1["V1\nDurable state"] --> V2["V2\nCalibration"] --> V3["V3\nStuck-loop intervention"] --> V4["V4\nNarrow mode routing"] --> V5["V5\nMultimodal evidence"] --> V6["V6\nPost-tool engineering checks"] --> V7["V7\nEvolution governance"] --> V8["V8\nNative-first control plane"] --> V9["V9\nEvidence-gated shared core"]
+```
+
+| Version | Public design move | What it made better | Why the next change was needed |
+|---|---|---|---|
+| [V1](https://github.com/liuanye9-lab/codex-os-brain/blob/main/v1/README.md) — durable state | Moved important decisions out of transient chat into inspectable local artifacts and conditional recall. | Persistence and traceability. | Repeating stored context could preserve a wrong belief as faithfully as a correct one. |
+| [V2](https://github.com/liuanye9-lab/codex-os-brain/blob/main/v2/README.md) — calibration | Separated self-report from evidence, with verify / hedge / ask boundaries and offline review. | More honest uncertainty. | Better calibration still did not interrupt a bad search path while work was stuck. |
+| [V3](https://github.com/liuanye9-lab/codex-os-brain/blob/main/v3/DESIGN.md) — stuck-loop intervention | Detected repeated unproductive patterns and proposed a bounded backtrack or alternative. | Escaped single-track persistence. | A universal checklist caused harmless false positives and did not fit every task. |
+| [V4](https://github.com/liuanye9-lab/codex-os-brain/blob/main/v4/DESIGN.md) — narrow mode routing | Chose a short owner, operator, reviewer, or coach posture from explicit signals. | Reduced long prompt injection. | Text-only routing could not retain usable evidence from documents and screenshots. |
+| [V5](https://github.com/liuanye9-lab/codex-os-brain/blob/main/v5/DESIGN.md) — multimodal evidence | Recorded safe metadata, extractable text, and explicit unsupported states for outside-chat materials. | Durable references without pretending metadata equals understanding. | Better intake did not verify the engineering effects of tool edits. |
+| [V6](https://github.com/liuanye9-lab/codex-os-brain/blob/main/v6/DESIGN.md) — engineering harness | Added post-tool detectors for verification gaps, risky edits, secrets, dependency and structural debt. | Failure patterns became visible near the causal edit. | Advisory hooks could still become noisy, and proposals still needed governance. |
+| [V7](https://github.com/liuanye9-lab/codex-os-brain/blob/main/v7/DESIGN.md) — evolution governance | Turned self-improvement into reviewable candidates with approval, verification, sandboxing, and revocation. | Prevented an agent from treating a proposal as permission. | A persistent hook/injection stack imposed token, latency, and attention cost on ordinary work. |
+| [V8](https://github.com/liuanye9-lab/codex-os-brain/blob/main/v8/DESIGN.md) — native-first control plane | Kept the mother agent direct by default; recall, delegation, policy trials, and skills had to earn activation. | Measured harness tax and independently switchable controls. | The remaining cross-surface risks needed one compact contract for hooks, CLI, and MCP. |
+| **V9 — evidence-gated control plane** | Added a shared task contract, sanitized event ledger, typed failure circuit, completion gate, project hooks, CLI, MCP, and optional local embeddings. | One local policy core with bounded intervention, migration, and rollback. | V9 remains deliberately incomplete: semantic correctness still needs domain review and external evidence. |
+
+### What V9 changes relative to the earlier harness
+
+| Earlier default | V9 decision | Reason |
+|---|---|---|
+| More context or a new prompt layer on every turn | Silent fast path; activate only on an explicit constraint, high-risk write, repeated failure, compaction recovery, or completion claim | Ordinary capable work should not pay a permanent harness tax. |
+| Agent confidence or a final message as completion | Criterion-linked external evidence | **Evidence must outrank self-report.** |
+| A growing hook stack with uneven behavior | Hooks, CLI, and MCP call one shared local core | Policy must be consistent across entry points. |
+| Memory-like text treated as instruction | Allowlisted metadata and retrieved content treated as evidence | Recall can be stale, poisoned, incomplete, or irrelevant. |
+| Rewrite or normalize old state in place | Hash, backup, copy adapter, verification, and explicit cutover | Version evolution must be reversible and auditable. |
+| Semantic recall as an always-on remote dependency | Optional loopback Ollama embeddings with fingerprinted reindexing and lexical fallback | Privacy, offline operation, and graceful degradation are part of correctness. |
+
+### Maintainer's public design reflection
+
+这条演进线从来不是“给 Agent 加更多层”的竞赛。早期版本通过持久化、路由、检测和治理，解决了当时真实存在的遗忘、卡住、漏验和自我修改风险；这些经验仍然是 V9 的来源。但随着基础模型的规划、工具使用与本地任务保持能力提升，常驻注入、频繁分流和层层审核也会制造新的成本：占用上下文、增加延迟、放大误触发，并让系统看起来比实际更可靠。
+
+因此，V8/V9 的公开设计判断是：**Control must earn its cost.** 默认相信原生 Agent 能直接完成清晰、低风险、可验证的工作；只有出现可观测症状时，才让 harness 介入。介入也不等于夺权：确定性的隐私、禁止范围、破坏性动作和未验证完成可以失败关闭；观测、建议与召回则失败开放，避免一个损坏的辅助层阻断正常工作。
+
+另一个核心判断是，harness 的价值不在于替模型“思考得更多”，而在于让系统更诚实地处理不确定性：区分事实、证据、候选和权限；让 memory、retrieval、subagent 与自我改进都经过边界、预算、验证和回退。借鉴开源项目与论文时，复用的是可验证机制而不是人格、私有状态或未经证实的结论。详见 [research and attribution](docs/v9/research-and-attribution.md) 与 [V7 heavy-harness retrospective](https://github.com/liuanye9-lab/codex-os-brain/blob/main/docs/history/v7-heavy-harness.md).
+
+The practical rule is simple: keep the smallest harness that measurably improves the task, and delete or disable the rest.
+
 ## What activates it
 
 | Trigger | V9 behavior | Default decision |
