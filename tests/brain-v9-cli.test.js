@@ -47,3 +47,16 @@ test('embedding configure is confirmation-gated and visible through status', () 
   const status = run(['embeddings', 'status', '--json'], home);
   assert.equal(JSON.parse(status.stdout).model, 'qwen3-embedding:0.6b');
 });
+
+test('encrypted restore and recovery mutation commands require explicit confirmation', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-cli-recovery-'));
+  const restore = run(['memory', 'restore-encrypted', '--input', '/tmp/example.cbmem', '--json'], home);
+  assert.equal(restore.status, 3);
+  assert.match(restore.stderr, /confirm-restore/);
+  const recoveryExport = run(['memory', 'recovery-export', '--json'], home);
+  assert.equal(recoveryExport.status, 3);
+  assert.match(recoveryExport.stderr, /confirm/);
+  const recoveryImport = run(['memory', 'recovery-import', '--json'], home);
+  assert.equal(recoveryImport.status, 3);
+  assert.match(recoveryImport.stderr, /confirm/);
+});

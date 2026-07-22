@@ -59,6 +59,8 @@ brain memory backup-key-init --confirm
 brain memory backup-encrypted --confirm
 brain memory backup-verify --input /path/to/backup.cbmem
 brain memory backup-compare --input /path/to/incoming.cbmem
+brain memory restore-encrypted --input /path/to/incoming.cbmem --confirm-restore
+brain memory recovery-drill --share-a /offline/a.cbkey --share-b /offline/b.cbkey --passphrase-a-file /private/pass-a --passphrase-b-file /private/pass-b --input /path/to/backup.cbmem
 brain harness cycle
 brain harness candidates
 ```

@@ -23,6 +23,13 @@ const {
   inspectEncryptedMemoryBackup,
   verifyEncryptedMemoryBackup,
 } = require('./memory-encrypted-backup');
+const {
+  drillRecoveryKey,
+  exportRecoveryKey,
+  importRecoveryKey,
+  restoreEncryptedMemoryBackup,
+  rotateRecoveryKey,
+} = require('./memory-recovery');
 const { getHostAdapter, listHosts } = require('./hosts');
 
 const EVENT_FIELDS = ['eventId', 'kind', 'taskId', 'turnId', 'status', 'reasonCode', 'signature', 'evidenceId', 'durationMs', 'createdAt'];
@@ -196,6 +203,11 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config() } = {}
       inspect: input => inspectEncryptedMemoryBackup(input),
       verify: input => verifyEncryptedMemoryBackup({ input, paths, keyStore: memoryBackupKeyStore }),
       compare: input => compareEncryptedMemoryBackup({ input, paths, keyStore: memoryBackupKeyStore }),
+      restore: options => restoreEncryptedMemoryBackup({ ...options, paths, keyStore: memoryBackupKeyStore }),
+      recoveryExport: options => exportRecoveryKey({ ...options, paths, keyStore: memoryBackupKeyStore }),
+      recoveryDrill: options => drillRecoveryKey({ ...options, paths }),
+      recoveryImport: options => importRecoveryKey({ ...options, keyStore: memoryBackupKeyStore }),
+      recoveryRotate: options => rotateRecoveryKey({ ...options, paths, keyStore: memoryBackupKeyStore }),
     },
     hosts: { get: getHostAdapter, list: listHosts },
     paths,

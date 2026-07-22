@@ -7,7 +7,8 @@ const { resolveV9Paths } = require('./paths');
 
 const SCHEMA_VERSION = 1;
 
-function openMemoryDatabase({ paths = resolveV9Paths(), dbPath = paths.memoryDbPath, readonly = false } = {}) {
+function openMemoryDatabase({ paths = resolveV9Paths(), dbPath = paths.memoryDbPath, readonly = false, ignoreRestoreLock = false } = {}) {
+  if (!ignoreRestoreLock && fs.existsSync(paths.memoryRestoreLockPath)) throw new Error('memory_restore_in_progress');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(dbPath, { readOnly: readonly, enableForeignKeyConstraints: true });
   db.exec('PRAGMA busy_timeout=5000');
@@ -218,12 +219,12 @@ function integrity(db) {
   return { passed: quick.length === 1 && quick[0] === 'ok' && foreignKeys.length === 0, quickCheck: quick, foreignKeyErrors: foreignKeys.length };
 }
 
-async function backupMemoryDatabase({ paths = resolveV9Paths(), targetPath } = {}) {
+async function backupMemoryDatabase({ paths = resolveV9Paths(), targetPath, ignoreRestoreLock = false } = {}) {
   fs.mkdirSync(paths.memoryBackupRoot, { recursive: true, mode: 0o700 });
   const target = path.resolve(targetPath || path.join(paths.memoryBackupRoot, `memory-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite3`));
   const allowedRoot = `${path.resolve(paths.memoryBackupRoot)}${path.sep}`;
   if (!target.startsWith(allowedRoot)) throw new Error('backup_target_outside_memory_backup_root');
-  const db = openMemoryDatabase({ paths });
+  const db = openMemoryDatabase({ paths, ignoreRestoreLock });
   try {
     db.exec('PRAGMA wal_checkpoint(FULL)');
     await backup(db, target);

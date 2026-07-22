@@ -655,9 +655,11 @@ flowchart LR
   SQL --> Snapshot["SQLite 在线快照<br/>完整性检查"]
   Snapshot --> AES["AES-256-GCM<br/>Keychain 持钥"]
   AES --> Remote["私有同步目标<br/>只收 .cbmem 密文"]
+  AES --> Split["2-of-2 离线密钥份额<br/>分设备 + 分口令保管"]
+  Remote --> Restore["认证血缘 + 恢复租约<br/>原子换库 + 自动回滚"]
 ```
 
-同步不采用 last-write-wins。每个不可变 `.cbmem` 包都带经过认证的 `databaseId → parentBackupId → backupId` 血缘；`same` 不操作，远端祖先链包含本地 head 才允许进入 fast-forward 恢复评审，分叉、外来数据库和未知血缘全部阻断。当前版本只提供备份、验证和冲突判定，不自动替换正在运行的数据库。
+同步不采用 last-write-wins。每个不可变 `.cbmem` 包都带经过认证的 `databaseId → parentBackupId → backupId` 血缘；`same` 只验证不换库，远端祖先链包含本地 head 才允许确认后的自动 fast-forward 恢复，分叉、外来数据库和未知血缘全部阻断。恢复过程会持有协作租约、检查数据库占用、先做回滚快照，再通过同文件系统原子换库和崩溃日志保证失败可回退。
 
 ```mermaid
 stateDiagram-v2
@@ -669,7 +671,7 @@ stateDiagram-v2
   Verify --> Foreign: databaseId 不同
   Verify --> Unknown: 无法证明血缘
   Same --> NoOp
-  FastForward --> OfflineReview
+  FastForward --> ConfirmedRestore
   LocalAhead --> KeepLocal
   Diverged --> Block
   Foreign --> Block
@@ -681,10 +683,13 @@ brain memory backup-key-init --confirm
 brain memory backup-encrypted --confirm
 brain memory backup-verify --input /path/to/backup.cbmem
 brain memory backup-compare --input /path/to/incoming.cbmem
+brain memory restore-encrypted --input /path/to/incoming.cbmem --confirm-restore
+brain memory recovery-export --output-a /offline-a/key.cbkey --output-b /offline-b/key.cbkey --passphrase-a-file /private/pass-a --passphrase-b-file /private/pass-b --confirm
+brain memory recovery-drill --share-a /offline-a/key.cbkey --share-b /offline-b/key.cbkey --passphrase-a-file /private/pass-a --passphrase-b-file /private/pass-b --input /path/to/backup.cbmem
 brain harness cycle
 ```
 
-详见 [事务记忆基础设施](docs/v9/memory-infrastructure.md) 与 [加密备份及冲突安全同步](docs/v9/encrypted-backup-and-sync.md)。
+详见 [事务记忆基础设施](docs/v9/memory-infrastructure.md)、[加密备份及冲突安全同步](docs/v9/encrypted-backup-and-sync.md) 与 [离线恢复密钥仪式](docs/v9/recovery-key-ceremony.md)。
 
 ---
 
@@ -1045,6 +1050,7 @@ flowchart TB
 | [可选 Ollama 本地嵌入](docs/v9/local-embeddings.md) | 资料柜 |
 | [事务记忆基础设施](docs/v9/memory-infrastructure.md) | SQLite、检索、图与持续评测 |
 | [加密备份及冲突同步](docs/v9/encrypted-backup-and-sync.md) | `.cbmem`、Keychain 与血缘判定 |
+| [离线恢复密钥仪式](docs/v9/recovery-key-ceremony.md) | 2-of-2 分离保管、演练、导入与轮换 |
 | [V1–V8 迁移与回退](docs/v9/migration.md) | 搬家协议 |
 | [隐私与威胁模型](docs/v9/privacy-and-threat-model.md) | 本地优先与导出 |
 | [研究与开源归属](docs/v9/research-and-attribution.md) | 论文与上游概念 |

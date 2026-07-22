@@ -40,6 +40,7 @@
     "tests/brain-v9-memory-service.test.js",
     "tests/brain-v9-memory-harness.test.js",
     "tests/brain-v9-memory-encrypted-backup.test.js",
+    "tests/brain-v9-memory-recovery.test.js",
     "tests/brain-v9-hooks.test.js",
     "tests/brain-v9-hook-config.test.js",
     "tests/brain-v9-cli.test.js",

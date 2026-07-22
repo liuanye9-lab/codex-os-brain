@@ -197,6 +197,31 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   if (group === 'memory' && action === 'backup-inspect') return args.input ? io.json(core.encryptedMemoryBackup.inspect(args.input)) : io.error('input is required', EXIT.usage);
   if (group === 'memory' && action === 'backup-verify') return args.input ? io.json(await core.encryptedMemoryBackup.verify(args.input)) : io.error('input is required', EXIT.usage);
   if (group === 'memory' && action === 'backup-compare') return args.input ? io.json(await core.encryptedMemoryBackup.compare(args.input)) : io.error('input is required', EXIT.usage);
+  if (group === 'memory' && action === 'restore-encrypted') {
+    if (!args.input) return io.error('input is required', EXIT.usage);
+    if (!args['confirm-restore']) return io.error('confirm-restore is required', EXIT.blocked);
+    return io.json(await core.encryptedMemoryBackup.restore({ input: args.input, confirm: true, allowUninitialized: args['allow-uninitialized'] === true }));
+  }
+  if (group === 'memory' && action === 'recovery-export') {
+    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
+    if (!args['output-a'] || !args['output-b'] || !args['passphrase-a-file'] || !args['passphrase-b-file']) return io.error('output-a, output-b, passphrase-a-file, and passphrase-b-file are required', EXIT.usage);
+    return io.json(core.encryptedMemoryBackup.recoveryExport({ outputA: args['output-a'], outputB: args['output-b'], passphraseAFile: args['passphrase-a-file'], passphraseBFile: args['passphrase-b-file'], confirm: true }));
+  }
+  if (group === 'memory' && action === 'recovery-drill') {
+    if (!args['share-a'] || !args['share-b'] || !args['passphrase-a-file'] || !args['passphrase-b-file']) return io.error('share-a, share-b, passphrase-a-file, and passphrase-b-file are required', EXIT.usage);
+    return io.json(await core.encryptedMemoryBackup.recoveryDrill({ shareA: args['share-a'], shareB: args['share-b'], passphraseAFile: args['passphrase-a-file'], passphraseBFile: args['passphrase-b-file'], input: args.input }));
+  }
+  if (group === 'memory' && action === 'recovery-import') {
+    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
+    if (!args['share-a'] || !args['share-b'] || !args['passphrase-a-file'] || !args['passphrase-b-file']) return io.error('share-a, share-b, passphrase-a-file, and passphrase-b-file are required', EXIT.usage);
+    return io.json(core.encryptedMemoryBackup.recoveryImport({ shareA: args['share-a'], shareB: args['share-b'], passphraseAFile: args['passphrase-a-file'], passphraseBFile: args['passphrase-b-file'], confirm: true, replace: args.replace === true }));
+  }
+  if (group === 'memory' && action === 'recovery-rotate') {
+    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
+    const required = ['current-share-a','current-share-b','current-passphrase-a-file','current-passphrase-b-file','new-output-a','new-output-b','new-passphrase-a-file','new-passphrase-b-file'];
+    if (required.some(key => !args[key])) return io.error(`${required.join(', ')} are required`, EXIT.usage);
+    return io.json(await core.encryptedMemoryBackup.recoveryRotate({ confirm: true, currentRecovery: { shareA: args['current-share-a'], shareB: args['current-share-b'], passphraseAFile: args['current-passphrase-a-file'], passphraseBFile: args['current-passphrase-b-file'] }, newRecovery: { outputA: args['new-output-a'], outputB: args['new-output-b'], passphraseAFile: args['new-passphrase-a-file'], passphraseBFile: args['new-passphrase-b-file'] } }));
+  }
   if (group === 'harness' && action === 'cycle') return io.json(core.memoryHarness.cycle());
   if (group === 'harness' && action === 'candidates') return io.json({ candidates: core.memoryHarness.candidates() });
   if (group === 'hosts' && (!action || action === 'list')) return io.json({ hosts: core.hosts.list() });

@@ -73,6 +73,18 @@ function createMacKeychainStore({ service = KEYCHAIN_SERVICE, account = KEYCHAIN
       if (result.status !== 0) throw coded('backup_key_store_failed');
       return { created: true, fingerprint: keyFingerprint(key), service, account };
     },
+    set(key, { confirm = false, replace = false } = {}) {
+      if (!confirm) throw coded('confirmation_required');
+      if (process.platform !== 'darwin') throw coded('keychain_unavailable');
+      if (!Buffer.isBuffer(key) || key.length !== 32) throw coded('backup_key_invalid');
+      try { if (!replace) { this.get(); throw coded('backup_key_exists'); } } catch (error) {
+        if (!['backup_key_not_initialized','backup_key_exists'].includes(error.code)) throw error;
+        if (error.code === 'backup_key_exists') throw error;
+      }
+      const result = run(['add-generic-password', '-U', '-s', service, '-a', account, '-w', key.toString('base64')]);
+      if (result.status !== 0) throw coded('backup_key_store_failed');
+      return { stored: true, fingerprint: keyFingerprint(key), service, account };
+    },
   };
 }
 
@@ -103,6 +115,14 @@ function loadBackupState(paths) {
 function saveBackupState(paths, state) {
   safeMkdir(path.dirname(paths.memoryBackupStatePath));
   atomicWriteJson(paths.memoryBackupStatePath, { ...state, knownBackups: state.knownBackups.slice(-256) });
+}
+
+function adoptBackupState(paths, header) {
+  const lineage = Array.isArray(header.lineage) ? header.lineage.slice(-256) : [];
+  if (!lineage.some(item => item.backupId === header.backupId)) lineage.push({ backupId: header.backupId, parentBackupId: header.parentBackupId, generation: header.generation });
+  const state = { schemaVersion: 1, databaseId: header.databaseId, lastBackupId: header.backupId, generation: Number(header.generation), knownBackups: lineage.slice(-256) };
+  saveBackupState(paths, state);
+  return state;
 }
 
 function compareLineage(state, incoming) {
@@ -269,7 +289,10 @@ module.exports = {
   inspectEncryptedMemoryBackup,
   keyFingerprint,
   authenticatedHeader,
+  adoptBackupState,
+  decryptPackage,
   loadBackupState,
   readPackageHeader,
   verifyEncryptedMemoryBackup,
+  saveBackupState,
 };

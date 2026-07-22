@@ -34,6 +34,9 @@ function resolveV9Paths(env = process.env, options = {}) {
     memoryEncryptedBackupRoot: pathImpl.join(localRuntimeRoot, 'memory', 'encrypted-backups'),
     memoryBackupStatePath: pathImpl.join(localRuntimeRoot, 'memory', 'backup-state.json'),
     memoryDeviceIdPath: pathImpl.join(localRuntimeRoot, 'memory', 'device-id'),
+    memoryRestoreRoot: pathImpl.join(localRuntimeRoot, 'memory', 'restore'),
+    memoryRestoreLockPath: pathImpl.join(localRuntimeRoot, 'memory', 'restore.lock'),
+    memoryRestoreJournalPath: pathImpl.join(localRuntimeRoot, 'memory', 'restore-journal.json'),
     configPath: pathImpl.join(brainHome, 'config', 'brain-lite-v9.json'),
   };
 }

@@ -18,7 +18,7 @@ The default macOS key store is Keychain service `com.codex-brain.memory-backup`,
 brain memory backup-key-init --confirm
 ```
 
-The command returns only a fingerprint. Do not export the Keychain item into a repository. A separate offline recovery-key ceremony is required before treating remote backups as disaster recovery.
+The command returns only a fingerprint. Do not export the Keychain item into a repository. Complete the [2-of-2 offline recovery-key ceremony](recovery-key-ceremony.md) before treating remote backups as disaster recovery.
 
 ## Backup pipeline
 
@@ -55,7 +55,7 @@ stateDiagram-v2
   Inspect --> Foreign: databaseId differs
   Inspect --> Unknown: ancestry cannot be proven
   Same --> NoOp
-  FastForward --> RestoreEligible
+  FastForward --> AutomaticRestoreEligible
   LocalAhead --> KeepLocal
   Diverged --> ManualReview
   Foreign --> ManualReview
@@ -75,7 +75,7 @@ Interpretation:
 | Status | Meaning | Automatic action |
 |---|---|---|
 | `same` | Incoming package is already the local head | No-op |
-| `fast_forward` | The authenticated incoming ancestry contains the local head | Eligible for an explicit offline restore |
+| `fast_forward` | The authenticated incoming ancestry contains the local head | Eligible for confirmed automatic restore |
 | `local_ahead` | Incoming package is an older known ancestor | Keep local |
 | `diverged` | Local and incoming packages descend from different children of a known ancestor | Block |
 | `foreign_database` | Package belongs to another database | Block |
@@ -84,17 +84,32 @@ Interpretation:
 
 There is no last-write-wins mode and no row-level automatic merge. SQLite files from divergent branches are both retained as evidence. Resolution is a domain operation: choose an authoritative branch, export reviewed records from the other branch, re-ingest them through candidate-first CRUD, run fixed retrieval/graph evals, then create a new backup on the chosen lineage.
 
-## Recovery runbook
+## Automatic restore transaction
 
-1. Stop all processes that can open the live database.
-2. Create and verify a fresh encrypted backup of the current local database.
-3. Inspect and cryptographically verify the incoming package.
-4. Run lineage comparison. Continue only for `fast_forward`, or for `uninitialized` after confirming the local database has no authoritative state.
-5. Decrypt into a private temporary directory, verify SQLite integrity again, and replace the database only through an explicit offline recovery tool or reviewed operator procedure.
-6. Start the runtime and run memory capability, retrieval, graph, and Harness evals.
-7. Create a new encrypted backup and verify remote read-back.
+`brain memory restore-encrypted --input ... --confirm-restore` now executes the replacement automatically, but only for authenticated `fast_forward`. A new device additionally needs `--allow-uninitialized`, and the command refuses that path when local authoritative rows already exist.
 
-The shipped CLI intentionally stops before step 5. Automatic restore is excluded until a cross-process database lease and independently tested crash-safe replacement procedure exist. This is a safety boundary, not a missing conflict policy.
+```mermaid
+sequenceDiagram
+  participant CLI
+  participant Lease as Restore lease + lsof
+  participant Old as Current SQLite
+  participant Stage as Private staged DB
+  participant State as Lineage state
+  CLI->>CLI: verify AEAD, hashes, schema, lineage
+  CLI->>Lease: acquire exclusive cooperative lock
+  Lease->>Old: require no external holders
+  CLI->>Old: online rollback snapshot + integrity check
+  CLI->>Stage: decrypt + quick_check + foreign_key_check
+  CLI->>CLI: persist crash journal
+  CLI->>Old: atomic same-filesystem replacement
+  CLI->>Stage: final integrity check
+  CLI->>State: adopt authenticated incoming head
+  CLI->>CLI: commit journal and release lease
+```
+
+If failure occurs after replacement, the previous database and previous lineage state are restored automatically. A journal left by process or power loss is recovered before another restore. The memory database opener refuses new cooperative readers/writers while the restore lock exists; macOS `lsof` provides the second check against non-cooperative holders.
+
+After restore, run memory capability, retrieval, graph, and Harness evals, create a new encrypted backup, and verify remote read-back.
 
 ## What was borrowed
 
