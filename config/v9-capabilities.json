@@ -11,6 +11,7 @@
     "continuousEvolution": { "implementation": "feedback aggregates, fixed retrieval evals, candidate generation, minimum samples, and rollback contract", "automaticApply": false, "verifier": "tests/brain-v9-memory-harness.test.js" },
     "encryptedBackup": { "implementation": "SQLite online backup wrapped in AES-256-GCM with Keychain-held key, authenticated manifest, lineage comparison, and fail-closed divergence handling", "rawDatabaseInGit": false, "verifier": "tests/brain-v9-memory-encrypted-backup.test.js" },
     "offlineKeyRecovery": { "implementation": "2-of-2 XOR shares, separate passphrases, scrypt, AES-GCM, distinct-device custody, drill, import, and rotation", "verifier": "tests/brain-v9-memory-recovery.test.js" },
-    "automaticRestore": { "implementation": "authenticated lineage gate, cooperative lease, process inspection, rollback snapshot, atomic replacement, crash journal, integrity verification, and automatic rollback", "verifier": "tests/brain-v9-memory-recovery.test.js" }
+    "automaticRestore": { "implementation": "authenticated lineage gate, cooperative lease, process inspection, rollback snapshot, atomic replacement, crash journal, integrity verification, and automatic rollback", "verifier": "tests/brain-v9-memory-recovery.test.js" },
+    "verifierBackedRouting": { "implementation": "route execution receipts run independent verifiers without shell interpolation, hash evidence, separate unknown attribution and infrastructure failures, and expose collection quality", "verifier": "tests/brain-lite-routing-receipt.test.js" }
   }
 }

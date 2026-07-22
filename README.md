@@ -416,6 +416,20 @@ flowchart TB
   Clarify --> Native
 ```
 
+模型调度现在只相信“验收收据”，不相信模型自报成功。子模型执行后先留下预记录；母 Agent 应用结果，再用无 shell 字符串的 argv verifier 重跑测试。收据只保存状态、耗时、命令与输出哈希、证据 ID 和产物哈希，不保存对话或测试输出正文。失败只有明确归因为模型能力才进入路由学习，旧布尔日志、未知归因和 verifier 基础设施故障全部排除。三个不同任务指纹独立通过后，route 才可能进入 stable。
+
+```mermaid
+flowchart LR
+  Route["确定性路由"] --> Run["直做或只读委派"]
+  Run --> Draft["预记录 / 收据草稿"]
+  Draft --> Verify["母 Agent 独立 verifier"]
+  Verify --> Receipt["脱敏哈希收据"]
+  Receipt --> Ledger["追加式路由账本"]
+  Ledger --> Candidate["证据门控策略候选"]
+```
+
+设计与命令见 [verifier-backed model routing evidence](docs/v9/model-routing-evidence.md)。
+
 ### G. 记忆与技能更安全（Poisoning / Skill Sprawl ↓）
 
 | 现象 | 无 harness | 有 Codex Brain |

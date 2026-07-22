@@ -6,6 +6,7 @@ const path = require('node:path');
 
 const EVENT_FIELDS = new Set([
   'schemaVersion',
+  'receiptVersion',
   'eventId',
   'timestamp',
   'taskId',
@@ -17,6 +18,7 @@ const EVENT_FIELDS = new Set([
   'routeId',
   'model',
   'effort',
+  'executionMode',
   'taskRisk',
   'verifiable',
   'dispatchScore',
@@ -28,9 +30,19 @@ const EVENT_FIELDS = new Set([
   'outputTokens',
   'estimatedCredits',
   'durationMs',
+  'verificationDurationMs',
   'exitStatus',
   'verifierCommandHash',
   'verifierPassed',
+  'verifierCount',
+  'verifierKinds',
+  'evidenceIds',
+  'artifactHash',
+  'outcomeSource',
+  'verifierAuthority',
+  'failureAttribution',
+  'capabilityOutcome',
+  'outcomeEligible',
   'modelClaimedSuccess',
   'escalated',
   'previousRoute',
@@ -114,6 +126,14 @@ function sanitizeEvent(event = {}) {
       output[key] = value.filter((item) => typeof item === 'string').map(minimizePath);
       continue;
     }
+    if (key === 'verifierKinds' && Array.isArray(value)) {
+      output[key] = value.filter((item) => typeof item === 'string').map(sanitizeText).slice(0, 16);
+      continue;
+    }
+    if (key === 'evidenceIds' && Array.isArray(value)) {
+      output[key] = value.filter((item) => /^ev_[a-f0-9]{20}$/.test(item)).slice(0, 32);
+      continue;
+    }
     if (key === 'featureSummary' && value && typeof value === 'object' && !Array.isArray(value)) {
       const features = {};
       for (const [featureKey, featureValue] of Object.entries(value)) {
@@ -153,6 +173,11 @@ function computeEventId(event = {}) {
     verifierPassed: event.verifierPassed ?? null,
     finalDelivered: event.finalDelivered ?? null,
     infrastructureFailureType: event.infrastructureFailureType || null,
+    receiptVersion: event.receiptVersion ?? null,
+    verifierCommandHash: event.verifierCommandHash || null,
+    artifactHash: event.artifactHash || null,
+    capabilityOutcome: event.capabilityOutcome || null,
+    outcomeEligible: event.outcomeEligible ?? null,
   };
   return `evt_${hashText(JSON.stringify(identity)).slice(0, 24)}`;
 }
@@ -211,6 +236,71 @@ function collapseDistinctSamples(events) {
   return [...latestBySample.values()].sort((a, b) => String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
 }
 
+function attemptKey(event, index = 0) {
+  return `${event.traceId || event.taskFingerprint || event.taskId || `event-${index}`}\u0000${event.routeId || 'unknown'}\u0000${Number(event.attempt || 1)}`;
+}
+
+function isVerifierBackedOutcome(event) {
+  return event?.receiptVersion === 1
+    && event.phase === 'verified'
+    && event.outcomeSource === 'independent-verifier'
+    && event.verifierAuthority === 'mother-agent'
+    && typeof event.verifierPassed === 'boolean'
+    && typeof event.finalDelivered === 'boolean';
+}
+
+function selectPerformanceEvents(events) {
+  const latest = new Map();
+  events.forEach((event, index) => {
+    const infrastructure = event.infrastructureFailure === true || Boolean(event.infrastructureFailureType);
+    if (!infrastructure && !isVerifierBackedOutcome(event)) return;
+    const key = attemptKey(event, index);
+    const current = latest.get(key);
+    if (!current || String(current.timestamp || '').localeCompare(String(event.timestamp || '')) <= 0) latest.set(key, event);
+  });
+  return [...latest.values()].sort((a, b) => String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
+}
+
+function collectionQuality(events) {
+  const preliminaryKeys = new Set();
+  const verifiedKeys = new Set();
+  const taskIds = new Set();
+  let verifiedReceipts = 0;
+  let eligibleReceipts = 0;
+  let directBaselineReceipts = 0;
+  let delegatedReceipts = 0;
+  let unknownAttributionReceipts = 0;
+  let legacyOutcomeEvents = 0;
+  events.forEach((event, index) => {
+    const key = attemptKey(event, index);
+    if (event.phase === 'child') preliminaryKeys.add(key);
+    if (isVerifierBackedOutcome(event)) {
+      verifiedKeys.add(key);
+      verifiedReceipts += 1;
+      if (event.outcomeEligible === true) eligibleReceipts += 1;
+      if (event.executionMode === 'mother-direct' || event.routeId === 'mother-direct') directBaselineReceipts += 1;
+      else delegatedReceipts += 1;
+      if (event.verifierPassed === false && (event.capabilityOutcome === 'unknown' || event.failureAttribution === 'unknown')) unknownAttributionReceipts += 1;
+      if (event.taskId) taskIds.add(event.taskId);
+    } else if (typeof event.verifierPassed === 'boolean' && typeof event.finalDelivered === 'boolean') legacyOutcomeEvents += 1;
+  });
+  const observedAttempts = new Set([...preliminaryKeys, ...verifiedKeys]);
+  return {
+    totalEvents: events.length,
+    observedAttempts: observedAttempts.size,
+    preliminaryEvents: preliminaryKeys.size,
+    verifiedReceipts,
+    eligibleReceipts,
+    distinctVerifiedTasks: taskIds.size,
+    directBaselineReceipts,
+    delegatedReceipts,
+    orphanPreliminaryEvents: [...preliminaryKeys].filter((key) => !verifiedKeys.has(key)).length,
+    unknownAttributionReceipts,
+    legacyOutcomeEvents,
+    verifierCoverageRate: observedAttempts.size > 0 ? verifiedKeys.size / observedAttempts.size : null,
+  };
+}
+
 function chooseLowest(routes, routeRank) {
   if (!routes.length) return null;
   const ranks = new Map(routeRank.map((routeId, index) => [routeId, index]));
@@ -228,9 +318,15 @@ function derivePolicyState(events, options = {}) {
   const routeRank = options.routeRank || DEFAULT_ROUTE_RANK;
   const grouped = new Map();
   const infrastructureByRoute = new Map();
+  const baselineByFamily = new Map();
 
   for (const event of events) {
-    if (!event?.taskFamily || !event?.routeId || event.routeId === 'mother-direct') continue;
+    if (!event?.taskFamily || !event?.routeId) continue;
+    if (event.routeId === 'mother-direct' && isVerifierBackedOutcome(event)) {
+      if (!baselineByFamily.has(event.taskFamily)) baselineByFamily.set(event.taskFamily, []);
+      baselineByFamily.get(event.taskFamily).push(event);
+      continue;
+    }
     const key = `${event.taskFamily}\u0000${event.routeId}`;
     if (!grouped.has(key)) grouped.set(key, { taskFamily: event.taskFamily, routeId: event.routeId, all: [], capability: [], infra: 0 });
     const group = grouped.get(key);
@@ -239,7 +335,7 @@ function derivePolicyState(events, options = {}) {
       group.infra += 1;
       if (!infrastructureByRoute.has(event.routeId)) infrastructureByRoute.set(event.routeId, []);
       infrastructureByRoute.get(event.routeId).push(event);
-    } else if (typeof event.verifierPassed === 'boolean' && typeof event.finalDelivered === 'boolean') {
+    } else if (isVerifierBackedOutcome(event) && event.outcomeEligible === true) {
       group.capability.push(event);
     }
   }
@@ -250,7 +346,18 @@ function derivePolicyState(events, options = {}) {
     rule: `${stablePasses}/${windowSize} stable, ${trialPasses}/${windowSize} trial, lower blocked; infrastructure failures excluded`,
     taskFamilies: {},
     infrastructureRoutes: {},
+    evidenceQuality: collectionQuality(events),
+    directBaselines: {},
   };
+
+  for (const [taskFamily, baselineEvents] of baselineByFamily.entries()) {
+    const eligible = collapseDistinctSamples(baselineEvents.filter((event) => event.outcomeEligible === true));
+    state.directBaselines[taskFamily] = {
+      distinctSamples: eligible.length,
+      passes: eligible.filter((event) => event.capabilityOutcome === 'pass' && event.finalDelivered === true).length,
+      passRate: eligible.length ? eligible.filter((event) => event.capabilityOutcome === 'pass' && event.finalDelivered === true).length / eligible.length : null,
+    };
+  }
 
   const nowMs = options.now ? new Date(options.now).getTime() : Date.now();
   const infrastructureWindowMs = Number(options.infrastructureWindowMs || 60 * 60 * 1000);
@@ -375,13 +482,16 @@ if (require.main === module) {
 module.exports = {
   DEFAULT_ROUTE_RANK,
   appendEvent,
+  collectionQuality,
   computeEventId,
   derivePolicyState,
   hashText,
+  isVerifierBackedOutcome,
   minimizePath,
   readEvents,
   sanitizeEvent,
   sanitizeText,
+  selectPerformanceEvents,
   usage,
   writePolicyState,
 };

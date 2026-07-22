@@ -7,7 +7,9 @@ const { resolveV9Paths } = require('./paths');
 
 const REQUIRED = [
   'scripts/v9/memory-db.js', 'scripts/v9/memory-service.js', 'scripts/v9/memory-harness.js', 'scripts/v9/memory-encrypted-backup.js', 'scripts/v9/memory-recovery.js',
+  'scripts/brain-lite-routing-receipt.js',
   'tests/brain-v9-memory-db.test.js', 'tests/brain-v9-memory-service.test.js', 'tests/brain-v9-memory-harness.test.js', 'tests/brain-v9-memory-encrypted-backup.test.js', 'tests/brain-v9-memory-recovery.test.js',
+  'tests/brain-lite-routing-receipt.test.js',
 ];
 
 function verifyCapabilities({ root = path.resolve(__dirname, '..', '..'), paths = resolveV9Paths() } = {}) {
@@ -29,6 +31,7 @@ function verifyCapabilities({ root = path.resolve(__dirname, '..', '..'), paths 
     encryptedBackup: files.find(item => item.relative.endsWith('memory-encrypted-backup.js'))?.present === true,
     offlineKeyRecovery: files.find(item => item.relative.endsWith('memory-recovery.js'))?.present === true,
     automaticRestore: files.find(item => item.relative.endsWith('memory-recovery.test.js'))?.present === true,
+    verifierBackedRouting: files.find(item => item.relative.endsWith('brain-lite-routing-receipt.test.js'))?.present === true,
   };
   return { passed: files.every(item => item.present) && database.passed && Object.values(capabilities).every(Boolean), files, database, capabilities };
 }
