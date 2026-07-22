@@ -47,10 +47,11 @@ flowchart LR
 4. [一图看懂架构](#一图看懂架构)
 5. [P0–P6：0.10 可靠性控制平面](#p0p6-010-可靠性控制平面)
 6. [历代版本：解决了什么问题，为什么那样改](#历代版本解决了什么问题为什么那样改)
-7. [五分钟跑起来](#五分钟跑起来)
-8. [工程术语对照](#工程术语对照)
-9. [它做不到什么](#它做不到什么)
-10. [文档索引](#文档索引)
+7. [事务记忆与加密同步](#事务记忆与加密同步)
+8. [五分钟跑起来](#五分钟跑起来)
+9. [工程术语对照](#工程术语对照)
+10. [它做不到什么](#它做不到什么)
+11. [文档索引](#文档索引)
 
 ---
 
@@ -639,6 +640,54 @@ flowchart TB
 
 ---
 
+## 事务记忆与加密同步
+
+V9 的记忆源已经从 `grep + Markdown` 升级为本地 SQLite：WAL 事务、版本化 CRUD、FTS5/BM25、持久向量、结构化聚合、时态图遍历和候选审批都由数据库承担。Markdown 仍适合人审，grep 仍适合定位，但两者不再冒充记忆存储层。
+
+```mermaid
+flowchart LR
+  Source["来源证据"] --> SQL["SQLite WAL<br/>事务 + CRUD"]
+  SQL --> Hybrid["FTS5/BM25 + 向量<br/>混合召回"]
+  SQL --> Graph["时态关系图<br/>递归遍历"]
+  Hybrid --> Feedback["显式反馈 + 固定评测"]
+  Graph --> Feedback
+  Feedback --> Candidate["优化候选<br/>人工审批后试验"]
+  SQL --> Snapshot["SQLite 在线快照<br/>完整性检查"]
+  Snapshot --> AES["AES-256-GCM<br/>Keychain 持钥"]
+  AES --> Remote["私有同步目标<br/>只收 .cbmem 密文"]
+```
+
+同步不采用 last-write-wins。每个不可变 `.cbmem` 包都带经过认证的 `databaseId → parentBackupId → backupId` 血缘；`same` 不操作，远端祖先链包含本地 head 才允许进入 fast-forward 恢复评审，分叉、外来数据库和未知血缘全部阻断。当前版本只提供备份、验证和冲突判定，不自动替换正在运行的数据库。
+
+```mermaid
+stateDiagram-v2
+  [*] --> Verify
+  Verify --> Same: 同一 head
+  Verify --> FastForward: 远端祖先含本地 head
+  Verify --> LocalAhead: 远端是已知旧祖先
+  Verify --> Diverged: 从旧祖先分叉
+  Verify --> Foreign: databaseId 不同
+  Verify --> Unknown: 无法证明血缘
+  Same --> NoOp
+  FastForward --> OfflineReview
+  LocalAhead --> KeepLocal
+  Diverged --> Block
+  Foreign --> Block
+  Unknown --> Block
+```
+
+```bash
+brain memory backup-key-init --confirm
+brain memory backup-encrypted --confirm
+brain memory backup-verify --input /path/to/backup.cbmem
+brain memory backup-compare --input /path/to/incoming.cbmem
+brain harness cycle
+```
+
+详见 [事务记忆基础设施](docs/v9/memory-infrastructure.md) 与 [加密备份及冲突安全同步](docs/v9/encrypted-backup-and-sync.md)。
+
+---
+
 ## 历代版本：解决了什么问题，为什么那样改
 
 这不是「版本号越大功能越多越好」的堆料史。每一版都先钉住一个**高频翻车点**，再发现护栏本身的成本与盲区，最后收敛成 V9 的原则：
@@ -828,7 +877,7 @@ flowchart TB
 
 ## 五分钟跑起来
 
-需要 **Node.js 20+**。
+需要 **Node.js 22.5+**（事务记忆使用内置 `node:sqlite`）。
 
 ### 安装路径图
 
@@ -886,8 +935,8 @@ brain handoff progress --summary "固定了 Stop 验收" --json
 ```bash
 brain skill list --json
 brain skill activate --id brain-lite-model-router --criterion tests --budget 2000 --json
-brain memory add --text "优先本地嵌入" --tags embed --json
-brain memory recall --query "嵌入" --json
+brain memory create --kind preference --content "优先本地嵌入" --json
+brain memory query --query "嵌入" --json
 brain hosts list --json
 ```
 
@@ -994,6 +1043,8 @@ flowchart TB
 | [CLI / hooks / MCP 快速开始](docs/v9/quickstart.md) | 命令与接入 |
 | [P0–P6 可靠性控制平面](docs/v9/p0-p6-reliability-plane.md) | 0.10 机制说明 |
 | [可选 Ollama 本地嵌入](docs/v9/local-embeddings.md) | 资料柜 |
+| [事务记忆基础设施](docs/v9/memory-infrastructure.md) | SQLite、检索、图与持续评测 |
+| [加密备份及冲突同步](docs/v9/encrypted-backup-and-sync.md) | `.cbmem`、Keychain 与血缘判定 |
 | [V1–V8 迁移与回退](docs/v9/migration.md) | 搬家协议 |
 | [隐私与威胁模型](docs/v9/privacy-and-threat-model.md) | 本地优先与导出 |
 | [研究与开源归属](docs/v9/research-and-attribution.md) | 论文与上游概念 |

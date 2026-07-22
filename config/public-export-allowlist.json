@@ -6,6 +6,7 @@
     { "source": "LICENSE", "target": "LICENSE" },
     { "source": "config/brain-lite-v9.json", "target": "config/brain-lite-v9.json" },
     { "source": "config/embedding-model-presets.json", "target": "config/embedding-model-presets.json" },
+    { "source": "config/v9-capabilities.json", "target": "config/v9-capabilities.json" },
     { "source": "config/public-export-allowlist.json", "target": "config/public-export-allowlist.json" }
   ],
   "patterns": [
@@ -35,6 +36,10 @@
     "tests/brain-v9-failure-controller.test.js",
     "tests/brain-v9-embeddings.test.js",
     "tests/brain-v9-migration.test.js",
+    "tests/brain-v9-memory-db.test.js",
+    "tests/brain-v9-memory-service.test.js",
+    "tests/brain-v9-memory-harness.test.js",
+    "tests/brain-v9-memory-encrypted-backup.test.js",
     "tests/brain-v9-hooks.test.js",
     "tests/brain-v9-hook-config.test.js",
     "tests/brain-v9-cli.test.js",

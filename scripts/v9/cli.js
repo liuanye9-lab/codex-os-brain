@@ -138,20 +138,67 @@ async function runCli(argv, io = defaultIo(), services = {}) {
     if (!args.id) return io.error('id is required', EXIT.usage);
     return io.json(core.skills.deactivate(args.id));
   }
-  if (group === 'memory' && (!action || action === 'list')) return io.json({ entries: core.memory.list() });
-  if (group === 'memory' && action === 'add') {
-    if (!args.text) return io.error('text is required', EXIT.usage);
-    return io.json(core.memory.add({
-      text: args.text,
-      source: args.source || 'cli',
-      confidence: args.confidence ? Number(args.confidence) : 0.5,
-      tags: args.tags ? String(args.tags).split(',') : [],
-    }));
+  if (group === 'memory' && (!action || action === 'status')) return io.json(core.memory.status());
+  if (group === 'memory' && action === 'create') {
+    if (!args.content) return io.error('content is required', EXIT.usage);
+    return io.json(core.memory.createMemory({ content: args.content, kind: args.kind, confidence: args.confidence, privacy: args.privacy, sourceUri: args.source, idempotencyKey: args['idempotency-key'], actor: args.actor }));
   }
-  if (group === 'memory' && action === 'recall') {
-    const entries = core.memory.recall({ query: args.query || '', limit: args.limit ? Number(args.limit) : 5 });
-    return io.json({ entries, injection: core.memory.formatForInjection(entries) });
+  if (group === 'memory' && action === 'get') {
+    if (!args.id) return io.error('id is required', EXIT.usage);
+    const item = core.memory.getMemory(args.id);
+    return item ? io.json(item) : io.error('memory not found', EXIT.failed);
   }
+  if (group === 'memory' && action === 'update') {
+    if (!args.id || !args['expected-version']) return io.error('id and expected-version are required', EXIT.usage);
+    return io.json(core.memory.updateMemory(args.id, { content: args.content, expectedVersion: Number(args['expected-version']), approvedBy: args['approved-by'], idempotencyKey: args['idempotency-key'] }));
+  }
+  if (group === 'memory' && action === 'transition') {
+    if (!args.id || !args.status || !args['expected-version'] || !args['approved-by']) return io.error('id, status, expected-version, and approved-by are required', EXIT.usage);
+    return io.json(core.memory.transitionMemory(args.id, args.status, { expectedVersion: Number(args['expected-version']), approvedBy: args['approved-by'], reason: args.reason, idempotencyKey: args['idempotency-key'] }));
+  }
+  if (group === 'memory' && action === 'delete') {
+    if (!args.id || !args['expected-version'] || !args['approved-by']) return io.error('id, expected-version, and approved-by are required', EXIT.usage);
+    return io.json(core.memory.deleteMemory(args.id, { expectedVersion: Number(args['expected-version']), approvedBy: args['approved-by'], reason: args.reason, idempotencyKey: args['idempotency-key'] }));
+  }
+  if (group === 'memory' && action === 'query') {
+    if (!args.query) return io.error('query is required', EXIT.usage);
+    let queryVector = null; let embedding = { used: false, degraded: false };
+    if (args.semantic) {
+      try { const result = await core.embeddings.embed({ text: args.query }); queryVector = result.vector; embedding = { used: true, fingerprint: result.fingerprint, model: result.model }; }
+      catch (error) { embedding = { used: false, degraded: true, reason: error.code || error.message }; }
+    }
+    return io.json({ ...core.memory.search({ query: args.query, queryVector, limit: args.limit, includeCandidates: args['include-candidates'] === true }), embedding });
+  }
+  if (group === 'memory' && action === 'aggregate') return io.json(core.memory.aggregate({ by: args.by }));
+  if (group === 'memory' && action === 'import-index') {
+    if (!args.input || !args.confirm) return io.error('input and confirm are required', EXIT.blocked);
+    return io.json(core.memory.importFlatIndex(args.input));
+  }
+  if (group === 'memory' && action === 'entity') return io.json(core.memory.upsertEntity({ name: args.name, entityType: args.type }));
+  if (group === 'memory' && action === 'link') return io.json(core.memory.link({ fromEntityId: args.from, toEntityId: args.to, relation: args.relation, status: args.status, approvedBy: args['approved-by'], validFrom: args['valid-from'], validTo: args['valid-to'], provenanceUri: args.source }));
+  if (group === 'memory' && action === 'traverse') return io.json({ entityId: args.id, nodes: core.memory.traverse({ entityId: args.id, depth: args.depth, at: args.at }) });
+  if (group === 'memory' && action === 'state-put') return io.json(core.memory.putStateBlock({ blockId: args.id, agentId: args.agent, scope: args.scope, content: args.content || '', accessMode: args.mode, expectedVersion: args['expected-version'] ? Number(args['expected-version']) : undefined, approvedBy: args['approved-by'] }));
+  if (group === 'memory' && action === 'state-list') return io.json({ blocks: core.memory.listStateBlocks(args.agent, args.scope) });
+  if (group === 'memory' && action === 'feedback') return io.json(core.memory.feedback({ query: args.query, queryHash: args['query-hash'], ownerType: args.type, ownerId: args.id, rank: args.rank ? Number(args.rank) : null, signal: args.signal }));
+  if (group === 'memory' && action === 'eval-add') return io.json(core.memory.addEvalCase({ caseId: args.id, query: args.query, expectedOwnerIds: String(args.expected || '').split(',').filter(Boolean), tags: args.tags ? String(args.tags).split(',') : [] }));
+  if (group === 'memory' && action === 'eval-list') return io.json({ cases: core.memory.listEvalCases() });
+  if (group === 'memory' && action === 'backup') {
+    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
+    return io.json(await core.backupMemory());
+  }
+  if (group === 'memory' && action === 'backup-key-init') {
+    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
+    return io.json(core.encryptedMemoryBackup.initKey({ confirm: true }));
+  }
+  if (group === 'memory' && action === 'backup-encrypted') {
+    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
+    return io.json(await core.encryptedMemoryBackup.create());
+  }
+  if (group === 'memory' && action === 'backup-inspect') return args.input ? io.json(core.encryptedMemoryBackup.inspect(args.input)) : io.error('input is required', EXIT.usage);
+  if (group === 'memory' && action === 'backup-verify') return args.input ? io.json(await core.encryptedMemoryBackup.verify(args.input)) : io.error('input is required', EXIT.usage);
+  if (group === 'memory' && action === 'backup-compare') return args.input ? io.json(await core.encryptedMemoryBackup.compare(args.input)) : io.error('input is required', EXIT.usage);
+  if (group === 'harness' && action === 'cycle') return io.json(core.memoryHarness.cycle());
+  if (group === 'harness' && action === 'candidates') return io.json({ candidates: core.memoryHarness.candidates() });
   if (group === 'hosts' && (!action || action === 'list')) return io.json({ hosts: core.hosts.list() });
   if (group === 'embeddings' && (!action || action === 'status')) return io.json(core.embeddings.status());
   if (group === 'embeddings' && action === 'recommend') return io.json(core.embeddings.recommend(args.profile || 'zh-light'));

@@ -15,7 +15,7 @@ const { createTaskContract } = require('../scripts/v9/task-contract');
 
 function tempCore() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-p0p6-'));
-  return { home, core: createV9Core({ paths: resolveV9Paths({ CODEX_BRAIN_HOME: home }) }) };
+  return { home, core: createV9Core({ paths: resolveV9Paths({ CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: path.join(home, 'state') }) }) };
 }
 
 test('P0: verify re-run is the only path to complete; claims blocked at Stop', async () => {
@@ -90,15 +90,14 @@ test('P5: host adapters normalize codex and claude events', async () => {
   assert.equal(applied.continue, false);
 });
 
-test('P6: memory injects UNVERIFIED banner; verified promotion from outcomes', () => {
+test('P6: memory is candidate-first and approval gated', () => {
   const { core } = tempCore();
-  const a = core.memory.add({ text: 'prefer local embeddings', source: 'note', confidence: 0.4, tags: ['embed'] });
-  const b = core.memory.promoteFromVerified({ text: 'task t1 verified', taskId: 't1', evidenceId: 'ev1' });
-  assert.equal(a.status, 'unverified');
-  assert.equal(b.verifiedOutcome, true);
-  const injection = core.memory.formatForInjection(core.memory.list());
-  assert.match(injection, /UNVERIFIED MEMORY/);
-  assert.match(injection, /prefer local embeddings/);
+  const a = core.memory.createMemory({ content: 'prefer local embeddings', kind: 'preference' });
+  assert.equal(a.status, 'candidate');
+  assert.equal(core.memory.search({ query: 'local embeddings' }).count, 0);
+  const b = core.memory.transitionMemory(a.memory_id, 'confirmed', { expectedVersion: 1, approvedBy: 'operator' });
+  assert.equal(b.status, 'confirmed');
+  assert.equal(core.memory.search({ query: 'local embeddings' }).count, 1);
 });
 
 test('hot path policy stays under latency budget', () => {

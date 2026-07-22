@@ -13,7 +13,16 @@ const migration = require('./migration');
 const { createEmbeddingService } = require('./embeddings');
 const handoff = require('./handoff');
 const { createSkillsService } = require('./skills');
-const { createMemoryService } = require('./memory');
+const { createMemoryService } = require('./memory-service');
+const { createMemoryHarness } = require('./memory-harness');
+const { backupMemoryDatabase } = require('./memory-db');
+const {
+  compareEncryptedMemoryBackup,
+  createEncryptedMemoryBackup,
+  createMacKeychainStore,
+  inspectEncryptedMemoryBackup,
+  verifyEncryptedMemoryBackup,
+} = require('./memory-encrypted-backup');
 const { getHostAdapter, listHosts } = require('./hosts');
 
 const EVENT_FIELDS = ['eventId', 'kind', 'taskId', 'turnId', 'status', 'reasonCode', 'signature', 'evidenceId', 'durationMs', 'createdAt'];
@@ -31,6 +40,8 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config() } = {}
   const embeddings = createEmbeddingService({ paths });
   const skills = createSkillsService({ paths });
   const memory = createMemoryService({ paths });
+  const memoryHarness = createMemoryHarness({ paths });
+  const memoryBackupKeyStore = createMacKeychainStore();
   const projectRoot = () => process.env.BRAIN_PROJECT_ROOT || process.cwd();
 
   function activeTask() {
@@ -128,11 +139,12 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config() } = {}
       });
       if (outcome.evaluation.status === 'complete') {
         try {
-          memory.promoteFromVerified({
-            text: `Task ${outcome.contract.taskId} verified complete: ${outcome.contract.objective}`,
-            taskId: outcome.contract.taskId,
-            evidenceId: outcome.results.map(item => item.evidenceId).join(','),
-            tags: ['verified_completion'],
+          memory.createMemory({
+            content: `Task ${outcome.contract.taskId} verified complete: ${outcome.contract.objective}`,
+            kind: 'verified_outcome',
+            sourceUri: `task:${outcome.contract.taskId}`,
+            actor: 'verification_harness',
+            metadata: { evidenceIds: outcome.results.map(item => item.evidenceId) },
           });
         } catch { /* optional */ }
       }
@@ -166,7 +178,7 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config() } = {}
   };
 
   return {
-    status: () => ({ version: 9, enabled, runtimeRoot: paths.runtimeRoot }),
+    status: () => ({ version: 9, enabled, runtimeRoot: paths.runtimeRoot, memory: enabled ? memory.status() : { enabled: false } }),
     contracts,
     events,
     verification,
@@ -176,6 +188,15 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config() } = {}
     handoff,
     skills,
     memory,
+    memoryHarness,
+    backupMemory: () => backupMemoryDatabase({ paths }),
+    encryptedMemoryBackup: {
+      initKey: options => memoryBackupKeyStore.init(options),
+      create: () => createEncryptedMemoryBackup({ paths, keyStore: memoryBackupKeyStore }),
+      inspect: input => inspectEncryptedMemoryBackup(input),
+      verify: input => verifyEncryptedMemoryBackup({ input, paths, keyStore: memoryBackupKeyStore }),
+      compare: input => compareEncryptedMemoryBackup({ input, paths, keyStore: memoryBackupKeyStore }),
+    },
     hosts: { get: getHostAdapter, list: listHosts },
     paths,
     config,

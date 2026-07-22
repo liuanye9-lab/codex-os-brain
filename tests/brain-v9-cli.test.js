@@ -10,13 +10,13 @@ const root = path.resolve(__dirname, '..');
 const bin = path.join(root, 'bin', 'brain.js');
 
 function run(args, brainHome = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-cli-'))) {
-  return spawnSync(process.execPath, [bin, ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, CODEX_BRAIN_HOME: brainHome } });
+  return spawnSync(process.execPath, [bin, ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, CODEX_BRAIN_HOME: brainHome, CODEX_BRAIN_STATE_HOME: path.join(brainHome, 'state') } });
 }
 
 test('status emits stable JSON', () => {
   const result = run(['status', '--json']);
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(Object.keys(JSON.parse(result.stdout)).sort(), ['enabled', 'runtimeRoot', 'version']);
+  assert.deepEqual(Object.keys(JSON.parse(result.stdout)).sort(), ['enabled', 'memory', 'runtimeRoot', 'version']);
 });
 
 test('migration apply is impossible without confirmation', () => {

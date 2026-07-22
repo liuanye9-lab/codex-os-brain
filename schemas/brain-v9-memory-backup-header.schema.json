@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/brain-v9-memory-backup-header.schema.json",
+  "title": "Codex Brain encrypted memory backup header",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "packageType", "databaseId", "backupId", "parentBackupId",
+    "generation", "deviceId", "createdAt", "sqliteSchemaVersion", "keyFingerprint",
+    "lineage", "encryption", "aadSha256", "plaintextSha256", "ciphertextSha256", "plaintextBytes", "ciphertextBytes"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "packageType": { "const": "codex-brain-memory-backup" },
+    "databaseId": { "type": "string", "pattern": "^db_[a-f0-9]{24}$" },
+    "backupId": { "type": "string", "pattern": "^bkp_[a-f0-9]{24}$" },
+    "parentBackupId": { "type": ["string", "null"] },
+    "generation": { "type": "integer", "minimum": 1 },
+    "deviceId": { "type": "string", "pattern": "^dev_[a-f0-9]{20}$" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "sqliteSchemaVersion": { "type": "integer", "minimum": 1 },
+    "keyFingerprint": { "type": "string", "pattern": "^key_[a-f0-9]{24}$" },
+    "lineage": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["backupId", "parentBackupId", "generation"],
+        "properties": {
+          "backupId": { "type": "string" },
+          "parentBackupId": { "type": ["string", "null"] },
+          "generation": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "encryption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "iv", "tag"],
+      "properties": {
+        "algorithm": { "const": "aes-256-gcm" },
+        "iv": { "type": "string" },
+        "tag": { "type": "string" }
+      }
+    },
+    "aadSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "plaintextSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "ciphertextSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "plaintextBytes": { "type": "integer", "minimum": 1 },
+    "ciphertextBytes": { "type": "integer", "minimum": 1 }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "runtime": "brain-v9",
+  "claims": {
+    "transactionalStore": { "implementation": "SQLite WAL with synchronous FULL, foreign keys, checks, and optimistic versions", "verifier": "npm run test:v9:memory" },
+    "keywordRetrieval": { "implementation": "SQLite FTS5 trigram index with BM25", "verifier": "tests/brain-v9-memory-service.test.js" },
+    "semanticRetrieval": { "implementation": "local Ollama query embeddings plus exact cosine over persisted vectors", "degradedBehavior": "FTS5 only", "verifier": "brain embeddings doctor and tests/brain-v9-memory-service.test.js" },
+    "structuredQuery": { "implementation": "SQL filters, aggregates, provenance, temporal validity, and versioned CRUD", "verifier": "npm run memory:v9:capabilities" },
+    "graphTraversal": { "implementation": "versioned temporal edges plus recursive CTE traversal", "verifier": "tests/brain-v9-memory-service.test.js" },
+    "agentState": { "implementation": "working, core, project, archival, and external state blocks", "verifier": "tests/brain-v9-memory-service.test.js" },
+    "continuousEvolution": { "implementation": "feedback aggregates, fixed retrieval evals, candidate generation, minimum samples, and rollback contract", "automaticApply": false, "verifier": "tests/brain-v9-memory-harness.test.js" },
+    "encryptedBackup": { "implementation": "SQLite online backup wrapped in AES-256-GCM with Keychain-held key, authenticated manifest, lineage comparison, and fail-closed divergence handling", "rawDatabaseInGit": false, "verifier": "tests/brain-v9-memory-encrypted-backup.test.js" }
+  }
+}
