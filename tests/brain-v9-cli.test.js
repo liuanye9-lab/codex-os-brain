@@ -19,6 +19,19 @@ test('status emits stable JSON', () => {
   assert.deepEqual(Object.keys(JSON.parse(result.stdout)).sort(), ['enabled', 'memory', 'runtimeRoot', 'version']);
 });
 
+test('help and doctor expose an actionable public interface contract', () => {
+  const help = run(['--help', '--json']);
+  assert.equal(help.status, 0, help.stderr);
+  const guide = JSON.parse(help.stdout);
+  assert.equal(guide.usage, 'brain <command> [action] [--flags] [--json]');
+  assert.match(guide.commands.memory, /create/);
+  const doctor = run(['doctor', '--json']);
+  assert.equal(doctor.status, 0, doctor.stderr);
+  const report = JSON.parse(doctor.stdout);
+  assert.equal(report.mcp.probeCommand, 'npm run mcp:probe');
+  assert.ok(report.checks.some(check => check.id === 'node-runtime'));
+});
+
 test('migration apply is impossible without confirmation', () => {
   const result = run(['migrate', 'apply', '--json']);
   assert.equal(result.status, 3);

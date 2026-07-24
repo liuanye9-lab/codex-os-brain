@@ -2,25 +2,27 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
-const { verifyReadmeLinks, verifyPackageContents } = require('../scripts/verify-v9-release');
+const { percentile } = require('../evals/v9-reliability/runner.cjs');
+const { verifyReadmeLinks, verifyPackageContents, verifyVisualProvenance } = require('../scripts/verify-v9-release');
 
 const root = path.resolve(__dirname, '..');
 
 test('README documents V9 external surfaces and adaptive lifecycle', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  for (const required of ['Codex Brain V9', '```mermaid', 'brain status', 'brain mcp serve', 'PreToolUse', 'Stop', 'V1–V8', 'Ollama', 'brain embeddings configure']) assert.ok(readme.includes(required), required);
+  for (const required of ['Codex Brain V9', '```mermaid', 'brain status', 'brain mcp serve', 'PreToolUse', 'Stop', 'V1–V8', 'Ollama', 'brain embeddings doctor']) assert.ok(readme.includes(required), required);
   assert.equal((readme.match(/```mermaid/g) || []).length >= 2, true);
 });
 
 test('README explains V9 core ideas in plain Chinese with familiar analogies', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  for (const required of ['安全副驾驶', '办事前先写清单', '先翻资料柜再回答', '红绿灯', '随身小抄', 'https://github.com/liuanye9-lab/codex-os-brain/blob/main/v1/README.md']) assert.ok(readme.includes(required), required);
+  for (const required of ['安全副驾驶', '任务合同', '本地资料柜', '红绿灯', '小抄', 'v1/README.md']) assert.ok(readme.includes(required), required);
 });
 
 test('README names the AI engineering disciplines behind the plain-language metaphors', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  for (const required of ['RAG（检索增强生成）', 'Prompt Engineering（提示词工程）', 'Loop Engineering（循环工程）', '数据分析', '知识工程', '不是一个通用 BI 平台']) assert.ok(readme.includes(required), required);
+  for (const required of ['RAG（可选）', 'Loop engineering', 'Capability policy', 'Evidence-gated memory']) assert.ok(readme.includes(required), required);
 });
 
 test('research attribution records source, date, license, adoption, and limits', () => {
@@ -37,4 +39,23 @@ test('package policy rejects runtime and requires CLI plus MCP', () => {
   const report = verifyPackageContents({ files: [{ path: 'bin/brain.js' }, { path: 'mcp/server.mjs' }, { path: 'runtime/private.json' }] });
   assert.deepEqual(report.missing, []);
   assert.deepEqual(report.forbidden, ['runtime/private.json']);
+});
+
+test('README visual assets are declared and hash-pinned', () => {
+  assert.deepEqual(verifyVisualProvenance(root), {
+    passed: true,
+    missingManifest: false,
+    undeclared: [],
+    missing: [],
+    hashMismatch: [],
+  });
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-visuals-'));
+  fs.mkdirSync(path.join(fixture, 'assets'));
+  fs.writeFileSync(path.join(fixture, 'README.md'), '![undeclared](https://example.com/image.png)\n');
+  fs.writeFileSync(path.join(fixture, 'assets', 'visual-provenance.json'), '{"schemaVersion":1,"assets":[]}');
+  assert.equal(verifyVisualProvenance(fixture).passed, false);
+});
+
+test('latency reporting uses a real percentile rather than the arithmetic mean', () => {
+  assert.equal(percentile([1, 2, 3, 100], 0.5), 2.5);
 });

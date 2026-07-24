@@ -50,6 +50,30 @@ test('source documents are searchable evidence and exact vectors join hybrid ran
   assert.equal(hybrid.results[0].ownerId, 'doc_b');
 });
 
+test('memory search enforces half-open temporal validity for lexical and vector recall', () => {
+  const memory = service();
+  const from = '2026-07-25T00:00:00Z';
+  const to = '2026-07-26T00:00:00Z';
+  memory.createMemory({
+    memoryId: 'mem_temporal',
+    kind: 'decision',
+    content: 'temporal canary decision',
+    status: 'confirmed',
+    approvedBy: 'operator',
+    validFrom: from,
+    validTo: to,
+  });
+  memory.putEmbedding({ ownerType: 'memory', ownerId: 'mem_temporal', model: 'test', fingerprint: 'fp', vector: [1, 0] });
+
+  assert.equal(memory.search({ query: 'temporal canary', at: '2026-07-24T23:59:59Z' }).count, 0);
+  assert.equal(memory.search({ query: 'temporal canary', at: from }).results[0].ownerId, 'mem_temporal');
+  assert.equal(memory.search({ query: 'missing', queryVector: [1, 0], at: '2026-07-25T12:00:00Z' }).results[0].ownerId, 'mem_temporal');
+  assert.equal(memory.search({ query: 'temporal canary', at: to }).count, 0);
+  assert.equal(memory.search({ query: 'missing', queryVector: [1, 0], at: '2026-07-26T00:00:01Z' }).count, 0);
+  assert.throws(() => memory.search({ query: 'temporal', at: 'tomorrow' }), /invalid_at/);
+  assert.throws(() => memory.createMemory({ content: 'bad interval', validFrom: to, validTo: from }), /invalid_validity_interval/);
+});
+
 test('graph traversal supports approved temporal edges', () => {
   const memory = service();
   const a = memory.upsertEntity({ entityId: 'a', entityType: 'project', name: 'Brain' });

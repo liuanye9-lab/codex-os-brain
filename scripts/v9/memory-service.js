@@ -20,6 +20,22 @@ function sourceRef(value) {
   catch { return `local:${hash(value).slice(0, 16)}`; }
 }
 
+function normalizeInstant(value, field = 'instant') {
+  if (value === undefined || value === null || value === '') return value === undefined ? undefined : null;
+  const text = String(value);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(text)) throw coded(`invalid_${field}`);
+  const instant = new Date(text);
+  if (!Number.isFinite(instant.getTime())) throw coded(`invalid_${field}`);
+  return instant.toISOString();
+}
+
+function normalizeValidity(input = {}, current = {}) {
+  const validFrom = input.validFrom === undefined ? current.valid_from : normalizeInstant(input.validFrom, 'valid_from');
+  const validTo = input.validTo === undefined ? current.valid_to : normalizeInstant(input.validTo, 'valid_to');
+  if (validFrom && validTo && validTo <= validFrom) throw coded('invalid_validity_interval');
+  return { validFrom: validFrom ?? null, validTo: validTo ?? null };
+}
+
 function vectorBlob(vector) {
   if (!Array.isArray(vector) || !vector.length || vector.some(value => !Number.isFinite(Number(value)))) throw coded('invalid_vector');
   return Buffer.from(new Float32Array(vector.map(Number)).buffer);
@@ -88,8 +104,9 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
       if (status !== 'candidate' && !approved) throw coded('approval_required');
       const memoryId = input.memoryId || id('mem');
       const at = now();
+      const validity = normalizeValidity(input);
       db.prepare(`INSERT INTO memory_items(memory_id,kind,content,status,confidence,privacy,source_uri,valid_from,valid_to,metadata_json,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(memoryId, input.kind || 'fact', content, status, Number(input.confidence ?? 0.5), input.privacy || 'private', input.sourceUri || null, input.validFrom || null, input.validTo || null, stableJson(input.metadata), at, at);
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(memoryId, input.kind || 'fact', content, status, Number(input.confidence ?? 0.5), input.privacy || 'private', input.sourceUri || null, validity.validFrom, validity.validTo, stableJson(input.metadata), at, at);
       indexOwner(db, 'memory', memoryId, input.kind || 'fact', content);
       addEvent(db, { memoryId, action: 'create', actor: input.approvedBy || input.actor || 'agent', idempotencyKey: input.idempotencyKey, toVersion: 1, payload: { status, sourceUri: input.sourceUri || null } });
       return getMemoryFrom(db, memoryId);
@@ -110,9 +127,10 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
       if (current.status === 'confirmed' && patch.content !== undefined && !patch.approvedBy) throw coded('approval_required');
       const content = patch.content === undefined ? current.content : String(patch.content).trim();
       if (!content) throw coded('content_required');
+      const validity = normalizeValidity(patch, current);
       const nextVersion = current.version + 1;
       const result = db.prepare(`UPDATE memory_items SET content=?, confidence=?, privacy=?, source_uri=?, valid_from=?, valid_to=?, metadata_json=?, version=?, updated_at=?
-        WHERE memory_id=? AND version=?`).run(content, Number(patch.confidence ?? current.confidence), patch.privacy || current.privacy, patch.sourceUri === undefined ? current.source_uri : patch.sourceUri, patch.validFrom === undefined ? current.valid_from : patch.validFrom, patch.validTo === undefined ? current.valid_to : patch.validTo, stableJson(patch.metadata === undefined ? current.metadata : patch.metadata), nextVersion, now(), memoryId, current.version);
+        WHERE memory_id=? AND version=?`).run(content, Number(patch.confidence ?? current.confidence), patch.privacy || current.privacy, patch.sourceUri === undefined ? current.source_uri : patch.sourceUri, validity.validFrom, validity.validTo, stableJson(patch.metadata === undefined ? current.metadata : patch.metadata), nextVersion, now(), memoryId, current.version);
       if (result.changes !== 1) throw coded('version_conflict');
       indexOwner(db, 'memory', memoryId, current.kind, content);
       addEvent(db, { memoryId, action: 'update', actor: patch.approvedBy || patch.actor || 'agent', idempotencyKey: patch.idempotencyKey, fromVersion: current.version, toVersion: nextVersion, payload: { fields: Object.keys(patch).filter(key => !['approvedBy','actor'].includes(key)) } });
@@ -208,19 +226,25 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
       const query = String(input.query || '').trim();
       if (!query && !input.queryVector) throw coded('query_required');
       const includeCandidates = input.includeCandidates === true;
+      const at = normalizeInstant(input.at ?? now(), 'at');
       let lexical = [];
       if (query) {
         const shortQuery = Array.from(query).length < 3;
         lexical = shortQuery
           ? db.prepare(`SELECT search_index.owner_type,search_index.owner_id,search_index.title,search_index.content,0 AS bm25
               FROM search_index LEFT JOIN memory_items ON search_index.owner_type='memory' AND memory_items.memory_id=search_index.owner_id
-              WHERE search_index.content LIKE ? ESCAPE '\\' AND (search_index.owner_type='document' OR (?=1 OR memory_items.status='confirmed')) LIMIT ?`)
-            .all(`%${query.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`, includeCandidates ? 1 : 0, limit * 4)
+              WHERE search_index.content LIKE ? ESCAPE '\\'
+                AND (search_index.owner_type='document' OR ((?=1 OR memory_items.status='confirmed')
+                  AND (memory_items.valid_from IS NULL OR memory_items.valid_from<=?)
+                  AND (memory_items.valid_to IS NULL OR memory_items.valid_to>?))) LIMIT ?`)
+            .all(`%${query.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`, includeCandidates ? 1 : 0, at, at, limit * 4)
           : db.prepare(`SELECT search_index.owner_type,search_index.owner_id,search_index.title,search_index.content,bm25(search_index) AS bm25
               FROM search_index LEFT JOIN memory_items ON search_index.owner_type='memory' AND memory_items.memory_id=search_index.owner_id
-              WHERE search_index MATCH ? AND (search_index.owner_type='document' OR (?=1 OR memory_items.status='confirmed'))
+              WHERE search_index MATCH ? AND (search_index.owner_type='document' OR ((?=1 OR memory_items.status='confirmed')
+                AND (memory_items.valid_from IS NULL OR memory_items.valid_from<=?)
+                AND (memory_items.valid_to IS NULL OR memory_items.valid_to>?)))
               ORDER BY bm25(search_index) LIMIT ?`)
-            .all(ftsQuery(query), includeCandidates ? 1 : 0, limit * 4);
+            .all(ftsQuery(query), includeCandidates ? 1 : 0, at, at, limit * 4);
       }
       const candidates = new Map();
       lexical.forEach((row, index) => candidates.set(`${row.owner_type}:${row.owner_id}`, { ...row, lexicalScore: 1 / (1 + index), vectorScore: null }));
@@ -238,8 +262,9 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
       for (const item of candidates.values()) {
         let record;
         if (item.owner_type === 'memory') {
-          record = db.prepare('SELECT kind AS title,content,status,source_uri,updated_at FROM memory_items WHERE memory_id=?').get(item.owner_id);
+          record = db.prepare('SELECT kind AS title,content,status,source_uri,valid_from,valid_to,updated_at FROM memory_items WHERE memory_id=?').get(item.owner_id);
           if (!record || (!includeCandidates && record.status !== 'confirmed')) continue;
+          if ((record.valid_from && record.valid_from > at) || (record.valid_to && record.valid_to <= at)) continue;
         } else if (item.owner_type === 'document') {
           record = db.prepare(`SELECT title,content,'source' AS status,source_uri,updated_at FROM source_documents WHERE document_id=?`).get(item.owner_id);
         } else continue;
@@ -249,7 +274,7 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
         results.push({ ownerType: item.owner_type, ownerId: item.owner_id, ...safeRecord, sourceRef: sourceRef(privateSource), lexicalScore, vectorScore, score: Number((0.45 * lexicalScore + 0.55 * vectorScore).toFixed(6)) });
       }
       results.sort((a, b) => b.score - a.score || b.lexicalScore - a.lexicalScore);
-      return { mode: input.queryVector ? 'hybrid-exact' : 'fts5', query, count: Math.min(limit, results.length), results: results.slice(0, limit) };
+      return { mode: input.queryVector ? 'hybrid-exact' : 'fts5', query, asOf: at, count: Math.min(limit, results.length), results: results.slice(0, limit) };
     });
   }
 
@@ -367,4 +392,4 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
   return { addEvalCase, aggregate, createMemory, deleteMemory, feedback, getMemory, importDocument, importFlatIndex, link, listEvalCases, listStateBlocks, putEmbedding, putStateBlock, search, status, transitionMemory, traverse, updateMemory, upsertEntity };
 }
 
-module.exports = { blobVector, cosine, createMemoryService, ftsQuery, sourceRef, vectorBlob };
+module.exports = { blobVector, cosine, createMemoryService, ftsQuery, normalizeInstant, sourceRef, vectorBlob };

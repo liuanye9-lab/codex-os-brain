@@ -8,6 +8,32 @@ const { inventoryLegacy, planMigration, applyMigration } = require('./migration'
 
 const EXIT = Object.freeze({ ok: 0, usage: 2, blocked: 3, failed: 4 });
 
+function commandGuide() {
+  return {
+    name: 'Codex Brain V9',
+    usage: 'brain <command> [action] [--flags] [--json]',
+    startHere: [
+      'brain doctor --json',
+      'brain task create --task-id demo --objective "ship safely" --criterion tests --json',
+      'brain verify --json',
+      'brain hooks enable --project "$PWD" --confirm --json',
+    ],
+    commands: {
+      status: 'Read runtime status.',
+      doctor: 'Read environment, hook, MCP, and handoff checks without mutating the project.',
+      task: 'create | show | checkpoint',
+      verify: 'Re-run executable acceptance criteria.',
+      evidence: 'claim | attach',
+      handoff: 'init | status | progress',
+      memory: 'status | create | get | update | transition | delete | query | aggregate | entity | link | traverse',
+      embeddings: 'status | recommend | configure | doctor | probe | pull | prompt',
+      hooks: 'doctor | enable | disable',
+      mcp: 'serve',
+    },
+    docs: 'docs/v9/quickstart.md',
+  };
+}
+
 function flags(argv) {
   const values = { _: [] };
   for (let i = 0; i < argv.length; i += 1) {
@@ -34,16 +60,31 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   const pluginRoot = services.pluginRoot || path.resolve(__dirname, '..', '..');
   const projectRoot = args.project || process.cwd();
 
+  if (!group || group === 'help' || args.help === true) return io.json(commandGuide());
   if (group === 'status') return io.json(core.status());
-  if (group === 'doctor') return io.json({
-    v8: { selectable: core.config.fallbackVersion === 8 },
-    v9: core.status(),
-    hooks: doctorHooks({ projectRoot }),
-    cli: { binaries: ['brain', 'codex-brain'] },
-    mcp: { probeCommand: 'brain:v9:mcp:probe' },
-    hosts: core.hosts.list(),
-    handoff: core.handoff.statusHandoff({ projectRoot }),
-  });
+  if (group === 'doctor') {
+    const v9 = core.status();
+    const hooks = doctorHooks({ projectRoot });
+    const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
+    const nodeSupported = nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 5);
+    const checks = [
+      { id: 'node-runtime', status: nodeSupported ? 'passed' : 'blocked', observed: process.versions.node, required: '>=22.5', remediation: nodeSupported ? null : 'Install Node.js 22.5 or newer.' },
+      { id: 'v9-core', status: v9.enabled ? 'passed' : 'blocked', observed: { version: v9.version, enabled: v9.enabled }, remediation: v9.enabled ? null : 'Set config/brain-lite-v9.json enabled=true.' },
+      { id: 'project-hooks', status: hooks.valid ? (hooks.enabled ? 'passed' : 'optional') : 'blocked', observed: { enabled: hooks.enabled, valid: hooks.valid, path: hooks.path }, remediation: hooks.valid ? (hooks.enabled ? null : 'Optional: run brain hooks enable --project "$PWD" --confirm --json.') : 'Repair or disable the invalid project hook manifest.' },
+      { id: 'mcp-probe', status: 'available', command: 'npm run mcp:probe', remediation: 'Run from the installed package checkout to exercise the stdio MCP boundary.' },
+    ];
+    return io.json({
+      ok: checks.every(check => !['blocked','failed'].includes(check.status)),
+      checks,
+      v8: { selectable: core.config.fallbackVersion === 8 },
+      v9,
+      hooks,
+      cli: { binaries: ['brain', 'codex-brain'], helpCommand: 'brain --help' },
+      mcp: { probeCommand: 'npm run mcp:probe', serveCommand: 'brain mcp serve' },
+      hosts: core.hosts.list(),
+      handoff: core.handoff.statusHandoff({ projectRoot }),
+    });
+  }
   if (group === 'task' && action === 'create') {
     if (!args.objective) return io.error('objective is required', EXIT.usage);
     const criteria = args.criterion ? String(args.criterion).split(',').map(id => ({
@@ -141,7 +182,7 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   if (group === 'memory' && (!action || action === 'status')) return io.json(core.memory.status());
   if (group === 'memory' && action === 'create') {
     if (!args.content) return io.error('content is required', EXIT.usage);
-    return io.json(core.memory.createMemory({ content: args.content, kind: args.kind, confidence: args.confidence, privacy: args.privacy, sourceUri: args.source, idempotencyKey: args['idempotency-key'], actor: args.actor }));
+    return io.json(core.memory.createMemory({ content: args.content, kind: args.kind, confidence: args.confidence, privacy: args.privacy, sourceUri: args.source, validFrom: args['valid-from'], validTo: args['valid-to'], idempotencyKey: args['idempotency-key'], actor: args.actor }));
   }
   if (group === 'memory' && action === 'get') {
     if (!args.id) return io.error('id is required', EXIT.usage);
@@ -150,7 +191,7 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   }
   if (group === 'memory' && action === 'update') {
     if (!args.id || !args['expected-version']) return io.error('id and expected-version are required', EXIT.usage);
-    return io.json(core.memory.updateMemory(args.id, { content: args.content, expectedVersion: Number(args['expected-version']), approvedBy: args['approved-by'], idempotencyKey: args['idempotency-key'] }));
+    return io.json(core.memory.updateMemory(args.id, { content: args.content, validFrom: args['valid-from'], validTo: args['valid-to'], expectedVersion: Number(args['expected-version']), approvedBy: args['approved-by'], idempotencyKey: args['idempotency-key'] }));
   }
   if (group === 'memory' && action === 'transition') {
     if (!args.id || !args.status || !args['expected-version'] || !args['approved-by']) return io.error('id, status, expected-version, and approved-by are required', EXIT.usage);
@@ -167,7 +208,7 @@ async function runCli(argv, io = defaultIo(), services = {}) {
       try { const result = await core.embeddings.embed({ text: args.query }); queryVector = result.vector; embedding = { used: true, fingerprint: result.fingerprint, model: result.model }; }
       catch (error) { embedding = { used: false, degraded: true, reason: error.code || error.message }; }
     }
-    return io.json({ ...core.memory.search({ query: args.query, queryVector, limit: args.limit, includeCandidates: args['include-candidates'] === true }), embedding });
+    return io.json({ ...core.memory.search({ query: args.query, queryVector, limit: args.limit, includeCandidates: args['include-candidates'] === true, at: args.at }), embedding });
   }
   if (group === 'memory' && action === 'aggregate') return io.json(core.memory.aggregate({ by: args.by }));
   if (group === 'memory' && action === 'import-index') {
@@ -268,4 +309,4 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   return io.error('unknown command', EXIT.usage);
 }
 
-module.exports = { EXIT, flags, runCli };
+module.exports = { EXIT, commandGuide, flags, runCli };

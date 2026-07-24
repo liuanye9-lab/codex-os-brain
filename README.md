@@ -1,16 +1,42 @@
 # Codex Brain V9：给 AI 编程助手装一个「安全副驾驶」
 
-[![Version](https://img.shields.io/badge/version-0.10.0-5b5bd6)](package.json)
+[![Version](https://img.shields.io/badge/version-0.11.0-5b5bd6)](package.json)
 [![Runtime](https://img.shields.io/badge/runtime-local--first-1f883d)](docs/v9/privacy-and-threat-model.md)
 [![Interfaces](https://img.shields.io/badge/interfaces-hooks%20%7C%20CLI%20%7C%20MCP-0969da)](docs/v9/quickstart.md)
 [![Eval](https://img.shields.io/badge/eval-reliability%20suites-orange)](evals/v9-reliability/runner.cjs)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+![Codex Brain reliability copilot](assets/codex-brain-ip-hero.png)
+
+> Unofficial community project. Codex and related marks belong to OpenAI; this generated illustration does not imply affiliation or endorsement. Visual provenance is recorded in [`assets/visual-provenance.json`](assets/visual-provenance.json).
 
 把 AI 编程助手想成**司机**：它负责开车、认路、做决定。  
 Codex Brain 像坐在副驾的人：**平时不唠叨、不抢方向盘**；只有快碰到红线、要做高风险操作、连续撞同一堵墙、长对话被压缩，或它说「已经做完」时，才提醒、补小抄，或踩一脚刹车。
 
 > 它**不是**另一个 Agent，也**不承诺**让模型永远正确。  
 > 它是一层 **reliability control plane（可靠性控制平面）**：把「目标、边界、证据、失败、交接」变成可检查的规则——**先把事情说清楚，再拿证据验收**。
+
+### Start here：先跑通，再决定开哪些增强
+
+```bash
+git clone https://github.com/liuanye9-lab/codex-os-brain.git
+cd codex-os-brain
+npm install && npm test
+npm link
+
+brain --help
+brain doctor --json
+brain task create --task-id demo --objective "ship safely" --criterion tests --json
+brain verify --json
+```
+
+Node.js 必须是 **22.5+**。`brain doctor` 默认只读；项目 hooks 默认关闭，只有显式执行 `brain hooks enable --project "$PWD" --confirm` 才会写入项目配置。
+
+### 0.11 对照优化：吸收机制，不复制实现
+
+本版重新核验了 MIT 许可的 [`384961890-ui/claude-brain`](https://github.com/384961890-ui/claude-brain) v8.3。吸收的是“失败要响、时间是一等维度、召回必须可审计、先便宜后昂贵”的 Harness 原则；保留 Codex Brain 自己的 native-first、SQLite 事务记忆、候选门禁、可执行 verifier、CLI / hooks / MCP 同核架构。
+
+具体改动：修复 MCP memory recall 的旧接口漂移；记忆检索统一执行 `[valid_from, valid_to)` 时间门禁；新增可发现的 `brain --help` 与结构化 doctor checks；发布门禁开始校验 README 图片来源和哈希；可靠性延迟报告改用真实 p50。完整对照见 [Claude Brain v8.3 clean-room comparison](docs/v9/claude-brain-v8.3-comparison.md)。
 
 ### 可选的最小上下文续航
 
@@ -317,7 +343,7 @@ quadrantChart
   Codex Brain V9: [0.78, 0.82]
 ```
 
-> 读图方式：向右 = 更守边界、少盲重试；向上 = 完成可验、过程可复盘。Brain 推你进右上，而不是假装模型变聪明了。
+> 这是机制定位示意，不是实测分数或因果效果图。向右 = 更守边界、少盲重试；向上 = 完成可验、过程可复盘。真实可证明范围以 `npm run eval:reliability` 的机制回归结果为准。
 
 ### 八种翻车 → 八种抬升（总览）
 
@@ -648,7 +674,7 @@ flowchart TB
 | **P3** | 路径能力策略 | 机场安检 | 关键词误伤/漏拦 | hooks PreToolUse + `policy.js` |
 | **P4** | 技能焊死证据 | 临时工工牌 | 技能乱注入无验收 | `brain skill activate --criterion …` |
 | **P5** | 多宿主适配 | 旅行转接头 | 绑死单一 IDE | `BRAIN_HOST=codex\|claude\|mcp` |
-| **P6** | 版本化记忆 | 未核验便利贴 | 记忆污染当圣旨 | `brain memory recall` |
+| **P6** | 版本化记忆 | 未核验便利贴 | 记忆污染当圣旨 | `brain memory create\|transition\|query` |
 
 详见 [docs/v9/p0-p6-reliability-plane.md](docs/v9/p0-p6-reliability-plane.md)。
 
@@ -1068,6 +1094,7 @@ flowchart TB
 | [V1–V8 迁移与回退](docs/v9/migration.md) | 搬家协议 |
 | [隐私与威胁模型](docs/v9/privacy-and-threat-model.md) | 本地优先与导出 |
 | [研究与开源归属](docs/v9/research-and-attribution.md) | 论文与上游概念 |
+| [Claude Brain v8.3 对照分析](docs/v9/claude-brain-v8.3-comparison.md) | 逐机制吸收、拒绝项与验证映射 |
 | [V7 重 harness 复盘](docs/history/v7-heavy-harness.md) | 为何从重到轻 |
 | [V1–V8 历史设计](v1/README.md) | 分版设计原文入口 |
 

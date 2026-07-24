@@ -37,6 +37,24 @@ source evidence -> transactional ingest -> hybrid retrieval -> task use
 
 The harness never promotes memory or applies policy automatically. A memory starts as `candidate`. Promotion to `confirmed`, retirement of confirmed memory, active graph edges, read-only state changes, and evolution adoption require explicit approval plus an expected version.
 
+## Temporal validity
+
+Memory validity uses RFC 3339 timestamps normalized to UTC and a half-open interval:
+
+```text
+[valid_from, valid_to)
+```
+
+An item is visible at `valid_from` and invisible at `valid_to`. Null bounds mean unbounded. The same validity predicate is enforced for lexical and vector candidates, so an expired confirmed memory cannot re-enter through semantic ranking.
+
+```bash
+brain memory create --kind decision --content "temporary release rule" \
+  --valid-from 2026-07-25T00:00:00Z --valid-to 2026-08-01T00:00:00Z
+brain memory query --query "release rule" --at 2026-07-27T00:00:00Z
+```
+
+Malformed timestamps and zero/negative intervals fail before database writes.
+
 ## Commands
 
 ```bash

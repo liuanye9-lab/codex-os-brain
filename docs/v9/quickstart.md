@@ -2,7 +2,7 @@
 
 ## Install
 
-Use Node.js 20 or newer.
+Use Node.js 22.5 or newer. The transactional memory layer uses the built-in `node:sqlite` API.
 
 ```bash
 git clone https://github.com/liuanye9-lab/codex-os-brain.git
@@ -11,10 +11,11 @@ npm install
 npm test
 npm run eval:reliability
 npm link
-brain status --json
+brain --help
+brain doctor --json
 ```
 
-Set `CODEX_BRAIN_HOME` to isolate runtime state. If unset, the CLI uses `~/.codex-brain`.
+Set `CODEX_BRAIN_HOME` to isolate task/event configuration state and `CODEX_BRAIN_STATE_HOME` to isolate the mutable SQLite memory state. If unset, the CLI uses `~/.codex-brain` for the former and an OS-local application-state directory for the latter.
 
 ## Task and evidence flow (P0)
 
@@ -56,9 +57,18 @@ brain skill activate --id brain-lite-model-router --criterion tests --budget 200
 ## Memory (P6)
 
 ```bash
-brain memory add --text "prefer local embeddings" --tags embed --json
-brain memory recall --query "embed" --json
-brain memory list --json
+brain memory create --kind preference --content "prefer local embeddings" --json
+# Review the returned memory_id and version before promotion:
+brain memory transition --id <memory_id> --status confirmed --expected-version 1 --approved-by operator --json
+brain memory query --query "local embeddings" --json
+```
+
+Memory is candidate-first. Default query excludes candidates, rejected items, retired items, and confirmed items outside their half-open validity window `[valid_from, valid_to)`.
+
+```bash
+brain memory create --kind decision --content "temporary release rule" \
+  --valid-from 2026-07-25T00:00:00Z --valid-to 2026-08-01T00:00:00Z --json
+brain memory query --query "release rule" --at 2026-07-27T00:00:00Z --json
 ```
 
 ## Hosts (P5)
@@ -82,7 +92,7 @@ Only the project's `.codex/hooks.json` is written. Hook commands are local, boun
 
 ```bash
 brain mcp serve
-node scripts/probe-v9-mcp.mjs
+npm run mcp:probe
 ```
 
 Read tools include status, task, verify (re-run), failures, events, embeddings, handoff, skills, memory recall.  

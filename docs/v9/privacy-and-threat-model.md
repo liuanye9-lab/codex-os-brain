@@ -13,6 +13,18 @@ Task contracts store objectives, explicit constraints, scope, criterion states, 
 
 Files are created with private runtime permissions. Hot hooks make no network or model request.
 
+## Data lifecycle
+
+| Data | Authoritative location | Default lifecycle | Delete meaning |
+|---|---|---|---|
+| Task contracts, events, failures, handoff | `CODEX_BRAIN_STATE_HOME` runtime tree | Local until the operator removes the isolated state tree | Runtime file removal; no remote copy is created by V9 |
+| Memory, provenance, feedback, eval cases | Local SQLite + WAL | Candidate/confirmed/rejected/retired lifecycle with append-only audit events | `brain memory delete` retires or rejects and removes recall indexing; it is a soft tombstone, not forensic erasure |
+| Embeddings | Local SQLite, keyed by model fingerprint | Rebuilt when the fingerprint changes | Removed with the database or an operator-managed maintenance action |
+| Encrypted backups | Operator-selected private sync target | Retained until the operator deletes the `.cbmem` packages | Retiring a memory does not rewrite existing encrypted backups |
+| Public export | New allowlisted directory | Static release artifact | Excludes runtime state, raw databases, memory, credentials, and private paths |
+
+`CODEX_BRAIN_HOME` selects the installation/configuration home. `CODEX_BRAIN_STATE_HOME` isolates mutable runtime state. Do not point the live SQLite WAL database at iCloud, NFS, or another sync filesystem.
+
 ## Decisions
 
 | Boundary | Behavior when policy cannot be verified |

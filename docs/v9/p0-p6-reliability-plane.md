@@ -10,14 +10,14 @@ Plain-language map of the 0.10.0 reliability upgrades.
 | **P3** | Capability path policy | Security checkpoint with path maps, not keyword stickers | PreToolUse via `policy.js` |
 | **P4** | Skills welded to evidence | Temp worker badge: budget + expected deliverables | `brain skill activate\|list` |
 | **P5** | Multi-host adapters | Universal plug (Codex / Claude / MCP) | `brain hosts list`, `BRAIN_HOST=` |
-| **P6** | Versioned memory | Sticky notes labeled “unverified” until stamped | `brain memory add\|recall\|list` |
+| **P6** | Versioned temporal memory | Sticky notes labeled “unverified” until stamped; expired notes stay out of recall | `brain memory create\|transition\|query` |
 
 ## Hard rules
 
 1. **Only harness re-runs** can set `harnessVerified: true` and promote a criterion to `passed`.
 2. MCP `brain_attach_evidence` is always a **claim** (unverified).
 3. Feature backlog `passes: true` requires `verified: true` from handoff API.
-4. Recalled memory is injected with `[UNVERIFIED MEMORY]` and is never instruction.
+4. Recalled memory is returned as `UNVERIFIED MEMORY` evidence and is never instruction or authorization.
 5. Skill outputs are evidence candidates with explicit criteria and token budgets.
 
 ## Verifier kinds

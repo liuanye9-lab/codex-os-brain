@@ -20,6 +20,16 @@ const { handleStop } = require('../../scripts/v9/hooks/stop');
 const { claimEvidence, evaluateCompletion, verifyCriterion } = require('../../scripts/v9/verification');
 const { createTaskContract } = require('../../scripts/v9/task-contract');
 
+function percentile(values, ratio) {
+  if (!Array.isArray(values) || values.length === 0) return null;
+  const sorted = values.map(Number).sort((a, b) => a - b);
+  const index = (sorted.length - 1) * ratio;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
+}
+
 function tempCore() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-eval-'));
   return createV9Core({ paths: resolveV9Paths({ CODEX_BRAIN_HOME: home }) });
@@ -115,21 +125,21 @@ async function suiteTax() {
     scope: { allowed: [], forbidden: ['/etc/passwd'] },
   });
   const samples = 20;
-  let preTotal = 0;
+  const preSamples = [];
   for (let i = 0; i < samples; i += 1) {
     const t0 = performance.now();
     core.contracts.evaluateAction('Read', { file_path: 'README.md' });
-    preTotal += performance.now() - t0;
+    preSamples.push(performance.now() - t0);
   }
-  const preP50 = preTotal / samples;
+  const preP50 = percentile(preSamples, 0.5);
 
-  let postTotal = 0;
+  const postSamples = [];
   for (let i = 0; i < samples; i += 1) {
     const t0 = performance.now();
     core.failures.record({ errorType: 'TypeError', operation: 'Edit', message: 'boom' });
-    postTotal += performance.now() - t0;
+    postSamples.push(performance.now() - t0);
   }
-  const postP50 = postTotal / samples;
+  const postP50 = percentile(postSamples, 0.5);
 
   return {
     name: 'tax',
@@ -157,4 +167,4 @@ async function main() {
 
 if (require.main === module) main();
 
-module.exports = { suiteFalseCompletion, suiteLoop, suiteOverreach, suiteTax, main };
+module.exports = { percentile, suiteFalseCompletion, suiteLoop, suiteOverreach, suiteTax, main };

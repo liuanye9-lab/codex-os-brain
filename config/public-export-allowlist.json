@@ -10,6 +10,8 @@
     { "source": "config/public-export-allowlist.json", "target": "config/public-export-allowlist.json" }
   ],
   "patterns": [
+    "assets/codex-brain-ip-hero.png",
+    "assets/visual-provenance.json",
     ".codex-plugin/plugin.json",
     "bin/brain-hook.js",
     "bin/brain.js",
