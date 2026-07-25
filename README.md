@@ -32,12 +32,6 @@ brain verify --json
 
 Node.js 必须是 **22.5+**。`brain doctor` 默认只读；项目 hooks 默认关闭，只有显式执行 `brain hooks enable --project "$PWD" --confirm` 才会写入项目配置。
 
-### 0.11 对照优化：吸收机制，不复制实现
-
-本版重新核验了 MIT 许可的 [`384961890-ui/claude-brain`](https://github.com/384961890-ui/claude-brain) v8.3。吸收的是“失败要响、时间是一等维度、召回必须可审计、先便宜后昂贵”的 Harness 原则；保留 Codex Brain 自己的 native-first、SQLite 事务记忆、候选门禁、可执行 verifier、CLI / hooks / MCP 同核架构。
-
-具体改动：修复 MCP 与 SessionStart memory recall 的旧接口漂移；记忆检索统一执行 `[valid_from, valid_to)` 时间门禁，失败会显式降级；验证证据增加本机 HMAC 封印，直接篡改任务 JSON 不能伪造通过；两个宿主适配器完整透传 `force_verify`，标准 Stop 事件默认触发实时重验，重验崩溃也会 fail closed；成功调用会复位熔断，第 2 次失败会真正告警；测试入口改为递归发现全部测试文件。另有可发现的 `brain --help`、结构化 doctor checks、README 图片来源与哈希门禁，以及真实 p50 延迟报告。完整对照见 [Claude Brain v8.3 clean-room comparison](docs/v9/claude-brain-v8.3-comparison.md)。
-
 ### 可选的最小上下文续航
 
 有些人会在自己的私有环境里额外接一条很短的 `UserPromptSubmit` hook：只从本地核心摘要中取身份、协作偏好和安全边界，再交给 Agent。它解决的是跨任务的连续性，不是把完整聊天、人格设定或长期记忆塞进每一轮。
@@ -56,9 +50,9 @@ flowchart LR
   end
   subgraph After["装了 Codex Brain"]
     A1["Agent 仍是司机"] --> A2["任务合同写清目标/红线"]
-    A2 --> A3["副驾驶重批卷验收"]
-    A3 --> A4["红绿灯熔断盲重试"]
-    A4 --> A5["交接本 + 可测考场"]
+    A2 --> A3["合同签名 + 固定验收题"]
+    A3 --> A4["项目隔离 + 路由证据防篡改"]
+    A4 --> A5["熔断 / 恢复 / 可逆 Hooks"]
   end
   Before -. "升级" .-> After
 ```
@@ -103,9 +97,19 @@ mindmap
       claim 仅自述
       verify 真重跑
       harnessVerified
+      合同与题目签名
+    信任边界
+      macOS Keychain 持钥
+      路由账本 hash chain + MAC
+      降级成无签名记录也拒绝
+    项目隔离
+      task event failure 分区
+      embedding memory 分区
+      临时 eval projectRoot
     失败熔断
       2 次警告
       3 次开路灯
+      按 operation 独立复位
     班次交接
       backlog
       progress
@@ -121,6 +125,8 @@ mindmap
       脱敏事件
       可靠性考场
       隐私导出
+      能力真烟测
+      崩溃恢复与临时明文清理
 ```
 
 ### 1. 三条统一入口（同一套规则）
@@ -521,43 +527,45 @@ flowchart TB
 
 ## 一图看懂架构
 
-### 总装图：司机 + 三种插口 + 副驾驶仪表台
+### 总装图：三种入口，共享核心，按项目分舱
 
 ```mermaid
 flowchart TB
-  subgraph 开车的人
+  subgraph Driver["开车的人"]
     Agent["AI 编程助手\n司机"]
   end
-  subgraph 三种插口
+  subgraph Ports["三种入口"]
     Hooks["项目传感器\nhooks"]
     CLI["brain 命令行\n手边控制台"]
     MCP["本地 MCP\n通用插口"]
   end
-  subgraph 副驾驶核心
+  subgraph CorePlane["V9 可靠性控制平面"]
     Core["V9 可靠性控制平面"]
-    Contract["任务清单\n要做什么 / 不能做什么"]
-    Verify["可执行验收\n老师重批卷"]
-    Circuit["失败红绿灯"]
+    Scope["projectRoot 规范化 + 哈希分区"]
+    Contract["签名任务合同\n目标 / 边界 / 固定验收题"]
+    Verify["可执行验收\n实时重跑 + 证据封印"]
+    Circuit["按 operation 分槽的失败红绿灯"]
     Handoff["交接本"]
     Policy["安检门"]
-    Skills["技能工牌"]
-    Memory["便条墙"]
-    Hosts["宿主转接头"]
+    Memory["SQLite 记忆\n候选门禁 + 时态召回"]
+    Ledger["路由证据账本\nhash chain + MAC"]
   end
+  Keychain["macOS Keychain\n签名密钥"] --> Contract
+  Keychain --> Ledger
   Agent --> Hooks
   Human["使用者"] --> CLI
   Client["其他应用"] --> MCP
   Hooks --> Core
   CLI --> Core
   MCP --> Core
-  Core --> Contract
-  Core --> Verify
-  Core --> Circuit
+  Core --> Scope
+  Scope --> Contract
+  Scope --> Verify
+  Scope --> Circuit
+  Scope --> Memory
+  Verify --> Ledger
   Core --> Handoff
   Core --> Policy
-  Core --> Skills
-  Core --> Memory
-  Core --> Hosts
 ```
 
 ### 运行时状态机：大部分时间安静，关键点才出声
@@ -572,9 +580,12 @@ stateDiagram-v2
   安静工作 --> 提醒绕路: 第2次同类失败
   提醒绕路 --> 先刹车: 第3次熔断
   安静工作 --> 交卷验收: Stop / 完成声明
-  交卷验收 --> 重批卷: harness 重跑 verifier
+  交卷验收 --> 先刹车: active 丢失但 guard 仍在
+  交卷验收 --> 重批卷: 校验合同签名并重跑固定 verifier
   重批卷 --> [*]: 全部 harnessVerified
   重批卷 --> 先刹车: 缺证据 / 失败 / 仅自述
+  安静工作 --> 显式降级: 非策略 Hook 异常
+  显式降级 --> 安静工作: 告警已记录
 ```
 
 ### 一次工具调用在副驾驶眼里长什么样
@@ -693,10 +704,11 @@ flowchart LR
   Graph --> Feedback
   Feedback --> Candidate["优化候选<br/>人工审批后试验"]
   SQL --> Snapshot["SQLite 在线快照<br/>完整性检查"]
-  Snapshot --> AES["AES-256-GCM<br/>Keychain 持钥"]
+  Snapshot --> AES["AES-256-GCM<br/>完整头部 MAC + Keychain 持钥"]
   AES --> Remote["私有同步目标<br/>只收 .cbmem 密文"]
   AES --> Split["2-of-2 离线密钥份额<br/>分设备 + 分口令保管"]
   Remote --> Restore["认证血缘 + 恢复租约<br/>原子换库 + 自动回滚"]
+  Restore --> Cleanup["崩溃 recover<br/>清理锁、日志与明文临时副本"]
 ```
 
 同步不采用 last-write-wins。每个不可变 `.cbmem` 包都带经过认证的 `databaseId → parentBackupId → backupId` 血缘；`same` 只验证不换库，远端祖先链包含本地 head 才允许确认后的自动 fast-forward 恢复，分叉、外来数据库和未知血缘全部阻断。恢复过程会持有协作租约、检查数据库占用、先做回滚快照，再通过同文件系统原子换库和崩溃日志保证失败可回退。
@@ -770,6 +782,7 @@ timeline
   section 副驾驶
     V9 安全副驾驶 : 统一 core · 证据门 · 熔断 · 隐私
     0.10 P0–P6    : 可重放验收 · 交接 · 考场 · 安检 · 技能/宿主/记忆
+    0.12 信任加固 : 签整份合同 · 项目隔离 · 路由账本 MAC · 可逆 Hooks · 恢复闭环
 ```
 
 ### 版本主线（一图串起来）
@@ -785,6 +798,7 @@ flowchart LR
   V7 --> V8["V8<br/>默认直做"]
   V8 --> V9["V9<br/>安全副驾驶"]
   V9 --> V91["0.10<br/>P0–P6"]
+  V91 --> V12["0.12<br/>信任边界加固"]
 ```
 
 ### V7 重编排 vs V9 副驾驶（为何变轻）
@@ -822,6 +836,7 @@ flowchart TB
 | **V8** | 编排太重，清晰任务被拖慢 | Native-first control plane；增强要可计量 | Task Contract、context economy、trace、harness tax、skill lifecycle、policy lab | hooks/CLI/MCP 仍需统一小规则 → V9 |
 | **V9** | 三端策略不一致；要安静也要能刹得住 | 统一可靠性副驾驶 + 证据门 + 熔断 + 可选本地召回 | 同一 core、hooks/CLI/MCP、迁移回退、隐私导出 | 证据仍偏状态字段；长程交接与硬评测不足 → **0.10 P0–P6** |
 | **0.10** | 假完成、弱交接、弱评测、弱策略、弱技能/记忆/多宿主 | 可重放验收 + handoff + eval + capability policy | 本文 P0–P6 | 仍不替代语义专家；继续用 eval 说话 |
+| **0.12** | 合同题目可被换、项目状态串线、路由证据自证、Hooks 恢复不可信 | 把每条安全声明变成会失败的可执行门禁 | 合同整体签名、Keychain、项目分区、账本 MAC、运行时 doctor、恢复清理 | 同 UID 全权限进程仍是系统信任边界；旧无 MAC 备份需受控迁移 |
 
 ### 分版细说（优化出发点写清楚）
 
@@ -1000,11 +1015,37 @@ brain hooks disable --project "$PWD" --confirm --json
 
 项目 hooks 会写入安装机器的绝对插件路径，不应提交。仓库 `.gitignore` 默认排除 `.codex/hooks.json` 和两个安装 sidecar；集成到其他仓库时也应加入相同规则。
 
+```mermaid
+flowchart LR
+  Existing["用户现有 Hooks"] --> Merge["增量合并<br/>只增加 owned entries"]
+  Merge --> Backup["备份原字节 / 权限 / 软链目标"]
+  Backup --> Doctor{"doctor 逐项验真"}
+  Doctor -->|"7 事件 + 指纹 + 烟测 + 可写"| Healthy["完整安装"]
+  Doctor -->|"缺项 / 漂移 / 运行失败"| Degraded["明确 degraded"]
+  Healthy --> Disable["disable"]
+  Disable -->|"期间无外部修改"| Restore["逐字节恢复原配置"]
+  Disable -->|"期间新增外部 Hook"| RemoveOwned["只移除 owned entries"]
+```
+
 ### 验收信任边界
 
 V0.12 起，验收题目与验收结果分开保护：任务创建时会规范化并签署整份合同规范，覆盖 objective、scope、`required`、verifier 类型和完整 `verifierSpec`；每条证据再绑定合同指纹与标准指纹。运行时参数不能把已钉死的命令替换成 `echo ok`，空 criteria、未签名 waiver 和 `requireHarness:false` 都不能完成任务。macOS 的签名密钥存放在 Keychain，而不是任务 JSON 同一可写目录；其他平台必须提供受保护的签名后端，文件密钥只用于测试兼容路径。
 
 `projectScoped: true` 现在会实际消费：task、event、failure、embedding 和 SQLite memory 都按规范化 project root 的哈希分区。一个项目的 active task 与记忆不会注入另一个项目。`active.json` 旁还有独立 guard；只删除合同文件会让 Stop fail closed，而不是静默放行。
+
+```mermaid
+flowchart LR
+  Create["创建任务"] --> Canonical["规范化整份合同<br/>objective / scope / criteria / verifierSpec"]
+  Canonical --> Sign["Keychain HMAC 签合同"]
+  Sign --> Run["Stop 实时重跑固定 verifier"]
+  Run --> Evidence["证据绑定<br/>合同指纹 + 标准指纹"]
+  Evidence --> Gate{"完成门禁"}
+  Gate -->|"签名正确 + required 全通过"| Complete["允许完成"]
+  Gate -->|"改题 / 空标准 / waiver / 仅自述"| Block["fail closed"]
+  Run --> Receipt["固定本地 verifier 收据"]
+  Receipt --> Ledger["路由账本<br/>hash chain + MAC"]
+  Ledger -->|"手改 / 重算 hash / 降级无签名"| Reject["拒绝进入路由策略"]
+```
 
 ### MCP
 
