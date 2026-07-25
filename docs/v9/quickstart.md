@@ -15,7 +15,7 @@ brain --help
 brain doctor --json
 ```
 
-Set `CODEX_BRAIN_HOME` to isolate task/event configuration state and `CODEX_BRAIN_STATE_HOME` to isolate the mutable SQLite memory state. If unset, the CLI uses `~/.codex-brain` for the former and an OS-local application-state directory for the latter.
+Set `CODEX_BRAIN_HOME` for configuration state and `CODEX_BRAIN_STATE_HOME` for mutable local state. With `projectScoped: true`, task, event, failure, embedding, and SQLite paths are partitioned by a hash of the normalized project root. If unset, the CLI uses `~/.codex-brain` and an OS-local application-state directory, but projects remain isolated from one another.
 
 ## Task and evidence flow (P0)
 
@@ -86,9 +86,11 @@ brain hooks enable --project "$PWD" --confirm --json
 brain hooks disable --project "$PWD" --confirm --json
 ```
 
-Only the project's `.codex/hooks.json` is integrated. Enable preserves foreign hook groups, records the Codex Brain owner marker, and creates a private backup plus install-state file under `.codex/`. Disable restores the exact original when the installed file has not drifted. If another tool adds hooks after installation, disable removes only Codex Brain-owned groups and preserves those later edits.
+Only the project's `.codex/hooks.json` is integrated. Enable preserves foreign hook groups, records the Codex Brain owner marker, and creates a private backup plus install-state file under `.codex/`. Disable restores the exact original, permissions, and symlink when the installed file has not drifted. If another tool adds hooks after installation, disable removes only Codex Brain-owned groups and preserves those later edits. Add `.codex/hooks.json`, `.codex/hooks.codex-brain-v9.state.json`, and `.codex/hooks.json.codex-brain-v9.backup` to the host repository's `.gitignore` because generated commands contain a machine-local absolute plugin path.
 
-`brain hooks doctor` verifies owner, all seven required events, duplicate or mismatched groups, and the expected fingerprint. A valid foreign-only manifest remains valid but reports `enabled: false`.
+`brain hooks doctor` verifies owner, all seven required events, duplicate or mismatched groups, expected fingerprint, runtime smoke, and storage writability. A valid foreign-only manifest remains valid but reports `enabled: false`.
+
+The signed acceptance contract pins `required`, verifier kind, and `verifierSpec`. Runtime calls cannot replace the verifier command. Empty criteria, unsigned waivers, or disabling harness verification never produce `complete`. On macOS the evidence signing key is held in Keychain instead of beside task JSON. Other platforms fail closed unless `CODEX_BRAIN_EVIDENCE_KEY_B64` is supplied by a protected secret manager; do not commit or place that value in a project-local env file.
 
 ## MCP
 
@@ -121,6 +123,7 @@ See [local embeddings](local-embeddings.md).
 ## Disable or fall back
 
 - `brain hooks disable --confirm`
+- `brain memory recover --confirm` clears a proven-stale restore lock and crash journal without requiring another restore
 - Set V9 `enabled` to false for read-only runtime
 - `fallbackVersion: 8` keeps V8 selectable
 - Migration / publish never exposed as MCP mutations

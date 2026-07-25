@@ -1,5 +1,5 @@
 'use strict';
-const { normalizeHookInput, blockDecision } = require('./hooks/input');
+const { normalizeHookInput, blockDecision, additionalContext } = require('./hooks/input');
 
 async function dispatchHook(raw, services) {
   const input = normalizeHookInput(raw);
@@ -7,11 +7,15 @@ async function dispatchHook(raw, services) {
   try {
     return await services.handlers[input.event](input);
   } catch (error) {
-    if (services.failClosedEvents.has(input.event) && error.code === 'policy_boundary') {
-      return blockDecision('policy_boundary', 'Action paused because the reliability policy could not be verified.');
+    try { services.auditInternalError(input.event, error); } catch { /* primary failure remains authoritative */ }
+    if (services.failClosedEvents.has(input.event)) {
+      const reasonCode = error.code === 'policy_boundary' ? 'policy_boundary' : 'hook_runtime_failed';
+      return blockDecision(reasonCode, 'Action paused because the reliability hook could not complete its checks.');
     }
-    services.auditInternalError(input.event, error);
-    return {};
+    return {
+      ...additionalContext('[BRAIN HOOK DEGRADED] A reliability hook failed internally; its observation was not recorded.', input.event),
+      reason_code: 'hook_runtime_failed',
+    };
   }
 }
 

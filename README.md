@@ -1,6 +1,6 @@
 # Codex Brain V9：给 AI 编程助手装一个「安全副驾驶」
 
-[![Version](https://img.shields.io/badge/version-0.11.2-5b5bd6)](package.json)
+[![Version](https://img.shields.io/badge/version-0.12.0-5b5bd6)](package.json)
 [![Runtime](https://img.shields.io/badge/runtime-local--first-1f883d)](docs/v9/privacy-and-threat-model.md)
 [![Interfaces](https://img.shields.io/badge/interfaces-hooks%20%7C%20CLI%20%7C%20MCP-0969da)](docs/v9/quickstart.md)
 [![Eval](https://img.shields.io/badge/eval-reliability%20suites-orange)](evals/v9-reliability/runner.cjs)
@@ -724,6 +724,7 @@ brain memory backup-encrypted --confirm
 brain memory backup-verify --input /path/to/backup.cbmem
 brain memory backup-compare --input /path/to/incoming.cbmem
 brain memory restore-encrypted --input /path/to/incoming.cbmem --confirm-restore
+brain memory recover --confirm
 brain memory recovery-export --output-a /offline-a/key.cbkey --output-b /offline-b/key.cbkey --passphrase-a-file /private/pass-a --passphrase-b-file /private/pass-b --confirm
 brain memory recovery-drill --share-a /offline-a/key.cbkey --share-b /offline-b/key.cbkey --passphrase-a-file /private/pass-a --passphrase-b-file /private/pass-b --input /path/to/backup.cbmem
 brain harness cycle
@@ -993,9 +994,17 @@ brain hooks enable --project "$PWD" --confirm --json
 brain hooks disable --project "$PWD" --confirm --json
 ```
 
-默认**不**装全局 hooks，**不**擅自装 Claude Code hooks；只写项目内配置。启用时会增量保留已有 Hook，并在 `.codex/` 下创建权限为 `0600` 的原配置备份和安装状态文件。未发生外部修改时，禁用会逐字节恢复原文件；安装后若其他工具又增加了 Hook，禁用只移除带 `codex-brain-v9` 所有权标记的条目，不回滚新配置。
+默认**不**装全局 hooks，**不**擅自装 Claude Code hooks；只写项目内配置。启用时会增量保留已有 Hook，并在 `.codex/` 下创建原配置备份和安装状态文件。未发生外部修改时，禁用会逐字节恢复原文件、原权限和软链；安装后若其他工具又增加了 Hook，禁用只移除带 `codex-brain-v9` 所有权标记的条目，不回滚新配置。若 clone 下来的 `hooks.json` 已含 owned hooks 但没有 sidecar，安装器会先剥离 owned 部分再重建原件，避免把自己的 hooks 备份成“用户原件”。
 
-`brain hooks doctor` 不再把“存在一个合法 JSON 文件”当成已启用。它会核对所有权、七个实际事件、重复项和预期指纹；`eventsComplete` 与 `fingerprintMatch` 都为真才算完整安装。
+`brain hooks doctor` 不再把“存在一个合法 JSON 文件”当成已启用。它会核对所有权、七个实际事件、重复项、预期指纹、hook 进程烟测和运行时存储可写性；只有这些条件都满足才算完整安装。外部合法 hook 可以省略可选 `timeout`，owned hook 仍由预期指纹钉住短超时。
+
+项目 hooks 会写入安装机器的绝对插件路径，不应提交。仓库 `.gitignore` 默认排除 `.codex/hooks.json` 和两个安装 sidecar；集成到其他仓库时也应加入相同规则。
+
+### 验收信任边界
+
+V0.12 起，验收题目与验收结果分开保护：任务创建时会规范化并签署整份合同规范，覆盖 objective、scope、`required`、verifier 类型和完整 `verifierSpec`；每条证据再绑定合同指纹与标准指纹。运行时参数不能把已钉死的命令替换成 `echo ok`，空 criteria、未签名 waiver 和 `requireHarness:false` 都不能完成任务。macOS 的签名密钥存放在 Keychain，而不是任务 JSON 同一可写目录；其他平台必须提供受保护的签名后端，文件密钥只用于测试兼容路径。
+
+`projectScoped: true` 现在会实际消费：task、event、failure、embedding 和 SQLite memory 都按规范化 project root 的哈希分区。一个项目的 active task 与记忆不会注入另一个项目。`active.json` 旁还有独立 guard；只删除合同文件会让 Stop fail closed，而不是静默放行。
 
 ### MCP
 

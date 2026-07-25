@@ -13,6 +13,26 @@ test('unknown or disabled hooks produce an empty object', async () => {
   assert.deepEqual(await dispatchHook({ hook_event_name: 'Unknown' }, { enabled: false, handlers: {}, failClosedEvents: new Set(), auditInternalError() {} }), {});
 });
 
+test('non-policy hook failures are visible and fail-closed events block', async () => {
+  const degraded = await dispatchHook({ hook_event_name: 'PostToolUse' }, {
+    enabled: true,
+    handlers: { PostToolUse: () => { throw new Error('disk full'); } },
+    failClosedEvents: new Set(['PreToolUse', 'Stop']),
+    auditInternalError() { throw new Error('audit unavailable'); },
+  });
+  assert.equal(degraded.reason_code, 'hook_runtime_failed');
+  assert.match(degraded.hookSpecificOutput.additionalContext, /DEGRADED/);
+
+  const blocked = await dispatchHook({ hook_event_name: 'Stop' }, {
+    enabled: true,
+    handlers: { Stop: () => { throw new Error('event store unavailable'); } },
+    failClosedEvents: new Set(['Stop']),
+    auditInternalError() {},
+  });
+  assert.equal(blocked.decision, 'block');
+  assert.equal(blocked.reason_code, 'hook_runtime_failed');
+});
+
 test('normalization keeps bounded identifiers and drops transcript path', () => {
   const value = normalizeHookInput({ hook_event_name: 'PostToolUse', session_id: 's1', turn_id: 't1', transcript_path: '/private/transcript.jsonl', tool_name: 'Bash', tool_input: { command: 'npm test' } });
   assert.equal(value.event, 'PostToolUse');
@@ -114,4 +134,16 @@ test('Stop stays silent when no V9 task contract is active', async () => {
     verification: { evaluateActive: () => { throw new Error('must not evaluate'); } },
   };
   assert.deepEqual(await handleStop({ event: 'Stop', completionClaim: true }, core), {});
+});
+
+test('Stop blocks when the active contract file disappears behind its guard', async () => {
+  const core = {
+    contracts: {
+      state: () => ({ expected: true, contract: null, missing: true, corrupt: false }),
+      active: () => null,
+    },
+  };
+  const output = await handleStop({ event: 'Stop', completionClaim: true }, core);
+  assert.equal(output.decision, 'block');
+  assert.equal(output.reason_code, 'active_contract_missing');
 });

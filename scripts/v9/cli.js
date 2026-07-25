@@ -25,7 +25,7 @@ function commandGuide() {
       verify: 'Re-run executable acceptance criteria.',
       evidence: 'claim | attach',
       handoff: 'init | status | progress',
-      memory: 'status | create | get | update | transition | delete | query | aggregate | entity | link | traverse',
+      memory: 'status | create | get | update | transition | delete | query | aggregate | entity | link | traverse | recover',
       embeddings: 'status | recommend | configure | doctor | probe | pull | prompt',
       hooks: 'doctor | enable | disable',
       mcp: 'serve',
@@ -56,21 +56,21 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   const args = flags(argv);
   const [group, action] = args._;
   const paths = services.paths || resolveV9Paths();
-  const core = services.core || createV9Core({ paths });
-  const pluginRoot = services.pluginRoot || path.resolve(__dirname, '..', '..');
   const projectRoot = args.project || process.cwd();
+  const core = services.core || createV9Core({ paths, projectRoot });
+  const pluginRoot = services.pluginRoot || path.resolve(__dirname, '..', '..');
 
   if (!group || group === 'help' || args.help === true) return io.json(commandGuide());
   if (group === 'status') return io.json(core.status());
   if (group === 'doctor') {
     const v9 = core.status();
-    const hooks = doctorHooks({ projectRoot, pluginRoot });
+    const hooks = doctorHooks({ projectRoot, pluginRoot, runtimePaths: core.paths });
     const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
     const nodeSupported = nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 5);
     const checks = [
       { id: 'node-runtime', status: nodeSupported ? 'passed' : 'blocked', observed: process.versions.node, required: '>=22.5', remediation: nodeSupported ? null : 'Install Node.js 22.5 or newer.' },
       { id: 'v9-core', status: v9.enabled ? 'passed' : 'blocked', observed: { version: v9.version, enabled: v9.enabled }, remediation: v9.enabled ? null : 'Set config/brain-lite-v9.json enabled=true.' },
-      { id: 'project-hooks', status: hooks.valid ? (hooks.enabled ? 'passed' : 'optional') : 'blocked', observed: { enabled: hooks.enabled, valid: hooks.valid, owner: hooks.owner, eventsComplete: hooks.eventsComplete, fingerprintMatch: hooks.fingerprintMatch, foreignHookCount: hooks.foreignHookCount, path: hooks.path }, remediation: hooks.valid ? (hooks.enabled ? null : 'Optional: run brain hooks enable --project "$PWD" --confirm --json.') : 'Repair the manifest or re-enable Codex Brain hooks to restore owned events and fingerprint.' },
+      { id: 'project-hooks', status: hooks.valid ? (hooks.enabled ? 'passed' : 'optional') : 'blocked', observed: { enabled: hooks.enabled, valid: hooks.valid, owner: hooks.owner, eventsComplete: hooks.eventsComplete, fingerprintMatch: hooks.fingerprintMatch, runtimeHealthy: hooks.runtimeHealthy, runtimeStorageWritable: hooks.runtimeStorageWritable, foreignHookCount: hooks.foreignHookCount, path: hooks.path }, remediation: hooks.valid ? (hooks.enabled ? null : 'Optional: run brain hooks enable --project "$PWD" --confirm --json.') : 'Repair the manifest, runtime storage permissions, or re-enable Codex Brain hooks to restore owned events and fingerprint.' },
       { id: 'mcp-probe', status: 'available', command: 'npm run mcp:probe', remediation: 'Run from the installed package checkout to exercise the stdio MCP boundary.' },
     ];
     return io.json({
@@ -238,6 +238,10 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   if (group === 'memory' && action === 'backup-inspect') return args.input ? io.json(core.encryptedMemoryBackup.inspect(args.input)) : io.error('input is required', EXIT.usage);
   if (group === 'memory' && action === 'backup-verify') return args.input ? io.json(await core.encryptedMemoryBackup.verify(args.input)) : io.error('input is required', EXIT.usage);
   if (group === 'memory' && action === 'backup-compare') return args.input ? io.json(await core.encryptedMemoryBackup.compare(args.input)) : io.error('input is required', EXIT.usage);
+  if (group === 'memory' && action === 'recover') {
+    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
+    return io.json(core.encryptedMemoryBackup.recover({ confirm: true }));
+  }
   if (group === 'memory' && action === 'restore-encrypted') {
     if (!args.input) return io.error('input is required', EXIT.usage);
     if (!args['confirm-restore']) return io.error('confirm-restore is required', EXIT.blocked);

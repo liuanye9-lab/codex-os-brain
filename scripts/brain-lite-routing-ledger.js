@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { createMacKeychainEvidenceKeyProvider } = require('./v9/evidence-seal');
 
 const EVENT_FIELDS = new Set([
   'schemaVersion',
@@ -33,6 +34,7 @@ const EVENT_FIELDS = new Set([
   'verificationDurationMs',
   'exitStatus',
   'verifierCommandHash',
+  'verifierPolicyHash',
   'verifierPassed',
   'verifierCount',
   'verifierKinds',
@@ -182,21 +184,50 @@ function computeEventId(event = {}) {
   return `evt_${hashText(JSON.stringify(identity)).slice(0, 24)}`;
 }
 
-function appendEvent(filePath, event) {
+function defaultLedgerIntegrityKey({ create = false } = {}) {
+  if (process.env.CODEX_BRAIN_EVIDENCE_KEY_B64) {
+    const key = Buffer.from(process.env.CODEX_BRAIN_EVIDENCE_KEY_B64, 'base64');
+    return key.length >= 32 ? key : null;
+  }
+  if (process.platform === 'darwin' && !process.env.NODE_TEST_CONTEXT) {
+    return createMacKeychainEvidenceKeyProvider().get({ create });
+  }
+  return null;
+}
+
+function ledgerMac(key, eventHash, previousEventHash) {
+  const macKey = crypto.hkdfSync('sha256', key, Buffer.alloc(0), Buffer.from('codex-brain-v9-routing-ledger'), 32);
+  return crypto.createHmac('sha256', macKey)
+    .update(`${previousEventHash}\0${eventHash}`)
+    .digest('base64url');
+}
+
+function appendEvent(filePath, event, options = {}) {
   const target = path.resolve(filePath);
   fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
   const sanitized = sanitizeEvent(event);
+  let existingEvents = [];
   if (fs.existsSync(target)) {
-    const existing = readEvents(target).find((item) => item.eventId === sanitized.eventId);
+    existingEvents = readEvents(target, options);
+    const existing = existingEvents.find((item) => item.eventId === sanitized.eventId);
     if (existing) return existing;
   }
-  fs.appendFileSync(target, `${JSON.stringify(sanitized)}\n`, { encoding: 'utf8', mode: 0o600 });
-  return sanitized;
+  const previous = existingEvents.at(-1);
+  const previousEventHash = previous
+    ? (previous.eventHash || hashText(JSON.stringify(previous)))
+    : 'genesis';
+  const integrityKey = options.integrityKey || defaultLedgerIntegrityKey({ create: true });
+  const chained = { ...sanitized, integrityVersion: integrityKey ? 2 : 1, previousEventHash };
+  chained.eventHash = hashText(JSON.stringify(chained));
+  if (integrityKey) chained.ledgerMac = ledgerMac(integrityKey, chained.eventHash, previousEventHash);
+  fs.appendFileSync(target, `${JSON.stringify(chained)}\n`, { encoding: 'utf8', mode: 0o600 });
+  return chained;
 }
 
-function readEvents(filePath) {
+function readEvents(filePath, options = {}) {
   if (!fs.existsSync(filePath)) return [];
-  return fs.readFileSync(filePath, 'utf8')
+  const integrityKey = options.integrityKey || defaultLedgerIntegrityKey({ create: false });
+  const events = fs.readFileSync(filePath, 'utf8')
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line, index) => {
@@ -206,6 +237,36 @@ function readEvents(filePath) {
         throw new Error(`Invalid ledger JSON on line ${index + 1}: ${error.message}`);
       }
     });
+  let previous = null;
+  events.forEach((event, index) => {
+    if (integrityKey && event.integrityVersion !== 2) {
+      throw new Error(`Unsigned ledger event on line ${index + 1}`);
+    }
+    if (![1, 2].includes(event.integrityVersion)) {
+      previous = event;
+      return;
+    }
+    const expectedPrevious = previous
+      ? (previous.eventHash || hashText(JSON.stringify(previous)))
+      : 'genesis';
+    if (event.previousEventHash !== expectedPrevious) throw new Error(`Invalid ledger chain on line ${index + 1}`);
+    const copy = { ...event };
+    delete copy.eventHash;
+    delete copy.ledgerMac;
+    if (event.eventHash !== hashText(JSON.stringify(copy))) throw new Error(`Invalid ledger hash on line ${index + 1}`);
+    if (event.integrityVersion === 2) {
+      if (!integrityKey) throw new Error(`Ledger integrity key unavailable on line ${index + 1}`);
+      const expected = Buffer.from(ledgerMac(integrityKey, event.eventHash, event.previousEventHash), 'base64url');
+      let received;
+      try { received = Buffer.from(event.ledgerMac || '', 'base64url'); }
+      catch { throw new Error(`Invalid ledger MAC on line ${index + 1}`); }
+      if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) {
+        throw new Error(`Invalid ledger MAC on line ${index + 1}`);
+      }
+    }
+    previous = event;
+  });
+  return events;
 }
 
 function routeDescriptor(routeId, sample) {
@@ -243,8 +304,9 @@ function attemptKey(event, index = 0) {
 function isVerifierBackedOutcome(event) {
   return event?.receiptVersion === 1
     && event.phase === 'verified'
-    && event.outcomeSource === 'independent-verifier'
-    && event.verifierAuthority === 'mother-agent'
+    && event.outcomeSource === 'pinned-local-verifier'
+    && event.verifierAuthority === 'codex-brain-policy-v1'
+    && typeof event.verifierPolicyHash === 'string'
     && typeof event.verifierPassed === 'boolean'
     && typeof event.finalDelivered === 'boolean';
 }
@@ -482,10 +544,12 @@ if (require.main === module) {
 module.exports = {
   DEFAULT_ROUTE_RANK,
   appendEvent,
+  defaultLedgerIntegrityKey,
   collectionQuality,
   computeEventId,
   derivePolicyState,
   hashText,
+  ledgerMac,
   isVerifierBackedOutcome,
   minimizePath,
   readEvents,

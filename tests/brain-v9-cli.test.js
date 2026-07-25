@@ -72,4 +72,7 @@ test('encrypted restore and recovery mutation commands require explicit confirma
   const recoveryImport = run(['memory', 'recovery-import', '--json'], home);
   assert.equal(recoveryImport.status, 3);
   assert.match(recoveryImport.stderr, /confirm/);
+  const recover = run(['memory', 'recover', '--json'], home);
+  assert.equal(recover.status, 3);
+  assert.match(recover.stderr, /confirm/);
 });

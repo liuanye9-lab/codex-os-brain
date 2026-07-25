@@ -19,7 +19,12 @@ function classifyFailure(input = {}) {
   else if (/json|schema|malformed|invalid argument/.test(`${type} ${message}`)) failureClass = 'malformed_tool';
   else if (/stale|conflict|changed since/.test(`${type} ${message}`)) { failureClass = 'stale_state'; retryable = true; }
   else if (/assert|test fail|typeerror|referenceerror|implementation/.test(`${type} ${message}`)) failureClass = 'implementation';
-  const failure = { class: failureClass, retryable, code: String(input.code || input.errorType || '') };
+  const failure = {
+    class: failureClass,
+    retryable,
+    code: String(input.code || input.errorType || ''),
+    operation: String(input.operation || ''),
+  };
   return { ...failure, signature: failureSignature({ ...failure, operation: input.operation }) };
 }
 
@@ -30,15 +35,27 @@ function advanceCircuit(state = {}, failure, circuitConfig = {}) {
   let status = 'closed';
   if (consecutive >= openAfter) status = 'open';
   else if (consecutive >= warningAfter) status = 'warning';
-  return { signature: failure.signature, consecutive, status };
+  return { signature: failure.signature, operation: failure.operation || null, consecutive, status };
 }
 
 function resetCircuit() {
   return { signature: null, consecutive: 0, status: 'closed' };
 }
 
+function resetCircuitForOperation(state = {}, operation) {
+  if (!operation || state.operation !== String(operation)) return state;
+  return resetCircuit();
+}
+
 function shouldRetry(failure, state) {
   return failure.retryable === true && state.status !== 'open' && failure.class !== 'security_policy';
 }
 
-module.exports = { advanceCircuit, classifyFailure, failureSignature, resetCircuit, shouldRetry };
+module.exports = {
+  advanceCircuit,
+  classifyFailure,
+  failureSignature,
+  resetCircuit,
+  resetCircuitForOperation,
+  shouldRetry,
+};

@@ -3,6 +3,13 @@ const { blockDecision } = require('./input');
 
 async function handleStop(input, core) {
   if (!input.completionClaim) return {};
+  const taskState = core.contracts?.state?.();
+  if (taskState?.expected && (!taskState.contract || taskState.missing || taskState.corrupt)) {
+    return blockDecision(
+      'active_contract_missing',
+      'Completion paused because an active task guard exists but its signed contract is missing or corrupt.',
+    );
+  }
   if (core.contracts?.active && !core.contracts.active()) return {};
 
   // Prefer live re-verify when executable specs exist; fall back to stored harness evaluation.

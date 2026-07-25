@@ -17,7 +17,8 @@ async function main() {
   catch { process.stderr.write('invalid hook JSON\n'); process.exitCode = 2; return; }
 
   const config = readV9Config(process.env.BRAIN_V9_CONFIG);
-  const core = createV9Core({ config });
+  const projectRoot = input.project_root || input.projectRoot || input.cwd || process.cwd();
+  const core = createV9Core({ config, projectRoot });
   const hostName = process.env.BRAIN_HOST || input.host || 'codex';
   const adapter = getHostAdapter(hostName);
 
@@ -37,7 +38,18 @@ async function main() {
     enabled,
     handlers,
     failClosedEvents: new Set(['PreToolUse', 'Stop']),
-    auditInternalError() {},
+    auditInternalError(event, error) {
+      const reasonCode = String(error?.code || 'hook_internal_error').slice(0, 80);
+      try {
+        core.events.append({
+          kind: 'checkpoint',
+          status: 'failed',
+          reasonCode,
+        });
+      } catch {
+        process.stderr.write(`brain_hook_degraded:${event}:${reasonCode}\n`);
+      }
+    },
   }));
   process.stdout.write(`${JSON.stringify(output)}\n`);
 }

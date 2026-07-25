@@ -8,7 +8,9 @@ const { resolveV9Paths } = require('./paths');
 const SCHEMA_VERSION = 1;
 
 function openMemoryDatabase({ paths = resolveV9Paths(), dbPath = paths.memoryDbPath, readonly = false, ignoreRestoreLock = false } = {}) {
-  if (!ignoreRestoreLock && fs.existsSync(paths.memoryRestoreLockPath)) throw new Error('memory_restore_in_progress');
+  if (!ignoreRestoreLock && fs.existsSync(paths.memoryRestoreLockPath)) {
+    throw new Error('memory_restore_in_progress_run_brain_memory_recover');
+  }
   fs.mkdirSync(path.dirname(dbPath), { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(dbPath, { readOnly: readonly, enableForeignKeyConstraints: true });
   db.exec('PRAGMA busy_timeout=5000');
@@ -195,7 +197,7 @@ function migrate(db) {
     db.prepare('INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)').run(SCHEMA_VERSION, new Date().toISOString());
     db.exec('COMMIT');
   } catch (error) {
-    db.exec('ROLLBACK');
+    try { db.exec('ROLLBACK'); } catch { /* preserve the original transaction error */ }
     throw error;
   }
   return SCHEMA_VERSION;
@@ -208,7 +210,7 @@ function transaction(db, fn) {
     db.exec('COMMIT');
     return value;
   } catch (error) {
-    db.exec('ROLLBACK');
+    try { db.exec('ROLLBACK'); } catch { /* preserve the original transaction error */ }
     throw error;
   }
 }

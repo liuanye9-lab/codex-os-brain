@@ -11,3 +11,11 @@ test('source test contract discovers every test family instead of using a whitel
   assert.ok(files.includes('tests/brain-lite-routing-ledger.test.js'));
   assert.ok(files.includes('tests/public-entrypoint.test.js'));
 });
+
+test('release verification is unconditional in the package check contract', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const source = fs.readFileSync(path.resolve(__dirname, '../scripts/check-contract.js'), 'utf8');
+  assert.match(source, /verify-v9-release\.js/);
+  assert.doesNotMatch(source, /existsSync.+brain-v9-release/s);
+});

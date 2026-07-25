@@ -11,6 +11,7 @@ const { resolveV9Paths } = require('../scripts/v9/paths');
 const { evaluateAction } = require('../scripts/v9/policy');
 const { getHostAdapter, listHosts } = require('../scripts/v9/hosts');
 const { handleStop } = require('../scripts/v9/hooks/stop');
+const { handleSession } = require('../scripts/v9/hooks/session');
 const { createTaskContract } = require('../scripts/v9/task-contract');
 
 function tempCore() {
@@ -55,6 +56,34 @@ test('P0: direct edits to active.json cannot forge completion', () => {
   fs.writeFileSync(path.join(core.paths.tasksRoot, 'active.json'), `${JSON.stringify(contract)}\n`);
   assert.equal(core.verification.evaluateActive().status, 'partial');
   assert.deepEqual(core.verification.evaluateActive().unverified, ['tests']);
+});
+
+test('P0: deleting active.json does not remove the Stop gate', async () => {
+  const { core } = tempCore();
+  core.contracts.create({
+    taskId: 'p0-delete',
+    objective: 'guard deletion',
+    criteria: [{ id: 'tests', required: true, verifier: 'test_runner', verifierSpec: { command: 'npm test' } }],
+  });
+  fs.unlinkSync(path.join(core.paths.tasksRoot, 'active.json'));
+  const stop = await handleStop({ event: 'Stop', completionClaim: true }, core);
+  assert.equal(stop.decision, 'block');
+  assert.equal(stop.reason_code, 'active_contract_missing');
+});
+
+test('P0: tasks and memory are isolated by project root', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-project-scope-'));
+  const basePaths = resolveV9Paths({ CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: path.join(home, 'state') });
+  const projectA = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-project-a-'));
+  const projectB = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-project-b-'));
+  const a = createV9Core({ paths: basePaths, projectRoot: projectA });
+  const b = createV9Core({ paths: basePaths, projectRoot: projectB });
+  a.contracts.create({ taskId: 'alpha', objective: 'alpha billing key migration', criteria: [{ id: 'tests', verifier: 'test_runner', verifierSpec: { command: 'npm test' } }] });
+  a.memory.createMemory({ memoryId: 'alpha-memory', content: 'alpha only' });
+  assert.equal(b.contracts.active(), null);
+  assert.equal(b.memory.getMemory('alpha-memory'), null);
+  assert.notEqual(a.paths.tasksRoot, b.paths.tasksRoot);
+  assert.deepEqual(await handleSession({ event: 'SessionStart', projectRoot: projectB }, b), {});
 });
 
 test('P1: handoff init creates backlog progress smoke', () => {

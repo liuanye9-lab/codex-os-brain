@@ -7,6 +7,52 @@ function taskId(input) {
   return `task_${crypto.createHash('sha256').update(String(input.objective || '')).digest('hex').slice(0, 16)}`;
 }
 
+function canonicalContractSpec(contract = {}) {
+  return JSON.stringify({
+    schemaVersion: Number(contract.schemaVersion || 9),
+    taskId: contract.taskId || null,
+    objective: String(contract.objective || ''),
+    lifecycle: contract.lifecycle || 'active',
+    constraints: (contract.constraints || []).map(item => ({
+      id: item.id || null,
+      text: item.text || null,
+      explicit: item.explicit === true,
+      source: item.source || null,
+    })),
+    scope: {
+      allowed: [...(contract.scope?.allowed || [])],
+      forbidden: [...(contract.scope?.forbidden || [])],
+    },
+    criteria: (contract.criteria || []).map(item => ({
+      id: item.id || null,
+      required: item.required !== false,
+      verifier: item.verifier || null,
+      verifierSpec: item.verifierSpec || null,
+    })),
+    risk: contract.risk || 'low',
+    externalWrite: contract.externalWrite === true,
+  });
+}
+
+function contractSpecHash(contract) {
+  return crypto.createHash('sha256').update(canonicalContractSpec(contract)).digest('hex');
+}
+
+function sealTaskContract(contract, evidenceSealer) {
+  if (!evidenceSealer?.sealContract) throw new Error('contract_sealer_required');
+  const specHash = contractSpecHash(contract);
+  const sealedAt = new Date().toISOString();
+  return {
+    ...contract,
+    trust: {
+      version: 1,
+      specHash,
+      sealedAt,
+      seal: evidenceSealer.sealContract(contract, { specHash, sealedAt }),
+    },
+  };
+}
+
 function createTaskContract(input = {}) {
   return {
     schemaVersion: 9,
@@ -59,4 +105,10 @@ function applyContractPatch(contract, patch = {}) {
   };
 }
 
-module.exports = { applyContractPatch, createTaskContract };
+module.exports = {
+  applyContractPatch,
+  canonicalContractSpec,
+  contractSpecHash,
+  createTaskContract,
+  sealTaskContract,
+};

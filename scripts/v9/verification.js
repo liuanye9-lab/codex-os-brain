@@ -56,7 +56,29 @@ function claimEvidence(contract, criterionId, evidenceRef) {
 }
 
 function evaluateCompletion(contract, options = {}) {
-  const requireHarness = options.requireHarness !== false;
+  const requireHarness = true;
+  const contractTrusted = typeof options.verifyContract === 'function'
+    && options.verifyContract(contract);
+  if (!contractTrusted) {
+    return {
+      status: 'partial',
+      missing: [],
+      failed: ['contract_integrity'],
+      unverified: [],
+      requireHarness,
+      lastVerifiedAt: contract.lastVerifiedAt || null,
+    };
+  }
+  if (!Array.isArray(contract.criteria) || contract.criteria.length === 0) {
+    return {
+      status: 'partial',
+      missing: ['criteria_required'],
+      failed: [],
+      unverified: [],
+      requireHarness,
+      lastVerifiedAt: contract.lastVerifiedAt || null,
+    };
+  }
   const required = contract.criteria.filter(item => item.required !== false);
   const failed = [];
   const unverified = [];
@@ -66,10 +88,10 @@ function evaluateCompletion(contract, options = {}) {
       ev.harnessVerified
       && ev.status === 'passed'
       && typeof options.verifyEvidence === 'function'
-      && options.verifyEvidence(contract.taskId, item.id, ev)
+      && options.verifyEvidence(contract, item, ev)
     ));
     if (item.status === 'failed') failed.push(item.id);
-    else if (item.status === 'waived') continue;
+    else if (item.status === 'waived') unverified.push(item.id);
     else if (item.status === 'passed' && harnessOk) continue;
     else if (item.status === 'passed' && !harnessOk) unverified.push(item.id);
     else if (item.status === 'unverified') unverified.push(item.id);
@@ -89,6 +111,11 @@ function evaluateCompletion(contract, options = {}) {
 function verifyCriterion(contract, criterionId, spec = {}, context = {}) {
   const criterion = contract.criteria.find(item => item.id === criterionId);
   if (!criterion) throw new Error('criterion_not_found');
+  if (!context.evidenceSealer?.verifyContract?.(contract)) throw new Error('contract_integrity_invalid');
+  for (const [key, value] of Object.entries(spec || {})) {
+    const expected = criterion.verifierSpec?.[key];
+    if (JSON.stringify(value) !== JSON.stringify(expected)) throw new Error('verifier_spec_mismatch');
+  }
   const result = runVerifier(criterion, spec, context);
   const evidenceId = `ev_${crypto.randomBytes(8).toString('hex')}`;
   const verifiedAt = new Date().toISOString();
@@ -102,7 +129,7 @@ function verifyCriterion(contract, criterionId, spec = {}, context = {}) {
     provenance: result.provenance,
   };
   if (!context.evidenceSealer) throw new Error('evidence_sealer_required');
-  evidence.seal = context.evidenceSealer.seal(contract.taskId, criterionId, evidence);
+  evidence.seal = context.evidenceSealer.seal(contract, criterion, evidence);
   const next = attachEvidence(contract, criterionId, evidence);
   next.lastVerifiedAt = verifiedAt;
   return { contract: next, result: { criterionId, evidenceId, ...result, verifiedAt } };
@@ -129,8 +156,8 @@ function verifyActive(contract, options = {}) {
   }
   current.lastVerifiedAt = new Date().toISOString();
   const evaluation = evaluateCompletion(current, {
-    requireHarness: true,
     verifyEvidence: options.evidenceSealer?.verify,
+    verifyContract: options.evidenceSealer?.verifyContract,
   });
   return { contract: current, evaluation, results };
 }

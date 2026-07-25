@@ -82,9 +82,13 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
     return { duplicate: false, eventId };
   }
 
-  function priorIdempotentMemory(db, idempotencyKey) {
+  function priorIdempotentMemory(db, idempotencyKey, expected = {}) {
     if (!idempotencyKey) return null;
-    const event = db.prepare('SELECT memory_id FROM memory_events WHERE idempotency_key=?').get(idempotencyKey);
+    const event = db.prepare('SELECT memory_id, action FROM memory_events WHERE idempotency_key=?').get(idempotencyKey);
+    if (event && (
+      (expected.memoryId && event.memory_id !== expected.memoryId)
+      || (expected.action && event.action !== expected.action)
+    )) throw coded('idempotency_key_conflict');
     return event?.memory_id ? getMemoryFrom(db, event.memory_id) : null;
   }
 
@@ -95,7 +99,7 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
 
   function createMemory(input = {}) {
     return using(db => transaction(db, () => {
-      const prior = priorIdempotentMemory(db, input.idempotencyKey);
+      const prior = priorIdempotentMemory(db, input.idempotencyKey, { memoryId: input.memoryId, action: 'create' });
       if (prior) return prior;
       const content = String(input.content || '').trim();
       if (!content) throw coded('content_required');
@@ -118,7 +122,7 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
 
   function updateMemory(memoryId, patch = {}) {
     return using(db => transaction(db, () => {
-      const prior = priorIdempotentMemory(db, patch.idempotencyKey);
+      const prior = priorIdempotentMemory(db, patch.idempotencyKey, { memoryId, action: 'update' });
       if (prior) return prior;
       const current = getMemoryFrom(db, memoryId);
       if (!current) throw coded('memory_not_found');
@@ -140,7 +144,7 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
 
   function transitionMemory(memoryId, targetStatus, input = {}) {
     return using(db => transaction(db, () => {
-      const prior = priorIdempotentMemory(db, input.idempotencyKey);
+      const prior = priorIdempotentMemory(db, input.idempotencyKey, { memoryId, action: 'transition' });
       if (prior) return prior;
       const current = getMemoryFrom(db, memoryId);
       if (!current) throw coded('memory_not_found');
@@ -157,7 +161,7 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
 
   function deleteMemory(memoryId, input = {}) {
     return using(db => transaction(db, () => {
-      const prior = priorIdempotentMemory(db, input.idempotencyKey);
+      const prior = priorIdempotentMemory(db, input.idempotencyKey, { memoryId, action: 'delete' });
       if (prior) return prior;
       const current = getMemoryFrom(db, memoryId);
       if (!current) throw coded('memory_not_found');
@@ -175,41 +179,68 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
     }));
   }
 
+  function importDocumentFrom(db, input = {}) {
+    const content = String(input.content || '').trim();
+    if (!content || !input.sourceUri) throw coded('source_document_required');
+    const contentHash = input.contentHash || hash(content);
+    const existing = db.prepare('SELECT * FROM source_documents WHERE content_hash=?').get(contentHash);
+    if (existing) return { imported: false, documentId: existing.document_id, contentHash };
+    const documentId = input.documentId || id('doc');
+    const at = now();
+    db.prepare('INSERT INTO source_documents(document_id,source_uri,title,content,content_hash,metadata_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)')
+      .run(documentId, input.sourceUri, input.title || null, content, contentHash, stableJson(input.metadata), at, at);
+    indexOwner(db, 'document', documentId, input.title, content);
+    if (input.embedding) putEmbeddingFrom(db, { ownerType: 'document', ownerId: documentId, vector: input.embedding, model: input.model || 'unknown', fingerprint: input.fingerprint || 'unknown' });
+    return { imported: true, documentId, contentHash };
+  }
+
   function importDocument(input = {}) {
-    return using(db => transaction(db, () => {
-      const content = String(input.content || '').trim();
-      if (!content || !input.sourceUri) throw coded('source_document_required');
-      const contentHash = input.contentHash || hash(content);
-      const existing = db.prepare('SELECT * FROM source_documents WHERE content_hash=?').get(contentHash);
-      if (existing) return { imported: false, documentId: existing.document_id, contentHash };
-      const documentId = input.documentId || id('doc');
-      const at = now();
-      db.prepare('INSERT INTO source_documents(document_id,source_uri,title,content,content_hash,metadata_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)')
-        .run(documentId, input.sourceUri, input.title || null, content, contentHash, stableJson(input.metadata), at, at);
-      indexOwner(db, 'document', documentId, input.title, content);
-      if (input.embedding) putEmbeddingFrom(db, { ownerType: 'document', ownerId: documentId, vector: input.embedding, model: input.model || 'unknown', fingerprint: input.fingerprint || 'unknown' });
-      return { imported: true, documentId, contentHash };
-    }));
+    return using(db => transaction(db, () => importDocumentFrom(db, input)));
   }
 
   function importFlatIndex(filePath) {
     const payload = JSON.parse(fs.readFileSync(path.resolve(filePath), 'utf8'));
     const chunks = Array.isArray(payload.chunks) ? payload.chunks : [];
-    const report = { source: path.resolve(filePath), scanned: chunks.length, imported: 0, duplicates: 0, vectors: 0, failed: 0 };
-    for (const chunk of chunks) {
+    return using(db => {
+      const report = {
+        source: path.resolve(filePath),
+        scanned: chunks.length,
+        imported: 0,
+        duplicates: 0,
+        vectors: 0,
+        failed: 0,
+        failures: [],
+        committed: false,
+      };
+      db.exec('BEGIN IMMEDIATE');
       try {
-        const result = importDocument({
-          sourceUri: chunk.source || chunk.path || payload.source || 'legacy-index', title: chunk.heading || chunk.title || null,
-          content: chunk.content || chunk.text, contentHash: chunk.contentHash || chunk.hash,
-          metadata: { legacyChunkId: chunk.id || chunk.chunkId || null, modifiedAt: chunk.modifiedAt || null },
-          embedding: Array.isArray(chunk.embedding) ? chunk.embedding : null, model: payload.model || payload.embeddingModel || 'legacy',
-          fingerprint: payload.embeddingFingerprint || payload.fingerprint || 'legacy',
+        chunks.forEach((chunk, index) => {
+          try {
+            const result = importDocumentFrom(db, {
+              sourceUri: chunk.source || chunk.path || payload.source || 'legacy-index', title: chunk.heading || chunk.title || null,
+              content: chunk.content || chunk.text, contentHash: chunk.contentHash || chunk.hash,
+              metadata: { legacyChunkId: chunk.id || chunk.chunkId || null, modifiedAt: chunk.modifiedAt || null },
+              embedding: Array.isArray(chunk.embedding) ? chunk.embedding : null, model: payload.model || payload.embeddingModel || 'legacy',
+              fingerprint: payload.embeddingFingerprint || payload.fingerprint || 'legacy',
+            });
+            if (result.imported) report.imported += 1; else report.duplicates += 1;
+            if (Array.isArray(chunk.embedding) && chunk.embedding.length) report.vectors += 1;
+          } catch (error) {
+            report.failed += 1;
+            report.failures.push({ index, code: String(error.code || error.message).slice(0, 120) });
+          }
         });
-        if (result.imported) report.imported += 1; else report.duplicates += 1;
-        if (Array.isArray(chunk.embedding) && chunk.embedding.length) report.vectors += 1;
-      } catch { report.failed += 1; }
-    }
-    return report;
+        if (report.failed > 0) {
+          db.exec('ROLLBACK');
+          return { ...report, imported: 0, vectors: 0, rolledBack: true };
+        }
+        db.exec('COMMIT');
+        return { ...report, committed: true, rolledBack: false };
+      } catch (error) {
+        try { db.exec('ROLLBACK'); } catch {}
+        throw error;
+      }
+    });
   }
 
   function putEmbeddingFrom(db, input) {

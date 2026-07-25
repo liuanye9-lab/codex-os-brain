@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { BACKUP_FILE, STATE_FILE, doctorHooks, setProjectHooks } = require('../scripts/v9/hook-config');
+const { BACKUP_FILE, STATE_FILE, buildProjectHookConfig, doctorHooks, setProjectHooks } = require('../scripts/v9/hook-config');
 
 const root = path.resolve(__dirname, '..');
 
@@ -93,4 +93,62 @@ test('doctor distinguishes foreign valid hooks from an owned complete installati
   assert.equal(report.valid, false);
   assert.equal(report.fingerprintMatch, false);
   assert.deepEqual(report.mismatchedEvents, ['Stop']);
+});
+
+test('adopts committed owned hooks without backing them up as the user original', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-hook-adopt-'));
+  const codex = path.join(projectRoot, '.codex');
+  fs.mkdirSync(codex);
+  fs.writeFileSync(path.join(codex, 'hooks.json'), `${JSON.stringify(buildProjectHookConfig(root), null, 2)}\n`);
+
+  const enabled = setProjectHooks({ projectRoot, pluginRoot: root, enabled: true, confirm: true });
+  assert.equal(enabled.enabled, true);
+  const disabled = setProjectHooks({ projectRoot, pluginRoot: root, enabled: false, confirm: true });
+  assert.equal(disabled.enabled, false);
+  assert.equal(fs.existsSync(path.join(codex, 'hooks.json')), false);
+  assert.equal(fs.existsSync(path.join(codex, STATE_FILE)), false);
+  assert.equal(fs.existsSync(path.join(codex, BACKUP_FILE)), false);
+});
+
+test('foreign hooks may omit optional timeout and original mode and symlink survive round trip', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-hook-symlink-'));
+  const codex = path.join(projectRoot, '.codex');
+  fs.mkdirSync(codex);
+  const target = path.join(projectRoot, 'shared-hooks.json');
+  const original = '{"version":1,"hooks":{"Stop":[{"hooks":[{"type":"command","command":"node foreign.js"}]}]}}\n';
+  fs.writeFileSync(target, original, { mode: 0o644 });
+  fs.symlinkSync(path.relative(codex, target), path.join(codex, 'hooks.json'));
+
+  const enabled = setProjectHooks({ projectRoot, pluginRoot: root, enabled: true, confirm: true });
+  assert.equal(enabled.valid, true);
+  assert.equal(fs.lstatSync(path.join(codex, 'hooks.json')).isSymbolicLink(), true);
+  assert.equal(fs.statSync(target).mode & 0o777, 0o644);
+  const disabled = setProjectHooks({ projectRoot, pluginRoot: root, enabled: false, confirm: true });
+  assert.equal(disabled.enabled, false);
+  assert.equal(fs.lstatSync(path.join(codex, 'hooks.json')).isSymbolicLink(), true);
+  assert.equal(fs.readFileSync(target, 'utf8'), original);
+  assert.equal(fs.statSync(target).mode & 0o777, 0o644);
+});
+
+test('doctor reports unwritable runtime event storage instead of claiming healthy hooks', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-hook-storage-'));
+  setProjectHooks({ projectRoot, pluginRoot: root, enabled: true, confirm: true });
+  const runtime = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-hook-runtime-'));
+  const runtimePaths = {
+    tasksRoot: path.join(runtime, 'tasks'),
+    eventsRoot: path.join(runtime, 'events'),
+    failuresRoot: path.join(runtime, 'failures'),
+  };
+  for (const directory of Object.values(runtimePaths)) fs.mkdirSync(directory, { recursive: true });
+  const events = path.join(runtimePaths.eventsRoot, 'events.jsonl');
+  fs.writeFileSync(events, '');
+  fs.chmodSync(events, 0o400);
+  try {
+    const report = doctorHooks({ projectRoot, pluginRoot: root, runtimePaths });
+    assert.equal(report.runtimeStorageWritable, false);
+    assert.equal(report.valid, false);
+    assert.deepEqual(report.runtimeStorageBlocked, [events]);
+  } finally {
+    fs.chmodSync(events, 0o600);
+  }
 });

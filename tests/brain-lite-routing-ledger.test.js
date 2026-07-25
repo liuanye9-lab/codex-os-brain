@@ -12,6 +12,7 @@ const {
   readEvents,
   sanitizeEvent,
   derivePolicyState,
+  hashText,
 } = require('../scripts/brain-lite-routing-ledger');
 
 function tempLedger() {
@@ -33,8 +34,9 @@ function event(overrides = {}) {
     verifiable: true,
     verifierPassed: true,
     phase: 'verified',
-    outcomeSource: 'independent-verifier',
-    verifierAuthority: 'mother-agent',
+    outcomeSource: 'pinned-local-verifier',
+    verifierAuthority: 'codex-brain-policy-v1',
+    verifierPolicyHash: 'a'.repeat(64),
     outcomeEligible: true,
     capabilityOutcome: 'pass',
     modelClaimedSuccess: true,
@@ -82,6 +84,53 @@ test('appendEvent is idempotent for the same trace phase and outcome', () => {
 
   assert.equal(first.eventId, second.eventId);
   assert.equal(readEvents(file).length, 1);
+});
+
+test('ledger hash chain rejects manual edits', () => {
+  const file = tempLedger();
+  appendEvent(file, event({ taskId: 'chain-1', taskFingerprint: 'chain-fp-1' }));
+  appendEvent(file, event({ taskId: 'chain-2', taskFingerprint: 'chain-fp-2' }));
+  const rows = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse);
+  rows[0].verifierPassed = false;
+  fs.writeFileSync(file, `${rows.map(row => JSON.stringify(row)).join('\n')}\n`);
+  assert.throws(() => readEvents(file), /Invalid ledger hash/);
+});
+
+test('ledger MAC rejects an attacker who recomputes the public hash chain', () => {
+  const file = tempLedger();
+  const integrityKey = Buffer.alloc(32, 3);
+  appendEvent(file, event({ taskId: 'mac-1', taskFingerprint: 'mac-fp-1' }), { integrityKey });
+  appendEvent(file, event({ taskId: 'mac-2', taskFingerprint: 'mac-fp-2' }), { integrityKey });
+
+  const rows = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse);
+  rows[0].verifierPassed = false;
+  const unhashed = { ...rows[0] };
+  delete unhashed.eventHash;
+  delete unhashed.ledgerMac;
+  rows[0].eventHash = hashText(JSON.stringify(unhashed));
+  rows[1].previousEventHash = rows[0].eventHash;
+  const secondUnhashed = { ...rows[1] };
+  delete secondUnhashed.eventHash;
+  delete secondUnhashed.ledgerMac;
+  rows[1].eventHash = hashText(JSON.stringify(secondUnhashed));
+  fs.writeFileSync(file, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`);
+
+  assert.throws(() => readEvents(file, { integrityKey }), /Invalid ledger MAC/);
+});
+
+test('ledger cannot bypass MAC verification by downgrading records to an unsigned format', () => {
+  const file = tempLedger();
+  const integrityKey = Buffer.alloc(32, 4);
+  appendEvent(file, event({ taskId: 'downgrade-1', taskFingerprint: 'downgrade-fp-1' }), { integrityKey });
+
+  const [row] = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse);
+  delete row.integrityVersion;
+  delete row.previousEventHash;
+  delete row.eventHash;
+  delete row.ledgerMac;
+  fs.writeFileSync(file, `${JSON.stringify(row)}\n`);
+
+  assert.throws(() => readEvents(file, { integrityKey }), /Unsigned ledger event/);
 });
 
 test('sanitizeEvent drops unknown nested content rather than recursively storing it', () => {

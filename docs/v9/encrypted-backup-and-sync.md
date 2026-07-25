@@ -70,6 +70,10 @@ brain memory backup-verify --input /path/to/incoming.cbmem
 brain memory backup-compare --input /path/to/incoming.cbmem
 ```
 
+`backup-inspect` is deliberately keyless and reports `authenticated: false`; every value appears under `claimedHeader` and is untrusted until `backup-verify` succeeds. New packages also carry a separate header MAC over the complete serialized header, including ciphertext size and digest.
+
+Packages created before the full-header MAC existed fail closed in this release. Keep the matching older runtime and key available for an offline, read-only verification and controlled migration; do not weaken the new verifier or edit a package header to make an old backup pass.
+
 Interpretation:
 
 | Status | Meaning | Automatic action |
@@ -87,6 +91,14 @@ There is no last-write-wins mode and no row-level automatic merge. SQLite files 
 ## Automatic restore transaction
 
 `brain memory restore-encrypted --input ... --confirm-restore` now executes the replacement automatically, but only for authenticated `fast_forward`. A new device additionally needs `--allow-uninitialized`, and the command refuses that path when local authoritative rows already exist.
+
+If a process crash leaves the restore lease or journal behind, run:
+
+```bash
+brain memory recover --confirm
+```
+
+The command proves the recorded owner is no longer running, replays or rolls back the journal, and removes orphan restore work. Successful restore and rollback paths remove plaintext snapshots, previous databases, WAL/SHM sidecars, and temporary directories.
 
 ```mermaid
 sequenceDiagram

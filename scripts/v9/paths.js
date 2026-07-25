@@ -2,6 +2,7 @@
 
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 function defaultLocalStateRoot(home, pathImpl = path) {
   if (process.platform === 'darwin') return pathImpl.join(home, 'Library', 'Application Support', 'CodexBrain');
@@ -42,4 +43,37 @@ function resolveV9Paths(env = process.env, options = {}) {
   };
 }
 
-module.exports = { defaultLocalStateRoot, resolveV9Paths };
+function projectScopeId(projectRoot, pathImpl = path) {
+  const normalized = pathImpl.resolve(projectRoot);
+  return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 24);
+}
+
+function scopeV9Paths(paths, projectRoot, pathImpl = path) {
+  const projectId = projectScopeId(projectRoot, pathImpl);
+  const projectRuntimeRoot = pathImpl.join(paths.runtimeRoot, 'projects', projectId);
+  const projectLocalRuntimeRoot = pathImpl.join(paths.localRuntimeRoot, 'projects', projectId);
+  return {
+    ...paths,
+    projectId,
+    projectRoot: pathImpl.resolve(projectRoot),
+    runtimeRoot: projectRuntimeRoot,
+    tasksRoot: pathImpl.join(projectRuntimeRoot, 'tasks'),
+    eventsRoot: pathImpl.join(projectRuntimeRoot, 'events'),
+    evidenceRoot: pathImpl.join(projectRuntimeRoot, 'evidence'),
+    failuresRoot: pathImpl.join(projectRuntimeRoot, 'failures'),
+    embeddingsRoot: pathImpl.join(projectRuntimeRoot, 'embeddings'),
+    embeddingConfigPath: pathImpl.join(projectRuntimeRoot, 'embeddings', 'config.json'),
+    localRuntimeRoot: projectLocalRuntimeRoot,
+    memoryRoot: pathImpl.join(projectLocalRuntimeRoot, 'memory'),
+    memoryDbPath: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'memory.sqlite3'),
+    memoryBackupRoot: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'backups'),
+    memoryEncryptedBackupRoot: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'encrypted-backups'),
+    memoryBackupStatePath: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'backup-state.json'),
+    memoryDeviceIdPath: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'device-id'),
+    memoryRestoreRoot: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'restore'),
+    memoryRestoreLockPath: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'restore.lock'),
+    memoryRestoreJournalPath: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'restore-journal.json'),
+  };
+}
+
+module.exports = { defaultLocalStateRoot, projectScopeId, resolveV9Paths, scopeV9Paths };

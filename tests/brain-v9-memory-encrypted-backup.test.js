@@ -34,13 +34,23 @@ test('encrypted backup round-trips through AES-GCM without exposing plaintext', 
   assert.equal(fs.readFileSync(created.target).includes(Buffer.from('encrypted content')), false);
   assert.equal(fs.statSync(created.target).mode & 0o777, 0o600);
   const inspected = inspectEncryptedMemoryBackup(created.target);
-  assert.equal(inspected.header.packageType, 'codex-brain-memory-backup');
-  assert.equal(inspected.header.generation, 1);
-  assert.equal('hostname' in inspected.header, false);
+  assert.equal(inspected.authenticated, false);
+  assert.match(inspected.warning, /untrusted/i);
+  assert.equal(inspected.claimedHeader.packageType, 'codex-brain-memory-backup');
+  assert.equal(inspected.claimedHeader.generation, 1);
+  assert.equal('hostname' in inspected.claimedHeader, false);
   const verified = await verifyEncryptedMemoryBackup({ input: created.target, paths, keyStore });
   assert.equal(verified.passed, true);
   assert.equal(verified.integrity.passed, true);
   assert.equal((await compareEncryptedMemoryBackup({ input: created.target, paths, keyStore })).comparison.status, 'same');
+});
+
+test('temporary plaintext snapshot directories are removed after backup and verify', async () => {
+  const { paths, keyStore } = fixture();
+  const created = await createEncryptedMemoryBackup({ paths, keyStore });
+  await verifyEncryptedMemoryBackup({ input: created.target, paths, keyStore });
+  const leftovers = fs.readdirSync(paths.memoryBackupRoot).filter(name => name.startsWith('.encrypting-') || name.startsWith('.verifying-'));
+  assert.deepEqual(leftovers, []);
 });
 
 test('tampering is rejected by authenticated encryption', async () => {

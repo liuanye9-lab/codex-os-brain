@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -10,6 +11,16 @@ const { appendTraceEvent } = require('./brain-lite-trace-v2');
 
 const FAILURE_ATTRIBUTIONS = new Set(['model-capability', 'pre-existing', 'verification-infrastructure', 'unknown']);
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'fish', 'dash']);
+const TRIVIAL_VERIFIERS = new Set(['true', 'false', 'echo', 'printf']);
+const VERIFIER_POLICY = Object.freeze({
+  version: 1,
+  expectedExitStatus: 0,
+  shellCommandsAllowed: false,
+  inlineNodeEvaluationAllowed: false,
+  trivialCommandsAllowed: false,
+  executableIdentity: 'realpath+sha256',
+});
+const VERIFIER_POLICY_HASH = crypto.createHash('sha256').update(JSON.stringify(VERIFIER_POLICY)).digest('hex');
 
 function coded(code) {
   const error = new Error(code);
@@ -36,20 +47,53 @@ function validateReceipt(input = {}) {
   return input;
 }
 
-function commandIdentity(check) {
-  return JSON.stringify({ command: path.basename(String(check.command || '')), args: stringArray(check.args) });
+function resolveExecutable(command, options = {}) {
+  const cwdInput = path.resolve(options.cwd || process.cwd());
+  const cwd = fs.existsSync(cwdInput) ? fs.realpathSync(cwdInput) : cwdInput;
+  const env = options.env || process.env;
+  const candidate = String(command);
+  const paths = path.isAbsolute(candidate) || candidate.includes(path.sep)
+    ? [path.resolve(cwd, candidate)]
+    : String(env.PATH || '').split(path.delimiter).filter(Boolean).map(directory => path.join(directory, candidate));
+  for (const target of paths) {
+    try {
+      fs.accessSync(target, fs.constants.X_OK);
+      const resolved = fs.realpathSync(target);
+      return { resolved, sha256: crypto.createHash('sha256').update(fs.readFileSync(resolved)).digest('hex') };
+    } catch { /* try next PATH entry */ }
+  }
+  throw coded('routing_verifier_command_unavailable');
+}
+
+function commandIdentity(executable, args) {
+  return JSON.stringify({ command: executable.resolved, executableSha256: executable.sha256, args });
 }
 
 function runVerifier(check, options = {}, dependencies = {}) {
   if (!check?.command || typeof check.command !== 'string') throw coded('routing_verifier_command_required');
   const args = stringArray(check.args);
-  const commandName = path.basename(check.command);
-  if (SHELLS.has(commandName) && args.includes('-c')) throw coded('routing_verifier_shell_string_rejected');
+  if (check.expectedExitStatus !== undefined && check.expectedExitStatus !== 0) throw coded('routing_verifier_expected_status_must_be_zero');
+  const executable = resolveExecutable(check.command, options);
+  const cwdInput = path.resolve(options.cwd || process.cwd());
+  const cwd = fs.existsSync(cwdInput) ? fs.realpathSync(cwdInput) : cwdInput;
+  const temporaryInput = path.resolve(os.tmpdir());
+  const temporaryRoot = fs.existsSync(temporaryInput) ? fs.realpathSync(temporaryInput) : temporaryInput;
+  if (executable.resolved !== process.execPath
+    && (within(cwd, executable.resolved) || within(temporaryRoot, executable.resolved))) {
+    throw coded('routing_verifier_untrusted_executable');
+  }
+  const commandName = path.basename(executable.resolved);
+  if (SHELLS.has(commandName) || commandName === 'env') throw coded('routing_verifier_shell_string_rejected');
+  if (TRIVIAL_VERIFIERS.has(commandName)) throw coded('routing_verifier_trivial_command_rejected');
+  if ((commandName === 'node' || executable.resolved === process.execPath)
+    && args.some(arg => ['-e', '--eval', '-p', '--print'].includes(arg))) {
+    throw coded('routing_verifier_inline_code_rejected');
+  }
   const timeoutMs = Math.min(Math.max(Number(check.timeoutMs || 300_000), 1_000), 1_200_000);
   const execute = dependencies.spawnSync || spawnSync;
   const startedAt = Date.now();
-  const result = execute(check.command, args, {
-    cwd: options.cwd,
+  const result = execute(executable.resolved, args, {
+    cwd,
     encoding: 'utf8',
     shell: false,
     timeout: timeoutMs,
@@ -58,12 +102,12 @@ function runVerifier(check, options = {}, dependencies = {}) {
   });
   const durationMs = Date.now() - startedAt;
   const exitStatus = Number.isInteger(result.status) ? result.status : null;
-  const expectedExitStatus = Number.isInteger(check.expectedExitStatus) ? check.expectedExitStatus : 0;
+  const expectedExitStatus = 0;
   const timedOut = result.error?.code === 'ETIMEDOUT' || result.signal === 'SIGTERM';
   const unavailable = result.error?.code === 'ENOENT';
   const stdoutHash = hashText(result.stdout || '');
   const stderrHash = hashText(result.stderr || '');
-  const verifierCommandHash = hashText(commandIdentity(check));
+  const verifierCommandHash = hashText(commandIdentity(executable, args));
   const passed = !timedOut && !unavailable && exitStatus === expectedExitStatus;
   const evidenceId = `ev_${hashText(JSON.stringify({ verifierCommandHash, exitStatus, stdoutHash, stderrHash })).slice(0, 20)}`;
   return {
@@ -139,8 +183,9 @@ function buildReceiptEvent(input, results, options = {}) {
     verifierKinds: [...new Set(results.map((item) => item.kind))].sort(),
     evidenceIds: results.map((item) => item.evidenceId),
     artifactHash: options.artifactHash || null,
-    outcomeSource: 'independent-verifier',
-    verifierAuthority: 'mother-agent',
+    outcomeSource: 'pinned-local-verifier',
+    verifierAuthority: 'codex-brain-policy-v1',
+    verifierPolicyHash: VERIFIER_POLICY_HASH,
     failureAttribution,
     capabilityOutcome,
     outcomeEligible,
@@ -238,9 +283,13 @@ if (require.main === module) {
 }
 
 module.exports = {
+  VERIFIER_POLICY,
+  VERIFIER_POLICY_HASH,
   buildReceiptEvent,
+  commandIdentity,
   hashArtifacts,
   recordVerifiedReceipt,
+  resolveExecutable,
   runVerifier,
   traceFromReceipt,
   validateReceipt,

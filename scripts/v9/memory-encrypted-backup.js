@@ -29,6 +29,25 @@ async function hashFile(file) {
 
 function keyFingerprint(key) { return `key_${sha256(key).slice(0, 24)}`; }
 
+function canonicalHeaderForMac(header) {
+  const copy = JSON.parse(JSON.stringify(header));
+  delete copy.headerAuth;
+  return JSON.stringify(copy);
+}
+
+function headerAuthentication(key, header) {
+  const macKey = crypto.hkdfSync('sha256', key, Buffer.alloc(0), Buffer.from('codex-brain-v9-backup-header'), 32);
+  return crypto.createHmac('sha256', macKey).update(canonicalHeaderForMac(header)).digest('base64url');
+}
+
+function verifyHeaderAuthentication(key, header) {
+  if (typeof header?.headerAuth !== 'string') return false;
+  const expected = Buffer.from(headerAuthentication(key, header), 'base64url');
+  let received;
+  try { received = Buffer.from(header.headerAuth, 'base64url'); } catch { return false; }
+  return received.length === expected.length && crypto.timingSafeEqual(received, expected);
+}
+
 function authenticatedHeader(header) {
   return {
     schemaVersion: header.schemaVersion,
@@ -179,6 +198,7 @@ async function encryptSnapshot({ plaintext, target, key, headerBase }) {
       ciphertextSha256: await hashFile(tempCiphertext),
       ciphertextBytes,
     };
+    header.headerAuth = headerAuthentication(key, header);
     const headerBytes = Buffer.from(JSON.stringify(header), 'utf8');
     if (headerBytes.length > HEADER_LIMIT) throw coded('backup_header_too_large');
     const prefix = Buffer.alloc(12); MAGIC.copy(prefix, 0); prefix.writeUInt32BE(headerBytes.length, 8);
@@ -194,6 +214,7 @@ async function encryptSnapshot({ plaintext, target, key, headerBase }) {
 
 async function decryptPackage({ input, output, key }) {
   const { header, ciphertextOffset } = readPackageHeader(input);
+  if (!verifyHeaderAuthentication(key, header)) throw coded('backup_header_authentication_mismatch');
   if (header.keyFingerprint !== keyFingerprint(key)) throw coded('backup_key_mismatch');
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(header.encryption.iv, 'base64'));
   decipher.setAuthTag(Buffer.from(header.encryption.tag, 'base64'));
@@ -244,8 +265,7 @@ async function createEncryptedMemoryBackup({ paths = resolveV9Paths(), keyStore 
     saveBackupState(paths, state);
     return { created: true, target, header, packageSha256: await hashFile(target), integrity: snapshot.integrity };
   } finally {
-    try { fs.unlinkSync(plaintext); } catch {}
-    try { fs.rmdirSync(workDir); } catch {}
+    try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
   }
 }
 
@@ -264,14 +284,19 @@ async function verifyEncryptedMemoryBackup({ input, paths = resolveV9Paths(), ke
       return { passed: true, input: path.resolve(input), header, packageSha256: await hashFile(input), integrity: report };
     } finally { db.close(); }
   } finally {
-    try { fs.unlinkSync(plaintext); } catch {}
-    try { fs.rmdirSync(workDir); } catch {}
+    try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
   }
 }
 
 function inspectEncryptedMemoryBackup(input) {
   const { header } = readPackageHeader(input);
-  return { input: path.resolve(input), header, encrypted: true };
+  return {
+    input: path.resolve(input),
+    encrypted: true,
+    authenticated: false,
+    warning: 'Header fields are untrusted claims until backup-verify succeeds with the key.',
+    claimedHeader: header,
+  };
 }
 
 async function compareEncryptedMemoryBackup({ input, paths = resolveV9Paths(), keyStore = createMacKeychainStore() } = {}) {
@@ -288,6 +313,8 @@ module.exports = {
   createMacKeychainStore,
   inspectEncryptedMemoryBackup,
   keyFingerprint,
+  headerAuthentication,
+  verifyHeaderAuthentication,
   authenticatedHeader,
   adoptBackupState,
   decryptPackage,

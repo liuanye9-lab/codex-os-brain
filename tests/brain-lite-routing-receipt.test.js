@@ -52,8 +52,9 @@ test('passing independent verifier creates an eligible ledger receipt and V8 tra
   assert.equal(result.event.verifierPassed, true);
   assert.equal(result.event.capabilityOutcome, 'pass');
   assert.equal(result.event.outcomeEligible, true);
-  assert.equal(result.event.outcomeSource, 'independent-verifier');
-  assert.equal(result.event.verifierAuthority, 'mother-agent');
+  assert.equal(result.event.outcomeSource, 'pinned-local-verifier');
+  assert.equal(result.event.verifierAuthority, 'codex-brain-policy-v1');
+  assert.match(result.event.verifierPolicyHash, /^[a-f0-9]{64}$/);
   assert.match(result.event.artifactHash, /^[a-f0-9]{64}$/);
   assert.equal(readEvents(files.ledger).length, 1);
   assert.equal(fs.readFileSync(files.ledger, 'utf8').includes('private test output'), false);
@@ -90,7 +91,17 @@ test('verifier timeout is infrastructure and never becomes a model-capability sa
 
 test('receipt rejects shell strings and artifacts outside the verifier cwd', () => {
   assert.throws(() => runVerifier({ command: 'bash', args: ['-c', 'npm test'] }, { cwd: '/tmp' }, { spawnSync }), /routing_verifier_shell_string_rejected/);
+  assert.throws(() => runVerifier({ command: '/bin/sh', args: ['script.sh'] }, { cwd: '/tmp' }, { spawnSync }), /routing_verifier_shell_string_rejected/);
+  assert.throws(() => runVerifier({ command: '/usr/bin/env', args: ['sh', '-c', 'npm test'] }, { cwd: '/tmp' }, { spawnSync }), /routing_verifier_shell_string_rejected/);
+  assert.throws(() => runVerifier({ command: '/usr/bin/true', expectedExitStatus: 0 }, { cwd: '/tmp' }, { spawnSync }), /routing_verifier_trivial_command_rejected/);
+  assert.throws(() => runVerifier({ command: 'node', args: ['--test'], expectedExitStatus: 1 }, { cwd: '/tmp' }, { spawnSync }), /routing_verifier_expected_status_must_be_zero/);
+  assert.throws(() => runVerifier({ command: 'node', args: ['-e', 'process.exit(0)'] }, { cwd: '/tmp' }, { spawnSync }), /routing_verifier_inline_code_rejected/);
   const files = workspace();
+  const fakeBin = path.join(files.root, 'fakebin');
+  fs.mkdirSync(fakeBin);
+  const fakeNpm = path.join(fakeBin, 'npm');
+  fs.writeFileSync(fakeNpm, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  assert.throws(() => runVerifier({ command: fakeNpm, args: ['test'] }, { cwd: files.root }, { spawnSync }), /routing_verifier_untrusted_executable/);
   const input = fixture({ verification: { failureAttribution: 'unknown', checks: [{ kind: 'test', command: 'node', args: ['--test'] }], artifacts: ['../outside.txt'] } });
   assert.throws(() => recordVerifiedReceipt(input, { cwd: files.root, ledger: files.ledger }, { spawnSync: () => ({ status: 0, stdout: '', stderr: '' }) }), /routing_receipt_artifact_outside_cwd/);
 });

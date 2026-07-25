@@ -195,11 +195,7 @@ function runVerifier(criterion = {}, spec = {}, context = {}) {
       provenance: { kind: 'unknown', ref: kind },
     };
   }
-  const mergedSpec = {
-    ...(criterion.verifierSpec || {}),
-    ...spec,
-    command: spec.command || criterion.verifierSpec?.command || (kind === 'test_runner' || kind === 'tests' ? undefined : criterion.verifierSpec?.command),
-  };
+  const mergedSpec = { ...(criterion.verifierSpec || {}) };
   return runner(mergedSpec, context);
 }
 

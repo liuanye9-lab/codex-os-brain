@@ -33,6 +33,16 @@ test('memory CRUD is candidate-first, versioned, and approval gated', () => {
   assert.equal(memory.search({ query: '幂等更新', includeCandidates: true }).count, 0);
 });
 
+test('idempotency keys cannot cross memory objects or actions', () => {
+  const memory = service();
+  const a = memory.createMemory({ memoryId: 'idem_a', content: 'A' });
+  const b = memory.createMemory({ memoryId: 'idem_b', content: 'B' });
+  memory.updateMemory(a.memory_id, { expectedVersion: 1, content: 'A2', idempotencyKey: 'shared-key' });
+  assert.throws(() => memory.updateMemory(b.memory_id, { expectedVersion: 1, content: 'B2', idempotencyKey: 'shared-key' }), /idempotency_key_conflict/);
+  assert.throws(() => memory.deleteMemory(a.memory_id, { expectedVersion: 2, approvedBy: 'operator', idempotencyKey: 'shared-key' }), /idempotency_key_conflict/);
+  assert.equal(memory.getMemory(b.memory_id).content, 'B');
+});
+
 test('source documents are searchable evidence and exact vectors join hybrid ranking', () => {
   const memory = service();
   const a = memory.importDocument({ documentId: 'doc_a', sourceUri: 'source:a', title: '事务', content: '事务保证跨记录一致性', embedding: [1, 0], model: 'test', fingerprint: 'fp' });

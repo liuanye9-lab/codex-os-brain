@@ -164,13 +164,39 @@ function recoverIncompleteRestore(paths) {
     return { recovered: true, restoreId: journal.restoreId, action: 'finalized_committed_restore' };
   }
   if (fs.existsSync(journal.previousDb)) {
-    if (fs.existsSync(paths.memoryDbPath)) fs.renameSync(paths.memoryDbPath, `${journal.previousDb}.failed-${Date.now()}`);
+    let failedDb = null;
+    if (fs.existsSync(paths.memoryDbPath)) {
+      failedDb = `${journal.previousDb}.failed-${Date.now()}`;
+      fs.renameSync(paths.memoryDbPath, failedDb);
+    }
     fs.renameSync(journal.previousDb, paths.memoryDbPath);
+    if (failedDb) fs.rmSync(failedDb, { force: true });
   } else if (journal.hadPreviousDb === false) { try { fs.unlinkSync(paths.memoryDbPath); } catch {} }
   if (journal.previousState) saveBackupState(paths, journal.previousState);
   for (const file of [journal.stagedDb, `${paths.memoryDbPath}-wal`, `${paths.memoryDbPath}-shm`]) { try { fs.unlinkSync(file); } catch {} }
+  if (journal.rollbackSnapshot) { try { fs.unlinkSync(journal.rollbackSnapshot); } catch {} }
+  if (journal.previousDb) { try { fs.rmSync(path.dirname(journal.previousDb), { recursive: true, force: true }); } catch {} }
   fs.unlinkSync(paths.memoryRestoreJournalPath);
   return { recovered: true, restoreId: journal.restoreId, action: 'rolled_back_incomplete_restore' };
+}
+
+function cleanupRestoreArtifacts(paths) {
+  if (!fs.existsSync(paths.memoryRestoreRoot)) return { removed: 0 };
+  let removed = 0;
+  for (const entry of fs.readdirSync(paths.memoryRestoreRoot, { withFileTypes: true })) {
+    const target = path.join(paths.memoryRestoreRoot, entry.name);
+    fs.rmSync(target, { recursive: true, force: true });
+    removed += 1;
+  }
+  return { removed };
+}
+
+function recoverMemoryRuntime({ paths = resolveV9Paths(), confirm = false } = {}) {
+  if (!confirm) throw coded('confirmation_required');
+  const lock = recoverStaleRestoreLock(paths);
+  const journal = recoverIncompleteRestore(paths);
+  const cleanup = cleanupRestoreArtifacts(paths);
+  return { recovered: lock.recovered || journal.recovered || cleanup.removed > 0, lock, journal, cleanup };
 }
 
 async function restoreEncryptedMemoryBackup(options = {}) {
@@ -215,16 +241,30 @@ async function restoreEncryptedMemoryBackup(options = {}) {
     const state = adoptBackupState(paths, verified.header);
     atomicWriteJson(paths.memoryRestoreJournalPath, { ...journal, phase: 'committed' });
     fs.unlinkSync(paths.memoryRestoreJournalPath);
-    return { restored: true, restoreId, status: comparison.status, backupId: verified.header.backupId, rollbackSnapshot: fs.existsSync(rollbackSnapshot) ? rollbackSnapshot : null, previousDb: fs.existsSync(previousDb) ? previousDb : null, integrity: verified.integrity, state };
+    for (const file of [rollbackSnapshot, previousDb]) { try { fs.unlinkSync(file); } catch {} }
+    return { restored: true, restoreId, status: comparison.status, backupId: verified.header.backupId, rollbackSnapshot: null, previousDb: null, integrity: verified.integrity, state };
   } catch (error) {
     let rolledBack = !swapped;
-    if (fs.existsSync(previousDb)) { try { if (fs.existsSync(paths.memoryDbPath)) fs.renameSync(paths.memoryDbPath, `${previousDb}.failed`); fs.renameSync(previousDb, paths.memoryDbPath); saveBackupState(paths, previousState); rolledBack = true; } catch {} }
+    if (fs.existsSync(previousDb)) {
+      try {
+        const failedDb = `${previousDb}.failed`;
+        if (fs.existsSync(paths.memoryDbPath)) fs.renameSync(paths.memoryDbPath, failedDb);
+        fs.renameSync(previousDb, paths.memoryDbPath);
+        fs.rmSync(failedDb, { force: true });
+        saveBackupState(paths, previousState);
+        rolledBack = true;
+      } catch {}
+    }
     if (swapped && !hadPreviousDb) { try { fs.unlinkSync(paths.memoryDbPath); saveBackupState(paths, previousState); rolledBack = true; } catch {} }
     if (rolledBack) { try { fs.unlinkSync(paths.memoryRestoreJournalPath); } catch {} }
     throw error;
   } finally {
     try { if (fs.existsSync(stagedDb)) fs.unlinkSync(stagedDb); } catch {}
     try { fs.rmSync(paths.memoryRestoreLockPath, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(restoreDir, { recursive: true, force: true }); } catch {}
+    if (!fs.existsSync(paths.memoryRestoreJournalPath)) {
+      try { fs.unlinkSync(rollbackSnapshot); } catch {}
+    }
   }
 }
 
@@ -243,4 +283,19 @@ async function rotateRecoveryKey(options = {}) {
   } catch (error) { try { keyStore.set(current, { confirm: true, replace: true }); } catch {} for (const share of shares.shares) { try { fs.unlinkSync(share.output); } catch {} } throw error; }
 }
 
-module.exports = { databaseHasAuthoritativeState, decryptShare, drillRecoveryKey, exportRecoveryKey, importRecoveryKey, readPassphrase, reconstructRecoveryKey, recoverIncompleteRestore, recoverStaleRestoreLock, restoreEncryptedMemoryBackup, rotateRecoveryKey, writeRecoveryShares };
+module.exports = {
+  cleanupRestoreArtifacts,
+  databaseHasAuthoritativeState,
+  decryptShare,
+  drillRecoveryKey,
+  exportRecoveryKey,
+  importRecoveryKey,
+  readPassphrase,
+  reconstructRecoveryKey,
+  recoverIncompleteRestore,
+  recoverMemoryRuntime,
+  recoverStaleRestoreLock,
+  restoreEncryptedMemoryBackup,
+  rotateRecoveryKey,
+  writeRecoveryShares,
+};

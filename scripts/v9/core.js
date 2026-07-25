@@ -3,12 +3,12 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { resolveV9Paths } = require('./paths');
+const { resolveV9Paths, scopeV9Paths } = require('./paths');
 const { appendJsonl, atomicWriteJson, readJsonSafe } = require('./store');
-const { createTaskContract } = require('./task-contract');
+const { createTaskContract, sealTaskContract } = require('./task-contract');
 const { claimEvidence, evaluateCompletion, verifyActive, verifyCriterion } = require('./verification');
 const { createEvidenceSealer } = require('./evidence-seal');
-const { advanceCircuit, classifyFailure, resetCircuit } = require('./failure-controller');
+const { advanceCircuit, classifyFailure, resetCircuitForOperation } = require('./failure-controller');
 const { evaluateAction } = require('./policy');
 const migration = require('./migration');
 const { createEmbeddingService } = require('./embeddings');
@@ -28,6 +28,7 @@ const {
   drillRecoveryKey,
   exportRecoveryKey,
   importRecoveryKey,
+  recoverMemoryRuntime,
   restoreEncryptedMemoryBackup,
   rotateRecoveryKey,
 } = require('./memory-recovery');
@@ -42,7 +43,11 @@ function readV9Config(configPath) {
 
 function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), projectRoot: configuredProjectRoot } = {}) {
   const enabled = config.enabled === true;
+  const projectRoot = () => path.resolve(configuredProjectRoot || process.env.BRAIN_PROJECT_ROOT || process.cwd());
+  const runtimePaths = config.hooks?.projectScoped === false ? paths : scopeV9Paths(paths, projectRoot());
+  paths = runtimePaths;
   const activeTaskFile = path.join(paths.tasksRoot, 'active.json');
+  const activeTaskGuardFile = path.join(paths.tasksRoot, 'active.guard.json');
   const eventsFile = path.join(paths.eventsRoot, 'events.jsonl');
   const failuresFile = path.join(paths.failuresRoot, 'circuit.json');
   const embeddings = createEmbeddingService({ paths });
@@ -51,23 +56,41 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
   const memoryHarness = createMemoryHarness({ paths });
   const memoryBackupKeyStore = createMacKeychainStore();
   const evidenceSealer = createEvidenceSealer({ paths });
-  const projectRoot = () => path.resolve(configuredProjectRoot || process.env.BRAIN_PROJECT_ROOT || process.cwd());
-
   function activeTask() {
     if (!enabled) return null;
     return readJsonSafe(activeTaskFile, null).value;
   }
 
+  function activeTaskState() {
+    if (!enabled) return { expected: false, contract: null, missing: false, corrupt: false };
+    const contract = readJsonSafe(activeTaskFile, null);
+    const guard = readJsonSafe(activeTaskGuardFile, null);
+    return {
+      expected: guard.missing === false,
+      contract: contract.value,
+      missing: contract.missing,
+      corrupt: contract.corrupt || guard.corrupt,
+      guard: guard.value,
+    };
+  }
+
   function saveTask(contract) {
     if (!enabled) return contract;
     atomicWriteJson(activeTaskFile, contract);
+    atomicWriteJson(activeTaskGuardFile, {
+      schemaVersion: 1,
+      taskId: contract.taskId,
+      specHash: contract.trust?.specHash || null,
+      createdAt: new Date().toISOString(),
+    });
     return contract;
   }
 
   const contracts = {
     active: activeTask,
+    state: activeTaskState,
     create(input) {
-      const contract = saveTask(createTaskContract(input));
+      const contract = saveTask(sealTaskContract(createTaskContract(input), evidenceSealer));
       try {
         handoff.initHandoff({ projectRoot: projectRoot(), objective: contract.objective });
       } catch {
@@ -129,8 +152,8 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
       const contract = activeTask();
       return contract
         ? evaluateCompletion(contract, {
-          requireHarness: options.requireHarness !== false,
           verifyEvidence: evidenceSealer.verify,
+          verifyContract: evidenceSealer.verifyContract,
         })
         : { status: 'partial', missing: ['active_task'], failed: [], unverified: [], requireHarness: true };
     },
@@ -187,8 +210,9 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
       if (enabled) atomicWriteJson(failuresFile, next);
       return { failure, state: next };
     },
-    succeed() {
-      const next = resetCircuit();
+    succeed({ operation } = {}) {
+      const state = readJsonSafe(failuresFile, { signature: null, operation: null, consecutive: 0, status: 'closed' }).value;
+      const next = resetCircuitForOperation(state, operation);
       if (enabled) atomicWriteJson(failuresFile, next);
       return next;
     },
@@ -219,6 +243,7 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
       recoveryDrill: options => drillRecoveryKey({ ...options, paths }),
       recoveryImport: options => importRecoveryKey({ ...options, keyStore: memoryBackupKeyStore }),
       recoveryRotate: options => rotateRecoveryKey({ ...options, paths, keyStore: memoryBackupKeyStore }),
+      recover: options => recoverMemoryRuntime({ ...options, paths }),
     },
     hosts: { get: getHostAdapter, list: listHosts },
     paths,

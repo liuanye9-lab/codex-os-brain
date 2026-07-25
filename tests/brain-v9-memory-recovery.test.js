@@ -9,7 +9,7 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { createEncryptedMemoryBackup, keyFingerprint, loadBackupState, saveBackupState } = require('../scripts/v9/memory-encrypted-backup');
 const { openMemoryDatabase } = require('../scripts/v9/memory-db');
-const { decryptShare, drillRecoveryKey, exportRecoveryKey, importRecoveryKey, recoverIncompleteRestore, recoverStaleRestoreLock, restoreEncryptedMemoryBackup, rotateRecoveryKey } = require('../scripts/v9/memory-recovery');
+const { decryptShare, drillRecoveryKey, exportRecoveryKey, importRecoveryKey, recoverIncompleteRestore, recoverMemoryRuntime, recoverStaleRestoreLock, restoreEncryptedMemoryBackup, rotateRecoveryKey } = require('../scripts/v9/memory-recovery');
 const { resolveV9Paths } = require('../scripts/v9/paths');
 
 function setup(label = 'recovery') {
@@ -77,9 +77,23 @@ test('automatic restore adopts uninitialized backup then fast-forwards and no-op
   const adopted = await restoreEncryptedMemoryBackup({ paths: target.paths, keyStore, input: first.target, confirm: true, allowUninitialized: true, processInspector: () => [] });
   assert.equal(adopted.status, 'uninitialized'); assert.equal(documentCount(target.paths), 1);
   const advanced = await restoreEncryptedMemoryBackup({ paths: target.paths, keyStore, input: second.target, confirm: true, processInspector: () => [] });
-  assert.equal(advanced.status, 'fast_forward'); assert.equal(documentCount(target.paths), 2); assert.ok(advanced.rollbackSnapshot);
+  assert.equal(advanced.status, 'fast_forward'); assert.equal(documentCount(target.paths), 2); assert.equal(advanced.rollbackSnapshot, null);
+  assert.deepEqual(fs.readdirSync(target.paths.memoryRestoreRoot), []);
   const same = await restoreEncryptedMemoryBackup({ paths: target.paths, keyStore, input: second.target, confirm: true, processInspector: () => [] });
   assert.deepEqual({ restored: same.restored, status: same.status }, { restored: false, status: 'same' });
+});
+
+test('explicit recovery clears stale locks and orphan restore work without another restore', () => {
+  const fixture = setup('manual-recover');
+  fs.mkdirSync(fixture.paths.memoryRestoreLockPath, { recursive: true });
+  fs.writeFileSync(path.join(fixture.paths.memoryRestoreLockPath, 'owner.json'), JSON.stringify({ restoreId: 'dead', pid: 99999999 }));
+  fs.mkdirSync(path.join(fixture.paths.memoryRestoreRoot, 'orphan'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.paths.memoryRestoreRoot, 'orphan', 'previous.sqlite3'), 'plaintext');
+  assert.throws(() => recoverMemoryRuntime({ paths: fixture.paths }), /confirmation_required/);
+  const result = recoverMemoryRuntime({ paths: fixture.paths, confirm: true });
+  assert.equal(result.recovered, true);
+  assert.equal(fs.existsSync(fixture.paths.memoryRestoreLockPath), false);
+  assert.deepEqual(fs.readdirSync(fixture.paths.memoryRestoreRoot), []);
 });
 
 test('restore blocks an in-use database and injected post-swap failure rolls back bytes and lineage', async () => {

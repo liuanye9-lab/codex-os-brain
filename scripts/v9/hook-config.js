@@ -2,7 +2,9 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { atomicWriteJson } = require('./store');
+const { resolveV9Paths, scopeV9Paths } = require('./paths');
 
 const REQUIRED_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'PostCompact', 'Stop'];
 const OWNER = 'codex-brain-v9';
@@ -23,13 +25,18 @@ function configPaths(projectRoot) {
   };
 }
 
-function writeTextAtomic(file, text) {
+function writeTextAtomic(file, text, options = {}) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = `${file}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
+  const target = fs.existsSync(file) && fs.lstatSync(file).isSymbolicLink()
+    ? fs.realpathSync(file)
+    : file;
+  const existingMode = fs.existsSync(target) ? fs.statSync(target).mode & 0o777 : null;
+  const mode = Number(options.mode ?? existingMode ?? 0o600);
+  const temporary = `${target}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
   try {
-    fs.writeFileSync(temporary, text, { encoding: 'utf8', mode: 0o600 });
-    fs.renameSync(temporary, file);
-    fs.chmodSync(file, 0o600);
+    fs.writeFileSync(temporary, text, { encoding: 'utf8', mode });
+    fs.renameSync(temporary, target);
+    fs.chmodSync(target, mode);
   } finally {
     if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }
@@ -56,7 +63,11 @@ function validateManifest(manifest) {
     : [];
   const invalidGroups = groups.filter(group => !group || typeof group !== 'object' || !Array.isArray(group.hooks));
   const hooks = groups.flatMap(group => Array.isArray(group?.hooks) ? group.hooks : []);
-  const invalidHooks = hooks.filter(hook => hook.type !== 'command' || !hook.command || !(hook.timeout > 0));
+  const invalidHooks = hooks.filter(hook => (
+    hook.type !== 'command'
+    || !hook.command
+    || (hook.timeout !== undefined && !(hook.timeout > 0))
+  ));
   return {
     valid: hooksObjectValid && invalidEvents.length === 0 && invalidGroups.length === 0 && invalidHooks.length === 0,
     invalidEvents,
@@ -115,7 +126,29 @@ function readState(stateFile) {
   catch { throw new Error('hook_install_state_invalid'); }
 }
 
-function doctorHooks({ projectRoot, pluginRoot = path.resolve(__dirname, '..', '..') }) {
+function nearestExisting(target) {
+  let current = path.resolve(target);
+  while (!fs.existsSync(current) && path.dirname(current) !== current) current = path.dirname(current);
+  return current;
+}
+
+function runtimeStorageWritable(projectRoot, runtimePaths) {
+  const paths = runtimePaths || scopeV9Paths(resolveV9Paths(), projectRoot);
+  const targets = [
+    path.join(paths.tasksRoot, 'active.json'),
+    path.join(paths.eventsRoot, 'events.jsonl'),
+    path.join(paths.failuresRoot, 'circuit.json'),
+  ];
+  const blocked = [];
+  for (const target of targets) {
+    const probe = fs.existsSync(target) ? target : nearestExisting(path.dirname(target));
+    try { fs.accessSync(probe, fs.constants.W_OK); }
+    catch { blocked.push(target); }
+  }
+  return { writable: blocked.length === 0, blocked };
+}
+
+function doctorHooks({ projectRoot, pluginRoot = path.resolve(__dirname, '..', '..'), runtimePaths }) {
   const paths = configPaths(projectRoot);
   const desired = buildProjectHookConfig(pluginRoot);
   const expectedFingerprint = fingerprint(ownedManifest(desired));
@@ -160,10 +193,32 @@ function doctorHooks({ projectRoot, pluginRoot = path.resolve(__dirname, '..', '
   const eventsComplete = missingEvents.length === 0;
   const fingerprintMatch = observedFingerprint === expectedFingerprint;
   const ownershipValid = enabled && eventsComplete && duplicateEvents.length === 0 && mismatchedEvents.length === 0;
+  let runtimeHealthy = null;
+  let runtimeExitStatus = null;
+  const runtimeStorage = runtimeStorageWritable(projectRoot, runtimePaths);
+  if (enabled && ownershipValid && fingerprintMatch) {
+    const smoke = spawnSync(process.execPath, [path.join(pluginRoot, 'bin', 'brain-hook.js')], {
+      cwd: path.resolve(projectRoot),
+      env: {
+        ...process.env,
+        BRAIN_V9_HOOKS: '1',
+        BRAIN_PROJECT_ROOT: path.resolve(projectRoot),
+      },
+      input: `${JSON.stringify({ hook_event_name: 'UserPromptSubmit', project_root: path.resolve(projectRoot) })}\n`,
+      encoding: 'utf8',
+      shell: false,
+      timeout: 5_000,
+    });
+    runtimeExitStatus = smoke.status;
+    runtimeHealthy = smoke.status === 0 && String(smoke.stdout || '').trim() === '{}';
+  }
   return {
     scope: 'project', owner: OWNER, enabled,
-    valid: structural.valid && (!enabled || (ownershipValid && fingerprintMatch)),
+    valid: structural.valid && (!enabled || (ownershipValid && fingerprintMatch && runtimeHealthy && runtimeStorage.writable)),
     manifestValid: structural.valid, ownershipValid, eventsComplete, fingerprintMatch,
+    runtimeHealthy, runtimeExitStatus,
+    runtimeStorageWritable: runtimeStorage.writable,
+    runtimeStorageBlocked: runtimeStorage.blocked,
     expectedFingerprint, observedFingerprint, missingEvents, mismatchedEvents, duplicateEvents,
     hookCount: allHookCount, ownedHookCount, foreignHookCount: allHookCount - ownedHookCount,
     invalidEvents: structural.invalidEvents, invalidGroups: structural.invalidGroups, invalidHooks: structural.invalidHooks,
@@ -173,11 +228,15 @@ function doctorHooks({ projectRoot, pluginRoot = path.resolve(__dirname, '..', '
 
 function enableProjectHooks({ projectRoot, pluginRoot }) {
   const paths = configPaths(projectRoot);
-  const originalPresent = fs.existsSync(paths.file);
-  const originalRaw = originalPresent ? fs.readFileSync(paths.file, 'utf8') : null;
+  const filePresent = fs.existsSync(paths.file);
+  const fileStat = filePresent ? fs.statSync(paths.file) : null;
+  const originalMode = fileStat ? fileStat.mode & 0o777 : null;
+  const originalWasSymlink = filePresent && fs.lstatSync(paths.file).isSymbolicLink();
+  const originalSymlinkTarget = originalWasSymlink ? fs.readlinkSync(paths.file) : null;
+  const fileRaw = filePresent ? fs.readFileSync(paths.file, 'utf8') : null;
   let existing = { version: 1, hooks: {} };
-  if (originalPresent) {
-    try { existing = JSON.parse(originalRaw); }
+  if (filePresent) {
+    try { existing = JSON.parse(fileRaw); }
     catch { throw new Error('invalid_project_hook_manifest'); }
     if (!validateManifest(existing).valid) throw new Error('invalid_project_hook_manifest');
   }
@@ -185,6 +244,14 @@ function enableProjectHooks({ projectRoot, pluginRoot }) {
   const backupCreated = !state;
   if (!state) {
     if (fs.existsSync(paths.backupFile)) throw new Error('hook_backup_without_state');
+    const adoptedExistingOwned = Object.values(ownedManifest(existing).hooks).some(groups => groups.length > 0);
+    const originalManifest = adoptedExistingOwned ? removeOwnedHooks(existing) : existing;
+    const hasOriginalHooks = Object.values(originalManifest.hooks || {}).some(groups => Array.isArray(groups) && groups.length > 0);
+    const hasOriginalFields = Object.keys(originalManifest).some(key => !['version', 'hooks'].includes(key));
+    const originalPresent = filePresent && (!adoptedExistingOwned || hasOriginalHooks || hasOriginalFields);
+    const originalRaw = originalPresent
+      ? (adoptedExistingOwned ? `${JSON.stringify(originalManifest, null, 2)}\n` : fileRaw)
+      : null;
     if (originalPresent) writeTextAtomic(paths.backupFile, originalRaw);
     state = {
       schemaVersion: 1,
@@ -192,6 +259,10 @@ function enableProjectHooks({ projectRoot, pluginRoot }) {
       phase: 'prepared',
       originalPresent,
       originalSha256: originalPresent ? hashText(originalRaw) : null,
+      originalMode,
+      originalWasSymlink,
+      originalSymlinkTarget,
+      adoptedExistingOwned,
       backupFile: originalPresent ? BACKUP_FILE : null,
       createdAt: new Date().toISOString(),
     };
@@ -200,7 +271,7 @@ function enableProjectHooks({ projectRoot, pluginRoot }) {
     throw new Error('hook_install_state_owner_mismatch');
   }
   const merged = mergeOwnedHooks(existing, buildProjectHookConfig(pluginRoot));
-  atomicWriteJson(paths.file, merged);
+  writeTextAtomic(paths.file, `${JSON.stringify(merged, null, 2)}\n`, { mode: state.originalMode ?? 0o600 });
   const installedRaw = fs.readFileSync(paths.file, 'utf8');
   atomicWriteJson(paths.stateFile, {
     ...state,
@@ -223,7 +294,7 @@ function disableProjectHooks({ projectRoot, pluginRoot }) {
         if (!fs.existsSync(paths.backupFile)) throw new Error('hook_backup_missing');
         const backupRaw = fs.readFileSync(paths.backupFile, 'utf8');
         if (hashText(backupRaw) !== state.originalSha256) throw new Error('hook_backup_fingerprint_mismatch');
-        writeTextAtomic(paths.file, backupRaw);
+        writeTextAtomic(paths.file, backupRaw, { mode: state.originalMode ?? 0o600 });
       } else {
         fs.unlinkSync(paths.file);
       }
@@ -236,9 +307,11 @@ function disableProjectHooks({ projectRoot, pluginRoot }) {
       const hasHooks = Object.values(next.hooks || {}).some(groups => Array.isArray(groups) && groups.length > 0);
       const hasOtherFields = Object.keys(next).some(key => !['version', 'hooks'].includes(key));
       if (!hasHooks && !hasOtherFields && state?.originalPresent === false) fs.unlinkSync(paths.file);
-      else atomicWriteJson(paths.file, next);
+      else writeTextAtomic(paths.file, `${JSON.stringify(next, null, 2)}\n`, { mode: state?.originalMode ?? 0o600 });
     }
   }
+  const postRemoval = doctorHooks({ projectRoot, pluginRoot });
+  if (postRemoval.enabled || postRemoval.ownedHookCount > 0) throw new Error('hook_disable_incomplete');
   if (fs.existsSync(paths.stateFile)) fs.unlinkSync(paths.stateFile);
   if (fs.existsSync(paths.backupFile)) fs.unlinkSync(paths.backupFile);
   return { operation: 'disabled', restoration, ...doctorHooks({ projectRoot, pluginRoot }) };
