@@ -10,6 +10,38 @@
 
 > Unofficial community project. Codex and related marks belong to OpenAI; this generated illustration does not imply affiliation or endorsement. Visual provenance is recorded in [`assets/visual-provenance.json`](assets/visual-provenance.json).
 
+## 最快部署：把一句话交给 Agent
+
+先让 Agent 进入你要保护的项目目录，然后把下面整段发给它：
+
+```text
+请在当前项目部署 Codex Brain V9 Harness。先确认 Node.js >= 22.5，再执行：
+npm install --global codex-brain-v9@latest && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
+
+只允许安装 Codex Brain 的项目级 Hooks，不要安装全局 Hooks，不要改 Claude Code Hooks，不要修改项目业务文件。保留用户已有 Hooks；如果任一步失败就停止并报告原始错误。完成后只在 doctor 同时满足 ok=true、eventsComplete=true、fingerprintMatch=true、runtimeHealthy=true、runtimeStorageWritable=true 时告诉我部署成功。
+```
+
+如果你自己在终端操作，先 `cd` 到目标项目，再复制这一行：
+
+```bash
+npm install --global codex-brain-v9@latest && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
+```
+
+这条命令只把运行时安装到 npm 全局目录，Hooks 仍然只写入当前项目的 `.codex/hooks.json`。它会增量保留已有 Hooks，并自动保存可恢复的原配置。不要使用 `sudo npm install`；如果全局 npm 目录不可写，先改用用户级 Node 版本管理器。
+
+部署成功后可直接使用：
+
+```bash
+codex-brain task create --task-id demo --objective "ship safely" --criterion tests --json
+codex-brain verify --json
+```
+
+需要完整卸载时：
+
+```bash
+codex-brain hooks disable --project "$PWD" --confirm --json && npm uninstall --global codex-brain-v9
+```
+
 把 AI 编程助手想成**司机**：它负责开车、认路、做决定。  
 Codex Brain 像坐在副驾的人：**平时不唠叨、不抢方向盘**；只有快碰到红线、要做高风险操作、连续撞同一堵墙、长对话被压缩，或它说「已经做完」时，才提醒、补小抄，或踩一脚刹车。
 
