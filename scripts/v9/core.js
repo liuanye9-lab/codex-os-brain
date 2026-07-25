@@ -39,7 +39,7 @@ function readV9Config(configPath) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-function createV9Core({ paths = resolveV9Paths(), config = readV9Config() } = {}) {
+function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), projectRoot: configuredProjectRoot } = {}) {
   const enabled = config.enabled === true;
   const activeTaskFile = path.join(paths.tasksRoot, 'active.json');
   const eventsFile = path.join(paths.eventsRoot, 'events.jsonl');
@@ -49,7 +49,7 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config() } = {}
   const memory = createMemoryService({ paths });
   const memoryHarness = createMemoryHarness({ paths });
   const memoryBackupKeyStore = createMacKeychainStore();
-  const projectRoot = () => process.env.BRAIN_PROJECT_ROOT || process.cwd();
+  const projectRoot = () => path.resolve(configuredProjectRoot || process.env.BRAIN_PROJECT_ROOT || process.cwd());
 
   function activeTask() {
     if (!enabled) return null;

@@ -64,13 +64,13 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   if (group === 'status') return io.json(core.status());
   if (group === 'doctor') {
     const v9 = core.status();
-    const hooks = doctorHooks({ projectRoot });
+    const hooks = doctorHooks({ projectRoot, pluginRoot });
     const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
     const nodeSupported = nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 5);
     const checks = [
       { id: 'node-runtime', status: nodeSupported ? 'passed' : 'blocked', observed: process.versions.node, required: '>=22.5', remediation: nodeSupported ? null : 'Install Node.js 22.5 or newer.' },
       { id: 'v9-core', status: v9.enabled ? 'passed' : 'blocked', observed: { version: v9.version, enabled: v9.enabled }, remediation: v9.enabled ? null : 'Set config/brain-lite-v9.json enabled=true.' },
-      { id: 'project-hooks', status: hooks.valid ? (hooks.enabled ? 'passed' : 'optional') : 'blocked', observed: { enabled: hooks.enabled, valid: hooks.valid, path: hooks.path }, remediation: hooks.valid ? (hooks.enabled ? null : 'Optional: run brain hooks enable --project "$PWD" --confirm --json.') : 'Repair or disable the invalid project hook manifest.' },
+      { id: 'project-hooks', status: hooks.valid ? (hooks.enabled ? 'passed' : 'optional') : 'blocked', observed: { enabled: hooks.enabled, valid: hooks.valid, owner: hooks.owner, eventsComplete: hooks.eventsComplete, fingerprintMatch: hooks.fingerprintMatch, foreignHookCount: hooks.foreignHookCount, path: hooks.path }, remediation: hooks.valid ? (hooks.enabled ? null : 'Optional: run brain hooks enable --project "$PWD" --confirm --json.') : 'Repair the manifest or re-enable Codex Brain hooks to restore owned events and fingerprint.' },
       { id: 'mcp-probe', status: 'available', command: 'npm run mcp:probe', remediation: 'Run from the installed package checkout to exercise the stdio MCP boundary.' },
     ];
     return io.json({
@@ -285,7 +285,7 @@ async function runCli(argv, io = defaultIo(), services = {}) {
     return io.json(core.embeddings.pull({ model: args.model, confirm: true }));
   }
   if (group === 'embeddings' && action === 'prompt') return io.json({ prompt: core.embeddings.adaptationPrompt() });
-  if (group === 'hooks' && (!action || action === 'doctor')) return io.json(doctorHooks({ projectRoot }));
+  if (group === 'hooks' && (!action || action === 'doctor')) return io.json(doctorHooks({ projectRoot, pluginRoot }));
   if (group === 'hooks' && ['enable', 'disable'].includes(action)) {
     if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
     return io.json(setProjectHooks({ projectRoot, pluginRoot, enabled: action === 'enable', confirm: true }));

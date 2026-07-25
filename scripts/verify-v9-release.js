@@ -20,7 +20,7 @@ function verifyReadmeLinks(root) {
 
 function verifyPackageContents(pack) {
   const files = (pack.files || []).map(item => item.path);
-  const required = ['bin/brain.js', 'mcp/server.mjs'];
+  const required = ['bin/brain.js', 'mcp/server.mjs', 'scripts/package-selftest.js', 'scripts/test-contract.js', 'scripts/check-contract.js'];
   const missing = required.filter(file => !files.includes(file));
   const forbidden = files.filter(file => /^(runtime|data|reports|backups?)\/|(^|\/)MEMORY\.md$|(^|\/)\.env/i.test(file));
   return { passed: missing.length === 0 && forbidden.length === 0, files, missing, forbidden };

@@ -3,13 +3,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const brainHome = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-mcp-probe-'));
 const transport = new StdioClientTransport({ command: process.execPath, args: [path.join(root, 'mcp', 'server.mjs')], cwd: root, env: { ...process.env, CODEX_BRAIN_HOME: path.join(brainHome, 'brain'), CODEX_BRAIN_STATE_HOME: path.join(brainHome, 'state') }, stderr: 'pipe' });
-const client = new Client({ name: 'brain-v9-probe', version: '0.11.0' });
+const client = new Client({ name: 'brain-v9-probe', version: '0.11.1' });
 try {
   await client.connect(transport);
   const tools = await client.listTools();

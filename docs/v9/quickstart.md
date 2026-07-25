@@ -86,7 +86,9 @@ brain hooks enable --project "$PWD" --confirm --json
 brain hooks disable --project "$PWD" --confirm --json
 ```
 
-Only the project's `.codex/hooks.json` is written. Hook commands are local, bounded, network-free, and model-free.
+Only the project's `.codex/hooks.json` is integrated. Enable preserves foreign hook groups, records the Codex Brain owner marker, and creates a private backup plus install-state file under `.codex/`. Disable restores the exact original when the installed file has not drifted. If another tool adds hooks after installation, disable removes only Codex Brain-owned groups and preserves those later edits.
+
+`brain hooks doctor` verifies owner, all seven required events, duplicate or mismatched groups, and the expected fingerprint. A valid foreign-only manifest remains valid but reports `enabled: false`.
 
 ## MCP
 
@@ -104,6 +106,8 @@ Never: self-certify passed, download models, migrate, bypass policy.
 ```bash
 npm run eval:reliability
 ```
+
+The runner allocates a temporary project root and separate Brain/state homes. It never initializes or rewrites the caller project's `.brain`.
 
 ## Optional local embeddings
 

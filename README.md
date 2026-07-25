@@ -1,6 +1,6 @@
 # Codex Brain V9：给 AI 编程助手装一个「安全副驾驶」
 
-[![Version](https://img.shields.io/badge/version-0.11.0-5b5bd6)](package.json)
+[![Version](https://img.shields.io/badge/version-0.11.1-5b5bd6)](package.json)
 [![Runtime](https://img.shields.io/badge/runtime-local--first-1f883d)](docs/v9/privacy-and-threat-model.md)
 [![Interfaces](https://img.shields.io/badge/interfaces-hooks%20%7C%20CLI%20%7C%20MCP-0969da)](docs/v9/quickstart.md)
 [![Eval](https://img.shields.io/badge/eval-reliability%20suites-orange)](evals/v9-reliability/runner.cjs)
@@ -993,7 +993,9 @@ brain hooks enable --project "$PWD" --confirm --json
 brain hooks disable --project "$PWD" --confirm --json
 ```
 
-默认**不**装全局 hooks，**不**擅自装 Claude Code hooks；只写项目内配置。
+默认**不**装全局 hooks，**不**擅自装 Claude Code hooks；只写项目内配置。启用时会增量保留已有 Hook，并在 `.codex/` 下创建权限为 `0600` 的原配置备份和安装状态文件。未发生外部修改时，禁用会逐字节恢复原文件；安装后若其他工具又增加了 Hook，禁用只移除带 `codex-brain-v9` 所有权标记的条目，不回滚新配置。
+
+`brain hooks doctor` 不再把“存在一个合法 JSON 文件”当成已启用。它会核对所有权、七个实际事件、重复项和预期指纹；`eventsComplete` 与 `fingerprintMatch` 都为真才算完整安装。
 
 ### MCP
 
@@ -1034,6 +1036,8 @@ npm run check
 npm run eval:reliability
 node scripts/build-public-export.js --output /tmp/codex-brain-v9-public
 ```
+
+源码 checkout 中，`npm test` 执行完整回归套件；npm 安装包不携带源码测试目录，改为执行隔离的 CLI、doctor、Hooks 可逆安装和 MCP 自检，因此安装后的 `npm test` / `npm run check` 也有真实可运行的契约。可靠性 eval 始终使用临时 `projectRoot`、Brain home 和 state home，不会改写调用项目的 `.brain`。
 
 ---
 

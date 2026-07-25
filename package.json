@@ -1,6 +1,6 @@
 {
   "name": "codex-brain-v9",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Adaptive, evidence-gated reliability harness for coding agents with project hooks, CLI, and MCP.",
   "type": "module",
   "license": "MIT",
@@ -25,6 +25,9 @@
     "scripts/v9",
     "scripts/package.json",
     "scripts/probe-v9-mcp.mjs",
+    "scripts/package-selftest.js",
+    "scripts/test-contract.js",
+    "scripts/check-contract.js",
     "scripts/build-public-export.js",
     "scripts/verify-v9-release.js",
     "evals/v9-reliability",
@@ -35,8 +38,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test tests/ci-workflow.test.js tests/brain-v9-store.test.js tests/brain-v9-task-contract.test.js tests/brain-v9-verification.test.js tests/brain-v9-failure-controller.test.js tests/brain-v9-embeddings.test.js tests/brain-v9-migration.test.js tests/brain-v9-memory-db.test.js tests/brain-v9-memory-service.test.js tests/brain-v9-memory-harness.test.js tests/brain-v9-memory-encrypted-backup.test.js tests/brain-v9-memory-recovery.test.js tests/brain-v9-hooks.test.js tests/brain-v9-hook-config.test.js tests/brain-v9-cli.test.js tests/brain-v9-mcp.test.mjs tests/brain-v9-cross-surface.test.mjs tests/brain-v9-p0-p6.test.js tests/brain-v9-public-export.test.js tests/brain-v9-release.test.js tests/brain-lite-routing-receipt.test.js",
-    "check": "npm test && node scripts/probe-v9-mcp.mjs && node scripts/verify-v9-release.js",
+    "test": "node scripts/test-contract.js",
+    "check": "node scripts/check-contract.js",
+    "test:package": "node scripts/package-selftest.js",
     "eval:reliability": "node evals/v9-reliability/runner.cjs",
     "mcp:probe": "node scripts/probe-v9-mcp.mjs",
     "memory:v9:capabilities": "node scripts/v9/capability-verifier.js",
@@ -45,12 +49,8 @@
     "memory:harness": "node bin/brain.js harness cycle"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "zod": "^4.4.2"
-  },
-  "overrides": {
-    "@hono/node-server": "2.0.11",
-    "fast-uri": "3.1.4",
-    "hono": "4.12.31"
+    "@modelcontextprotocol/client": "2.0.0-beta.5",
+    "@modelcontextprotocol/server": "2.0.0-beta.5",
+    "zod": "4.4.2"
   }
 }

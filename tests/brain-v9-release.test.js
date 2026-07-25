@@ -35,8 +35,15 @@ test('README relative links resolve', () => {
   assert.deepEqual(verifyReadmeLinks(root).missing, []);
 });
 
-test('package policy rejects runtime and requires CLI plus MCP', () => {
-  const report = verifyPackageContents({ files: [{ path: 'bin/brain.js' }, { path: 'mcp/server.mjs' }, { path: 'runtime/private.json' }] });
+test('package policy rejects runtime and requires CLI, MCP, and installed-package self-tests', () => {
+  const report = verifyPackageContents({ files: [
+    { path: 'bin/brain.js' },
+    { path: 'mcp/server.mjs' },
+    { path: 'scripts/package-selftest.js' },
+    { path: 'scripts/test-contract.js' },
+    { path: 'scripts/check-contract.js' },
+    { path: 'runtime/private.json' },
+  ] });
   assert.deepEqual(report.missing, []);
   assert.deepEqual(report.forbidden, ['runtime/private.json']);
 });

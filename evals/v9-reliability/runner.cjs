@@ -30,12 +30,31 @@ function percentile(values, ratio) {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
 }
 
-function tempCore() {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-eval-'));
-  return createV9Core({ paths: resolveV9Paths({ CODEX_BRAIN_HOME: home }) });
+function createEvalContext() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-eval-'));
+  const projectRoot = path.join(root, 'project');
+  fs.mkdirSync(projectRoot, { recursive: true });
+  return {
+    root,
+    projectRoot,
+    paths: resolveV9Paths({
+      CODEX_BRAIN_HOME: path.join(root, 'brain-home'),
+      CODEX_BRAIN_STATE_HOME: path.join(root, 'state-home'),
+    }),
+  };
 }
 
-async function suiteFalseCompletion() {
+function evalContext(context) {
+  return context || createEvalContext();
+}
+
+function tempCore(context) {
+  const isolated = evalContext(context);
+  return createV9Core({ paths: isolated.paths, projectRoot: isolated.projectRoot });
+}
+
+async function suiteFalseCompletion(context) {
+  const isolated = evalContext(context);
   const contract = createTaskContract({
     taskId: 'eval_fc',
     objective: 'false completion',
@@ -53,7 +72,7 @@ async function suiteFalseCompletion() {
     verification: { evaluateActive: () => evalClaim },
   };
   const stop = await handleStop({ completionClaim: true }, core);
-  const harnessRun = verifyCriterion(claimed, 'tests', { command: 'node -e "process.exit(1)"' }, {});
+  const harnessRun = verifyCriterion(claimed, 'tests', { command: 'node -e "process.exit(1)"' }, { cwd: isolated.projectRoot });
   const afterHarness = evaluateCompletion(harnessRun.contract, { requireHarness: true });
 
   return {
@@ -84,7 +103,8 @@ async function suiteLoop() {
   };
 }
 
-async function suiteOverreach() {
+async function suiteOverreach(context) {
+  const isolated = evalContext(context);
   const contract = createTaskContract({
     taskId: 'eval_or',
     objective: 'scope',
@@ -93,21 +113,21 @@ async function suiteOverreach() {
   });
   const blocked = evaluateAction({
     toolName: 'Write',
-    toolInput: { file_path: path.resolve(process.cwd(), '.env') },
+    toolInput: { file_path: path.resolve(isolated.projectRoot, '.env') },
     contract,
-    cwd: process.cwd(),
+    cwd: isolated.projectRoot,
   });
   const allowed = evaluateAction({
     toolName: 'Read',
-    toolInput: { file_path: path.resolve(process.cwd(), 'src/index.js') },
+    toolInput: { file_path: path.resolve(isolated.projectRoot, 'src/index.js') },
     contract,
-    cwd: process.cwd(),
+    cwd: isolated.projectRoot,
   });
   const forcePush = evaluateAction({
     toolName: 'Bash',
     toolInput: { command: 'git push --force origin main' },
     contract,
-    cwd: process.cwd(),
+    cwd: isolated.projectRoot,
   });
   return {
     name: 'overreach',
@@ -116,8 +136,9 @@ async function suiteOverreach() {
   };
 }
 
-async function suiteTax() {
-  const core = tempCore();
+async function suiteTax(context) {
+  const isolated = evalContext(context);
+  const core = tempCore(isolated);
   core.contracts.create({
     taskId: 'eval_tax',
     objective: 'latency',
@@ -149,9 +170,14 @@ async function suiteTax() {
 }
 
 async function main() {
+  const context = createEvalContext();
   const suites = [suiteFalseCompletion, suiteLoop, suiteOverreach, suiteTax];
   const results = [];
-  for (const suite of suites) results.push(await suite());
+  try {
+    for (const suite of suites) results.push(await suite(context));
+  } finally {
+    fs.rmSync(context.root, { recursive: true, force: true });
+  }
   const passed = results.filter(item => item.passed).length;
   const report = {
     suite: 'v9-reliability',
@@ -167,4 +193,4 @@ async function main() {
 
 if (require.main === module) main();
 
-module.exports = { percentile, suiteFalseCompletion, suiteLoop, suiteOverreach, suiteTax, main };
+module.exports = { createEvalContext, percentile, suiteFalseCompletion, suiteLoop, suiteOverreach, suiteTax, main };
