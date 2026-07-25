@@ -20,7 +20,8 @@ function tempLedger() {
 }
 
 function event(overrides = {}) {
-  return {
+  const output = {
+    receiptVersion: 1,
     timestamp: '2026-07-12T03:00:00.000Z',
     taskId: 'task-1',
     taskFamily: 'bounded-coding',
@@ -31,11 +32,22 @@ function event(overrides = {}) {
     taskRisk: 'low',
     verifiable: true,
     verifierPassed: true,
+    phase: 'verified',
+    outcomeSource: 'independent-verifier',
+    verifierAuthority: 'mother-agent',
+    outcomeEligible: true,
+    capabilityOutcome: 'pass',
     modelClaimedSuccess: true,
     finalDelivered: true,
     exitStatus: 0,
     ...overrides,
   };
+  if (overrides.capabilityOutcome === undefined) output.capabilityOutcome = output.verifierPassed ? 'pass' : 'fail';
+  if (output.infrastructureFailure || output.infrastructureFailureType) {
+    if (overrides.outcomeEligible === undefined) output.outcomeEligible = false;
+    if (overrides.capabilityOutcome === undefined) output.capabilityOutcome = 'unknown';
+  }
+  return output;
 }
 
 test('appendEvent keeps an allowlisted, redacted, path-minimized JSONL record', () => {

@@ -38,7 +38,12 @@ function main() {
     if (disabled.enabled || fs.readFileSync(path.join(codex, 'hooks.json'), 'utf8') !== original) throw new Error('hook_restore_contract_failed');
 
     const mcp = runNode([path.join(root, 'scripts', 'probe-v9-mcp.mjs')], { cwd: projectRoot, env }).trim();
-    process.stdout.write(`${JSON.stringify({ passed: true, cli: true, doctor: true, hooks: true, mcp }, null, 2)}\n`);
+    const api = runNode([
+      '--eval',
+      "import(process.argv[1]).then(({ default: api }) => { if (typeof api.taskContract?.buildTaskContract !== 'function') process.exit(1); process.stdout.write('public-api-ok'); })",
+      path.join(root, 'index.js'),
+    ], { cwd: projectRoot, env }).trim();
+    process.stdout.write(`${JSON.stringify({ passed: true, cli: true, doctor: true, hooks: true, api, mcp }, null, 2)}\n`);
   } finally {
     fs.rmSync(isolated, { recursive: true, force: true });
   }

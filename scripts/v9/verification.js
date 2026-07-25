@@ -30,6 +30,7 @@ function attachEvidence(contract, criterionId, evidenceRef) {
     provenance: { ...evidenceRef.provenance },
     harnessVerified,
     fingerprint: evidenceRef.fingerprint || null,
+    seal: evidenceRef.seal || null,
     verifiedAt: harnessVerified ? (evidenceRef.verifiedAt || new Date().toISOString()) : null,
     summary: evidenceRef.summary || null,
   });
@@ -61,7 +62,12 @@ function evaluateCompletion(contract, options = {}) {
   const unverified = [];
   const missing = [];
   for (const item of required) {
-    const harnessOk = !requireHarness || item.evidence?.some(ev => ev.harnessVerified && ev.status === 'passed') || (item.harnessVerified === true && item.status === 'passed');
+    const harnessOk = !requireHarness || item.evidence?.some(ev => (
+      ev.harnessVerified
+      && ev.status === 'passed'
+      && typeof options.verifyEvidence === 'function'
+      && options.verifyEvidence(contract.taskId, item.id, ev)
+    ));
     if (item.status === 'failed') failed.push(item.id);
     else if (item.status === 'waived') continue;
     else if (item.status === 'passed' && harnessOk) continue;
@@ -86,7 +92,7 @@ function verifyCriterion(contract, criterionId, spec = {}, context = {}) {
   const result = runVerifier(criterion, spec, context);
   const evidenceId = `ev_${crypto.randomBytes(8).toString('hex')}`;
   const verifiedAt = new Date().toISOString();
-  const next = attachEvidence(contract, criterionId, {
+  const evidence = {
     id: evidenceId,
     status: result.status,
     harnessVerified: true,
@@ -94,7 +100,10 @@ function verifyCriterion(contract, criterionId, spec = {}, context = {}) {
     verifiedAt,
     summary: result.summary,
     provenance: result.provenance,
-  });
+  };
+  if (!context.evidenceSealer) throw new Error('evidence_sealer_required');
+  evidence.seal = context.evidenceSealer.seal(contract.taskId, criterionId, evidence);
+  const next = attachEvidence(contract, criterionId, evidence);
   next.lastVerifiedAt = verifiedAt;
   return { contract: next, result: { criterionId, evidenceId, ...result, verifiedAt } };
 }
@@ -107,6 +116,7 @@ function verifyActive(contract, options = {}) {
     forbiddenPaths: contract.scope?.forbidden || [],
     attestationToken: options.attestationToken,
     providedToken: options.providedToken,
+    evidenceSealer: options.evidenceSealer,
   };
   let current = contract;
   const results = [];
@@ -118,7 +128,10 @@ function verifyActive(contract, options = {}) {
     results.push(result);
   }
   current.lastVerifiedAt = new Date().toISOString();
-  const evaluation = evaluateCompletion(current, { requireHarness: true });
+  const evaluation = evaluateCompletion(current, {
+    requireHarness: true,
+    verifyEvidence: options.evidenceSealer?.verify,
+  });
   return { contract: current, evaluation, results };
 }
 

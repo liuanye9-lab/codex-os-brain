@@ -1,13 +1,33 @@
-'use strict';
+import taskContract from './scripts/brain-lite-task-contract.js';
+import contextEconomy from './scripts/brain-lite-context-economy.js';
+import traceV2 from './scripts/brain-lite-trace-v2.js';
+import policyLab from './scripts/brain-lite-policy-lab.js';
+import outcomeAttribution from './scripts/brain-lite-outcome-attribution.js';
+import indexHealth from './scripts/brain-lite-index-health.js';
+import v8Review from './scripts/brain-lite-v8-review.js';
+import behavioralMemory from './scripts/brain-lite-behavioral-memory.js';
+import behavioralPolicy from './scripts/brain-lite-behavioral-policy.js';
 
-module.exports = Object.freeze({
-  taskContract: require('./scripts/brain-lite-task-contract'),
-  contextEconomy: require('./scripts/brain-lite-context-economy'),
-  traceV2: require('./scripts/brain-lite-trace-v2'),
-  policyLab: require('./scripts/brain-lite-policy-lab'),
-  outcomeAttribution: require('./scripts/brain-lite-outcome-attribution'),
-  indexHealth: require('./scripts/brain-lite-index-health'),
-  v8Review: require('./scripts/brain-lite-v8-review'),
-  behavioralMemory: require('./scripts/brain-lite-behavioral-memory'),
-  behavioralPolicy: require('./scripts/brain-lite-behavioral-policy'),
+export {
+  behavioralMemory,
+  behavioralPolicy,
+  contextEconomy,
+  indexHealth,
+  outcomeAttribution,
+  policyLab,
+  taskContract,
+  traceV2,
+  v8Review,
+};
+
+export default Object.freeze({
+  taskContract,
+  contextEconomy,
+  traceV2,
+  policyLab,
+  outcomeAttribution,
+  indexHealth,
+  v8Review,
+  behavioralMemory,
+  behavioralPolicy,
 });

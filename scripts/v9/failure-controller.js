@@ -33,8 +33,12 @@ function advanceCircuit(state = {}, failure, circuitConfig = {}) {
   return { signature: failure.signature, consecutive, status };
 }
 
+function resetCircuit() {
+  return { signature: null, consecutive: 0, status: 'closed' };
+}
+
 function shouldRetry(failure, state) {
   return failure.retryable === true && state.status !== 'open' && failure.class !== 'security_policy';
 }
 
-module.exports = { advanceCircuit, classifyFailure, failureSignature, shouldRetry };
+module.exports = { advanceCircuit, classifyFailure, failureSignature, resetCircuit, shouldRetry };

@@ -1,8 +1,12 @@
 {
   "name": "codex-brain-v9",
-  "version": "0.11.1",
+  "version": "0.11.2",
   "description": "Adaptive, evidence-gated reliability harness for coding agents with project hooks, CLI, and MCP.",
   "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
   "license": "MIT",
   "engines": { "node": ">=22.5" },
   "bin": {
@@ -10,6 +14,7 @@
     "codex-brain": "bin/brain.js"
   },
   "files": [
+    "index.js",
     "bin/brain.js",
     "bin/brain-hook.js",
     "bin/package.json",
@@ -22,6 +27,7 @@
     "mcp/tools.mjs",
     "schemas/brain-v9-*.json",
     "scripts/v9",
+    "scripts/brain-lite-*.js",
     "scripts/package.json",
     "scripts/probe-v9-mcp.mjs",
     "scripts/package-selftest.js",
@@ -39,6 +45,7 @@
   "scripts": {
     "test": "node scripts/test-contract.js",
     "check": "node scripts/check-contract.js",
+    "test:behavioral-memory": "node --test tests/brain-lite-behavioral-memory-*.test.js",
     "test:package": "node scripts/package-selftest.js",
     "eval:reliability": "node evals/v9-reliability/runner.cjs",
     "mcp:probe": "node scripts/probe-v9-mcp.mjs",

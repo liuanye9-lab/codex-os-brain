@@ -10,8 +10,9 @@ function boundedObject(value, maxBytes = 16_384) {
 
 function normalizeHookInput(input = {}) {
   const toolResult = boundedObject(input.tool_result || input.tool_response || input.toolResult);
+  const event = String(input.hook_event_name || input.hookEventName || input.event || '');
   return {
-    event: String(input.hook_event_name || input.hookEventName || input.event || ''),
+    event,
     sessionId: input.session_id || input.sessionId,
     turnId: input.turn_id || input.turnId,
     taskId: input.task_id || input.taskId,
@@ -22,7 +23,7 @@ function normalizeHookInput(input = {}) {
     completionClaim: input.completion_claim === true || input.completionClaim === true || input.hook_event_name === 'Stop' || input.event === 'Stop',
     projectRoot: input.project_root || input.projectRoot || input.cwd || process.cwd(),
     host: input.host || 'codex',
-    forceVerify: input.force_verify === true || input.forceVerify === true,
+    forceVerify: input.force_verify === true || input.forceVerify === true || event === 'Stop',
   };
 }
 

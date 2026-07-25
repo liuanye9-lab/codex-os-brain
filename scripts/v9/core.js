@@ -6,8 +6,9 @@ const path = require('node:path');
 const { resolveV9Paths } = require('./paths');
 const { appendJsonl, atomicWriteJson, readJsonSafe } = require('./store');
 const { createTaskContract } = require('./task-contract');
-const { attachEvidence, claimEvidence, evaluateCompletion, verifyActive, verifyCriterion } = require('./verification');
-const { advanceCircuit, classifyFailure } = require('./failure-controller');
+const { claimEvidence, evaluateCompletion, verifyActive, verifyCriterion } = require('./verification');
+const { createEvidenceSealer } = require('./evidence-seal');
+const { advanceCircuit, classifyFailure, resetCircuit } = require('./failure-controller');
 const { evaluateAction } = require('./policy');
 const migration = require('./migration');
 const { createEmbeddingService } = require('./embeddings');
@@ -49,6 +50,7 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
   const memory = createMemoryService({ paths });
   const memoryHarness = createMemoryHarness({ paths });
   const memoryBackupKeyStore = createMacKeychainStore();
+  const evidenceSealer = createEvidenceSealer({ paths });
   const projectRoot = () => path.resolve(configuredProjectRoot || process.env.BRAIN_PROJECT_ROOT || process.cwd());
 
   function activeTask() {
@@ -115,29 +117,32 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
       return saveTask(claimEvidence(contract, criterionId, evidenceRef));
     },
     /**
-     * Attach evidence. Unless harnessVerified:true, treated as claim.
-     * Kept for MCP/CLI compatibility; cannot forge harness pass without flag.
+     * Compatibility API: external evidence is always a claim. Only executable
+     * verifier results receive a local authenticity seal.
      */
     attach(criterionId, evidenceRef) {
       const contract = activeTask();
       if (!contract) throw new Error('active_task_required');
-      if (evidenceRef?.harnessVerified === true && evidenceRef?.allowHarnessAttach !== true) {
-        // External callers cannot self-certify harness verification.
-        return saveTask(claimEvidence(contract, criterionId, evidenceRef));
-      }
-      return saveTask(attachEvidence(contract, criterionId, evidenceRef));
+      return saveTask(claimEvidence(contract, criterionId, evidenceRef));
     },
     evaluateActive(options = {}) {
       const contract = activeTask();
       return contract
-        ? evaluateCompletion(contract, { requireHarness: options.requireHarness !== false })
+        ? evaluateCompletion(contract, {
+          requireHarness: options.requireHarness !== false,
+          verifyEvidence: evidenceSealer.verify,
+        })
         : { status: 'partial', missing: ['active_task'], failed: [], unverified: [], requireHarness: true };
     },
     /** Re-run executable verifiers; only path that can pass criteria. */
     run(options = {}) {
       const contract = activeTask();
       if (!contract) return { status: 'partial', missing: ['active_task'], failed: [], unverified: [], results: [] };
-      const outcome = verifyActive(contract, { ...options, cwd: options.cwd || projectRoot() });
+      const outcome = verifyActive(contract, {
+        ...options,
+        cwd: options.cwd || projectRoot(),
+        evidenceSealer,
+      });
       saveTask(outcome.contract);
       events.append({
         kind: 'verify',
@@ -166,6 +171,7 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
         forbiddenPaths: contract.scope?.forbidden || [],
         attestationToken: options.attestationToken,
         providedToken: options.providedToken,
+        evidenceSealer,
       });
       saveTask(next);
       events.append({ kind: 'verify', taskId: next.taskId, status: result.status, evidenceId: result.evidenceId });
@@ -180,6 +186,11 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
       const next = advanceCircuit(state, failure, config.failureCircuit);
       if (enabled) atomicWriteJson(failuresFile, next);
       return { failure, state: next };
+    },
+    succeed() {
+      const next = resetCircuit();
+      if (enabled) atomicWriteJson(failuresFile, next);
+      return next;
     },
     status() { return readJsonSafe(failuresFile, { signature: null, consecutive: 0, status: 'closed' }).value; },
   };

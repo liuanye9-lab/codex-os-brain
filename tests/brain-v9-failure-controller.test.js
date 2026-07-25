@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { advanceCircuit, classifyFailure, failureSignature, shouldRetry } = require('../scripts/v9/failure-controller');
+const { advanceCircuit, classifyFailure, failureSignature, resetCircuit, shouldRetry } = require('../scripts/v9/failure-controller');
 
 test('third identical failure opens the circuit', () => {
   let state = { signature: null, consecutive: 0, status: 'closed' };
@@ -12,6 +12,14 @@ test('third identical failure opens the circuit', () => {
   state = advanceCircuit(state, failure);
   assert.equal(state.status, 'open');
   assert.equal(shouldRetry(failure, state), false);
+});
+
+test('a successful operation closes and clears an open circuit', () => {
+  assert.deepEqual(resetCircuit({ signature: 'sig_same', consecutive: 3, status: 'open' }), {
+    signature: null,
+    consecutive: 0,
+    status: 'closed',
+  });
 });
 
 test('security failures never auto-retry', () => {

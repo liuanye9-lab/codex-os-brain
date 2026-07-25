@@ -4,11 +4,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
-const api = require('../index');
-
 const root = path.resolve(__dirname, '..');
 
-test('exports stable public control-plane modules', () => {
+test('exports stable public control-plane modules', async () => {
+  const api = await import('../index.js');
   assert.equal(typeof api.taskContract.buildTaskContract, 'function');
   assert.equal(typeof api.policyLab.evaluateOrthogonality, 'function');
   assert.equal(typeof api.outcomeAttribution.attributeOutcomes, 'function');
@@ -23,7 +22,7 @@ test('self-check exposes safe defaults without starting a model or hook', () => 
   });
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
-  assert.equal(output.name, 'brain-lite-agent-harness');
+  assert.equal(output.name, 'codex-brain-v9');
   assert.equal(output.hooksEnabled, false);
   assert.equal(output.behavioralMemoryEnabled, false);
   assert.equal(output.automaticLifecycleChanges, false);

@@ -14,7 +14,12 @@ async function handleStop(input, core) {
       result = core.verification.evaluateActive({ requireHarness: true });
     }
   } catch {
-    result = core.verification.evaluateActive({ requireHarness: true });
+    result = {
+      status: 'partial',
+      missing: [],
+      failed: ['verifier_runtime'],
+      unverified: [],
+    };
   }
 
   if (result.status === 'complete') {

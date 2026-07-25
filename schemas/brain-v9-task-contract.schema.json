@@ -60,6 +60,7 @@
         "status": { "enum": ["passed", "failed", "unverified"] },
         "harnessVerified": { "type": "boolean" },
         "fingerprint": { "type": ["string", "null"] },
+        "seal": { "type": ["string", "null"] },
         "verifiedAt": { "type": ["string", "null"] },
         "summary": {},
         "provenance": {

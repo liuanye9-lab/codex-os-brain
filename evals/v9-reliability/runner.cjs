@@ -19,6 +19,7 @@ const { advanceCircuit, classifyFailure } = require('../../scripts/v9/failure-co
 const { handleStop } = require('../../scripts/v9/hooks/stop');
 const { claimEvidence, evaluateCompletion, verifyCriterion } = require('../../scripts/v9/verification');
 const { createTaskContract } = require('../../scripts/v9/task-contract');
+const { createEvidenceSealer } = require('../../scripts/v9/evidence-seal');
 
 function percentile(values, ratio) {
   if (!Array.isArray(values) || values.length === 0) return null;
@@ -72,8 +73,15 @@ async function suiteFalseCompletion(context) {
     verification: { evaluateActive: () => evalClaim },
   };
   const stop = await handleStop({ completionClaim: true }, core);
-  const harnessRun = verifyCriterion(claimed, 'tests', { command: 'node -e "process.exit(1)"' }, { cwd: isolated.projectRoot });
-  const afterHarness = evaluateCompletion(harnessRun.contract, { requireHarness: true });
+  const evidenceSealer = createEvidenceSealer({ paths: isolated.paths });
+  const harnessRun = verifyCriterion(claimed, 'tests', { command: 'node -e "process.exit(1)"' }, {
+    cwd: isolated.projectRoot,
+    evidenceSealer,
+  });
+  const afterHarness = evaluateCompletion(harnessRun.contract, {
+    requireHarness: true,
+    verifyEvidence: evidenceSealer.verify,
+  });
 
   return {
     name: 'false-completion',

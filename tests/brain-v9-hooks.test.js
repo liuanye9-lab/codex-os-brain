@@ -21,6 +21,23 @@ test('normalization keeps bounded identifiers and drops transcript path', () => 
   assert.deepEqual(value.toolInput, { command: 'npm test' });
 });
 
+test('normalized Stop events force a live verifier rerun', () => {
+  assert.equal(normalizeHookInput({ hook_event_name: 'Stop' }).forceVerify, true);
+});
+
+test('Stop blocks when the live verifier crashes instead of trusting stale state', async () => {
+  const core = {
+    contracts: { active: () => ({ taskId: 'stale' }) },
+    verification: {
+      run: () => { throw new Error('verifier crashed'); },
+      evaluateActive: () => ({ status: 'complete' }),
+    },
+  };
+  const output = await handleStop({ event: 'Stop', completionClaim: true, forceVerify: true }, core);
+  assert.equal(output.decision, 'block');
+  assert.match(output.reason, /verifier_runtime/);
+});
+
 test('SessionStart is silent without an active task and compact recovery is bounded', async () => {
   assert.deepEqual(await handleSession({ event: 'SessionStart' }, { contracts: { active: () => null } }), {});
   const core = { contracts: { active: () => ({ objective: 'finish v9', constraints: [{ explicit: true, text: 'preserve v8' }], unresolved: ['verify'], criteria: [] }) } };
@@ -43,9 +60,45 @@ test('third identical failure opens the circuit', async () => {
   const core = { failures: { record: () => ({ state: { status: ++count >= 3 ? 'open' : 'warning' } }) }, events: { append() {} } };
   const input = { event: 'PostToolUse', toolName: 'Bash', toolResult: { ok: false }, errorType: 'ENOENT' };
   await handleObservation(input, core);
-  await handleObservation(input, core);
+  const warning = await handleObservation(input, core);
+  assert.equal(warning.reason_code, 'repeated_failure_warning');
   const output = await handleObservation(input, core);
   assert.equal(output.reason_code, 'repeated_failure_circuit_open');
+});
+
+test('successful observation resets an existing circuit', async () => {
+  let reset = false;
+  const core = {
+    failures: { succeed: () => { reset = true; } },
+    events: { append() {} },
+  };
+  assert.deepEqual(await handleObservation({ event: 'PostToolUse', toolName: 'Bash', toolResult: { ok: true } }, core), {});
+  assert.equal(reset, true);
+});
+
+test('SessionStart searches SQLite memory and makes retrieval failure visible', async () => {
+  const contract = { taskId: 'memory-hook', objective: 'SQLite retrieval', constraints: [], unresolved: [], criteria: [] };
+  let query;
+  const core = {
+    contracts: { active: () => contract },
+    memory: {
+      search: input => {
+        query = input;
+        return { results: [{ content: 'Use the current SQLite memory service.', sourceRef: 'memory:confirmed' }] };
+      },
+    },
+  };
+  const output = await handleSession({ event: 'SessionStart' }, core);
+  assert.equal(query.query, contract.objective);
+  assert.match(output.hookSpecificOutput.additionalContext, /UNVERIFIED MEMORY/);
+  assert.match(output.hookSpecificOutput.additionalContext, /SQLite memory service/);
+
+  const degraded = await handleSession({ event: 'SessionStart' }, {
+    contracts: { active: () => contract },
+    memory: { search: () => { throw new Error('database unavailable'); } },
+    events: { append() {} },
+  });
+  assert.match(degraded.hookSpecificOutput.additionalContext, /MEMORY RETRIEVAL DEGRADED/);
 });
 
 test('Stop rejects completion without evidence', async () => {

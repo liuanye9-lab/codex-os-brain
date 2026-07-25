@@ -27,5 +27,5 @@ test('runtime paths include a dedicated candidate store and text-free exports', 
 test('package exposes focused behavioral-memory verification commands', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   assert.match(pkg.scripts['test:behavioral-memory'], /behavioral-memory/);
-  assert.match(pkg.scripts.check, /npm run check:behavioral-memory/);
+  assert.match(pkg.scripts.check, /check-contract/);
 });

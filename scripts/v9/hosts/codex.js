@@ -14,6 +14,7 @@ function normalizeCodexEvent(raw = {}) {
     tool_result: raw.tool_result || raw.toolResult || raw.tool_response,
     error_type: raw.error_type || raw.errorType,
     completion_claim: raw.completion_claim ?? raw.completionClaim,
+    force_verify: raw.force_verify === true || raw.forceVerify === true,
     project_root: raw.project_root || raw.cwd || process.cwd(),
   };
 }

@@ -34,6 +34,29 @@ test('P0: verify re-run is the only path to complete; claims blocked at Stop', a
   assert.ok(verified.results[0].harnessVerified);
 });
 
+test('P0: direct edits to active.json cannot forge completion', () => {
+  const { core } = tempCore();
+  const contract = core.contracts.create({
+    taskId: 'p0-file-forge',
+    objective: 'resist file edits',
+    criteria: [{ id: 'tests', required: true }],
+  });
+  contract.criteria[0].status = 'passed';
+  contract.criteria[0].harnessVerified = true;
+  contract.criteria[0].evidence = [{
+    id: 'ev_forged',
+    status: 'passed',
+    harnessVerified: true,
+    fingerprint: 'fake',
+    seal: 'fake',
+    verifiedAt: new Date().toISOString(),
+    provenance: { kind: 'claim', ref: 'direct-file-edit' },
+  }];
+  fs.writeFileSync(path.join(core.paths.tasksRoot, 'active.json'), `${JSON.stringify(contract)}\n`);
+  assert.equal(core.verification.evaluateActive().status, 'partial');
+  assert.deepEqual(core.verification.evaluateActive().unverified, ['tests']);
+});
+
 test('P1: handoff init creates backlog progress smoke', () => {
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-handoff-'));
   const { core } = tempCore();
@@ -83,9 +106,11 @@ test('P5: host adapters normalize codex and claude events', async () => {
   assert.ok(listHosts().includes('codex'));
   assert.ok(listHosts().includes('claude'));
   const claude = getHostAdapter('claude');
-  const normalized = claude.normalizeEvent({ event_name: 'PreToolUse', name: 'Bash', input: { command: 'ls' } });
+  const normalized = claude.normalizeEvent({ event_name: 'PreToolUse', name: 'Bash', input: { command: 'ls' }, force_verify: true });
   assert.equal(normalized.hook_event_name, 'PreToolUse');
   assert.equal(normalized.tool_name, 'Bash');
+  assert.equal(normalized.force_verify, true);
+  assert.equal(getHostAdapter('codex').normalizeEvent({ event: 'Stop', forceVerify: true }).force_verify, true);
   const applied = claude.applyDecision({ decision: 'block', permissionDecision: 'deny', reason: 'nope' });
   assert.equal(applied.continue, false);
 });

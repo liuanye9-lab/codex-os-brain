@@ -28,6 +28,7 @@ function resolveV9Paths(env = process.env, options = {}) {
     migrationRoot: pathImpl.join(runtimeRoot, 'migration'),
     localStateRoot,
     localRuntimeRoot,
+    evidenceSealKeyPath: pathImpl.join(localRuntimeRoot, 'evidence', 'seal.key'),
     memoryRoot: pathImpl.join(localRuntimeRoot, 'memory'),
     memoryDbPath: pathImpl.join(localRuntimeRoot, 'memory', 'memory.sqlite3'),
     memoryBackupRoot: pathImpl.join(localRuntimeRoot, 'memory', 'backups'),

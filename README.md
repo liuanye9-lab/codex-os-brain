@@ -1,6 +1,6 @@
 # Codex Brain V9：给 AI 编程助手装一个「安全副驾驶」
 
-[![Version](https://img.shields.io/badge/version-0.11.1-5b5bd6)](package.json)
+[![Version](https://img.shields.io/badge/version-0.11.2-5b5bd6)](package.json)
 [![Runtime](https://img.shields.io/badge/runtime-local--first-1f883d)](docs/v9/privacy-and-threat-model.md)
 [![Interfaces](https://img.shields.io/badge/interfaces-hooks%20%7C%20CLI%20%7C%20MCP-0969da)](docs/v9/quickstart.md)
 [![Eval](https://img.shields.io/badge/eval-reliability%20suites-orange)](evals/v9-reliability/runner.cjs)
@@ -36,7 +36,7 @@ Node.js 必须是 **22.5+**。`brain doctor` 默认只读；项目 hooks 默认�
 
 本版重新核验了 MIT 许可的 [`384961890-ui/claude-brain`](https://github.com/384961890-ui/claude-brain) v8.3。吸收的是“失败要响、时间是一等维度、召回必须可审计、先便宜后昂贵”的 Harness 原则；保留 Codex Brain 自己的 native-first、SQLite 事务记忆、候选门禁、可执行 verifier、CLI / hooks / MCP 同核架构。
 
-具体改动：修复 MCP memory recall 的旧接口漂移；记忆检索统一执行 `[valid_from, valid_to)` 时间门禁；新增可发现的 `brain --help` 与结构化 doctor checks；发布门禁开始校验 README 图片来源和哈希；可靠性延迟报告改用真实 p50。完整对照见 [Claude Brain v8.3 clean-room comparison](docs/v9/claude-brain-v8.3-comparison.md)。
+具体改动：修复 MCP 与 SessionStart memory recall 的旧接口漂移；记忆检索统一执行 `[valid_from, valid_to)` 时间门禁，失败会显式降级；验证证据增加本机 HMAC 封印，直接篡改任务 JSON 不能伪造通过；两个宿主适配器完整透传 `force_verify`，标准 Stop 事件默认触发实时重验，重验崩溃也会 fail closed；成功调用会复位熔断，第 2 次失败会真正告警；测试入口改为递归发现全部测试文件。另有可发现的 `brain --help`、结构化 doctor checks、README 图片来源与哈希门禁，以及真实 p50 延迟报告。完整对照见 [Claude Brain v8.3 clean-room comparison](docs/v9/claude-brain-v8.3-comparison.md)。
 
 ### 可选的最小上下文续航
 
@@ -171,7 +171,7 @@ flowchart LR
 |---|---|
 | Agent 说「测试过了 / 做完了」 | 只记为 **claim（自述）**，状态仍是 `unverified` |
 | 你凭感觉相信 | `brain verify` **重新跑** command / test / scope 等 verifier |
-| 过关靠自觉 | 只有 `harnessVerified: true` 才能把 criterion 标成 `passed` |
+| 过关靠自觉 | 只有 verifier 重跑产生、且本机 HMAC 封印有效的 `harnessVerified: true` 证据才能把 criterion 标成 `passed` |
 
 类比：**学生自己在卷子上打勾不算分，老师重批才算分。**
 
@@ -208,7 +208,7 @@ stateDiagram-v2
   绿灯_closed --> 绿灯_closed: 第1次同类失败<br/>只记账
   绿灯_closed --> 黄灯_warning: 第2次同类失败<br/>提醒换路
   黄灯_warning --> 红灯_open: 第3次同类失败<br/>熔断暂停盲重试
-  红灯_open --> [*]
+  红灯_open --> 绿灯_closed: 后续调用成功<br/>清零复位
   note right of 红灯_open
     按失败签名累计
     不是任意错误混在一起
@@ -1037,7 +1037,7 @@ npm run eval:reliability
 node scripts/build-public-export.js --output /tmp/codex-brain-v9-public
 ```
 
-源码 checkout 中，`npm test` 执行完整回归套件；npm 安装包不携带源码测试目录，改为执行隔离的 CLI、doctor、Hooks 可逆安装和 MCP 自检，因此安装后的 `npm test` / `npm run check` 也有真实可运行的契约。可靠性 eval 始终使用临时 `projectRoot`、Brain home 和 state home，不会改写调用项目的 `.brain`。
+源码 checkout 中，`npm test` 会递归发现 `tests/` 下全部 `test/spec` 文件，不再依赖容易漏测的手工白名单；npm 安装包不携带源码测试目录，改为执行隔离的公开 API、CLI、doctor、Hooks 可逆安装和 MCP 自检，因此安装后的 `npm test` / `npm run check` 也有真实可运行的契约。可靠性 eval 始终使用临时 `projectRoot`、Brain home 和 state home，不会改写调用项目的 `.brain`。
 
 ---
 

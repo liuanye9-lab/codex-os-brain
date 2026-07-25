@@ -19,6 +19,7 @@ function normalizeClaudeEvent(raw = {}) {
     tool_result: raw.tool_result || raw.toolResult || raw.result,
     error_type: raw.error_type || raw.errorType || raw.error?.type,
     completion_claim: raw.completion_claim ?? raw.completionClaim ?? raw.hook_event_name === 'Stop',
+    force_verify: raw.force_verify === true || raw.forceVerify === true,
     project_root: raw.cwd || raw.project_root || process.cwd(),
   };
 }

@@ -12,6 +12,17 @@ function buildCheckpoint(contract) {
   ].filter(Boolean).join('\n').slice(0, 1000);
 }
 
+function formatMemorySearchForInjection(report = {}) {
+  const rows = Array.isArray(report.results) ? report.results.slice(0, 3) : [];
+  if (!rows.length) return '';
+  const lines = rows.map(item => {
+    const content = String(item.content || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+    const source = item.sourceRef ? ` [source:${item.sourceRef}]` : '';
+    return content ? `- ${content}${source}` : '';
+  }).filter(Boolean);
+  return lines.length ? `UNVERIFIED MEMORY — review before use\n${lines.join('\n')}`.slice(0, 500) : '';
+}
+
 async function handleSession(input, core) {
   if (!['SessionStart', 'PostCompact', 'PreCompact'].includes(input.event)) return {};
 
@@ -40,12 +51,18 @@ async function handleSession(input, core) {
   // Memory recall banner (unverified by default).
   try {
     if (contract && core.memory) {
-      const recalled = core.memory.recall({ query: contract.objective, limit: 3 });
-      const banner = core.memory.formatForInjection(recalled);
+      const recalled = core.memory.search({ query: contract.objective, limit: 3 });
+      const banner = formatMemorySearchForInjection(recalled);
       if (banner) parts.push(banner.slice(0, 500));
     }
   } catch {
-    // memory optional
+    parts.push('[MEMORY RETRIEVAL DEGRADED] SQLite memory search failed; no memory was injected.');
+    core.events?.append?.({
+      kind: 'checkpoint',
+      taskId: contract?.taskId,
+      status: 'failed',
+      reasonCode: 'memory_retrieval_failed',
+    });
   }
 
   // Active skills budget banner.
@@ -62,4 +79,4 @@ async function handleSession(input, core) {
   return additionalContext(parts.join('\n\n').slice(0, 1200), input.event === 'PreCompact' ? 'PostCompact' : input.event);
 }
 
-module.exports = { buildCheckpoint, handleSession };
+module.exports = { buildCheckpoint, formatMemorySearchForInjection, handleSession };
