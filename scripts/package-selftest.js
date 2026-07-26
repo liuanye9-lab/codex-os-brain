@@ -32,7 +32,10 @@ function main() {
     const help = JSON.parse(runNode([path.join(root, 'bin', 'brain.js'), '--help', '--json'], { cwd: projectRoot, env }));
     if (help.usage !== 'brain <command> [action] [--flags] [--json]') throw new Error('cli_help_contract_failed');
     const doctor = JSON.parse(runNode([path.join(root, 'bin', 'brain.js'), 'doctor', '--project', projectRoot, '--json'], { cwd: projectRoot, env }));
-    if (!doctor.ok) throw new Error('doctor_contract_failed');
+    if (!doctor.ok) {
+      const blocked = doctor.checks.filter(check => ['blocked', 'failed'].includes(check.status));
+      throw new Error(`doctor_contract_failed:${JSON.stringify(blocked)}`);
+    }
 
     const enabled = setProjectHooks({ projectRoot, pluginRoot: root, hostConfigRoot: codex, enabled: true, confirm: true });
     if (!enabled.valid || !enabled.eventsComplete || !enabled.fingerprintMatch || enabled.foreignHookCount !== 1) throw new Error('hook_install_contract_failed');

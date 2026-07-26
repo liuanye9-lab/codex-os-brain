@@ -121,7 +121,7 @@ function createWindowsDpapiEvidenceKeyProvider({ keyPath, run = spawnSync } = {}
       if (!protectedPath) return null;
       if (fs.existsSync(protectedPath)) {
         const result = powershell(
-          '$p=[IO.File]::ReadAllText($args[0]);$d=[Convert]::FromBase64String($p);$u=[Security.Cryptography.ProtectedData]::Unprotect($d,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);[Console]::Write([Convert]::ToBase64String($u))',
+          'Add-Type -AssemblyName System.Security;$p=[System.IO.File]::ReadAllText($args[0]);$d=[System.Convert]::FromBase64String($p);$u=[System.Security.Cryptography.ProtectedData]::Unprotect($d,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser);[System.Console]::Write([System.Convert]::ToBase64String($u))',
           [protectedPath],
         );
         return result.status === 0 ? decodeKey(String(result.stdout || '')) : null;
@@ -130,7 +130,7 @@ function createWindowsDpapiEvidenceKeyProvider({ keyPath, run = spawnSync } = {}
       fs.mkdirSync(path.dirname(protectedPath), { recursive: true, mode: 0o700 });
       const generated = crypto.randomBytes(KEY_BYTES);
       const result = powershell(
-        '$d=[Convert]::FromBase64String($args[1]);$p=[Security.Cryptography.ProtectedData]::Protect($d,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);[IO.File]::WriteAllText($args[0],[Convert]::ToBase64String($p))',
+        'Add-Type -AssemblyName System.Security;$d=[System.Convert]::FromBase64String($args[1]);$p=[System.Security.Cryptography.ProtectedData]::Protect($d,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser);[System.IO.File]::WriteAllText($args[0],[System.Convert]::ToBase64String($p))',
         [protectedPath, generated.toString('base64')],
       );
       return result.status === 0 ? generated : null;
