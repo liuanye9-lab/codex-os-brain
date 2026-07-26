@@ -30,16 +30,15 @@ test('Linux production mode creates a private fallback key without NODE_TEST_CON
 test('Windows production mode delegates storage and retrieval to current-user DPAPI', () => {
   const paths = fixture();
   let protectedValue = null;
-  const run = (_command, args) => {
+  const run = (_command, args, options) => {
     const script = args[args.indexOf('-Command') + 1];
-    const scriptArgs = args.slice(args.indexOf('-Command') + 2);
-    if (script.includes('::Protect')) {
-      protectedValue = scriptArgs[1];
-      fs.mkdirSync(path.dirname(scriptArgs[0]), { recursive: true });
-      fs.writeFileSync(scriptArgs[0], 'synthetic-dpapi-envelope');
+    if (script.includes('ConvertFrom-SecureString')) {
+      protectedValue = options.env.CODEX_BRAIN_DPAPI_VALUE;
+      fs.mkdirSync(path.dirname(options.env.CODEX_BRAIN_DPAPI_PATH), { recursive: true });
+      fs.writeFileSync(options.env.CODEX_BRAIN_DPAPI_PATH, 'synthetic-dpapi-envelope');
       return { status: 0, stdout: '', stderr: '' };
     }
-    if (script.includes('::Unprotect')) return { status: 0, stdout: protectedValue, stderr: '' };
+    if (script.includes('SecureStringToBSTR')) return { status: 0, stdout: protectedValue, stderr: '' };
     return { status: 1, stdout: '', stderr: 'unexpected' };
   };
   const provider = createWindowsDpapiEvidenceKeyProvider({ keyPath: paths.evidenceSealKeyPath, run });

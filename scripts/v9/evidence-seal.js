@@ -109,10 +109,17 @@ function createLinuxSecretServiceEvidenceKeyProvider({ run = spawnSync, service 
 
 function createWindowsDpapiEvidenceKeyProvider({ keyPath, run = spawnSync } = {}) {
   const protectedPath = keyPath ? `${keyPath}.dpapi` : null;
-  function powershell(script, args = []) {
+  function powershell(script, values = {}) {
     const executable = process.env.ComSpec ? 'powershell.exe' : 'powershell';
-    return run(executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script, ...args], {
-      encoding: 'utf8', timeout: 15_000, windowsHide: true,
+    return run(executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
+      encoding: 'utf8',
+      timeout: 15_000,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        CODEX_BRAIN_DPAPI_PATH: protectedPath || '',
+        CODEX_BRAIN_DPAPI_VALUE: values.value || '',
+      },
     });
   }
   return {
@@ -121,8 +128,7 @@ function createWindowsDpapiEvidenceKeyProvider({ keyPath, run = spawnSync } = {}
       if (!protectedPath) return null;
       if (fs.existsSync(protectedPath)) {
         const result = powershell(
-          'Add-Type -AssemblyName System.Security;$p=[System.IO.File]::ReadAllText($args[0]);$d=[System.Convert]::FromBase64String($p);$u=[System.Security.Cryptography.ProtectedData]::Unprotect($d,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser);[System.Console]::Write([System.Convert]::ToBase64String($u))',
-          [protectedPath],
+          '$p=[System.IO.File]::ReadAllText($env:CODEX_BRAIN_DPAPI_PATH);$s=ConvertTo-SecureString $p;$b=[System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($s);try{[System.Console]::Write([System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($b))}finally{[System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($b)}',
         );
         return result.status === 0 ? decodeKey(String(result.stdout || '')) : null;
       }
@@ -130,8 +136,8 @@ function createWindowsDpapiEvidenceKeyProvider({ keyPath, run = spawnSync } = {}
       fs.mkdirSync(path.dirname(protectedPath), { recursive: true, mode: 0o700 });
       const generated = crypto.randomBytes(KEY_BYTES);
       const result = powershell(
-        'Add-Type -AssemblyName System.Security;$d=[System.Convert]::FromBase64String($args[1]);$p=[System.Security.Cryptography.ProtectedData]::Protect($d,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser);[System.IO.File]::WriteAllText($args[0],[System.Convert]::ToBase64String($p))',
-        [protectedPath, generated.toString('base64')],
+        '$s=ConvertTo-SecureString $env:CODEX_BRAIN_DPAPI_VALUE -AsPlainText -Force;$p=ConvertFrom-SecureString $s;[System.IO.File]::WriteAllText($env:CODEX_BRAIN_DPAPI_PATH,$p)',
+        { value: generated.toString('base64') },
       );
       return result.status === 0 ? generated : null;
     },
