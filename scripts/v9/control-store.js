@@ -6,16 +6,30 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
 const SCHEMA_VERSION = 2;
+const SQLITE_RETRY_WAIT = new Int32Array(new SharedArrayBuffer(4));
 
 function sessionScopeId(value) {
   return crypto.createHash('sha256').update(String(value || 'default')).digest('hex').slice(0, 24);
+}
+
+function retrySqliteBusy(fn, attempts = 100) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return fn();
+    } catch (error) {
+      const busy = error?.errcode === 5 || /database is (?:locked|busy)/i.test(String(error?.message || ''));
+      if (!busy || attempt === attempts - 1) throw error;
+      Atomics.wait(SQLITE_RETRY_WAIT, 0, 0, 20);
+    }
+  }
+  throw new Error('sqlite_busy_retry_exhausted');
 }
 
 function openControlDatabase(dbPath) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(dbPath, { enableForeignKeyConstraints: true });
   db.exec('PRAGMA busy_timeout=5000');
-  db.exec('PRAGMA journal_mode=WAL');
+  retrySqliteBusy(() => db.exec('PRAGMA journal_mode=WAL'));
   db.exec('PRAGMA synchronous=FULL');
   db.exec(`
     CREATE TABLE IF NOT EXISTS control_schema (
@@ -49,6 +63,17 @@ function openControlDatabase(dbPath) {
       updated_at TEXT NOT NULL,
       PRIMARY KEY(session_id, operation)
     );
+    CREATE TABLE IF NOT EXISTS task_contracts (
+      task_id TEXT PRIMARY KEY,
+      bound_session_id TEXT,
+      active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+      contract_json TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      spec_hash TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(bound_session_id) REFERENCES harness_sessions(session_id) ON DELETE SET NULL
+    );
     CREATE INDEX IF NOT EXISTS harness_events_session_time ON harness_events(session_id, created_at);
     CREATE INDEX IF NOT EXISTS harness_events_task_time ON harness_events(task_id, created_at);
   `);
@@ -74,20 +99,6 @@ function openControlDatabase(dbPath) {
         DROP TABLE task_contracts_v1;
       `);
     });
-  } else if (taskColumns.length === 0) {
-    db.exec(`
-      CREATE TABLE task_contracts (
-        task_id TEXT PRIMARY KEY,
-        bound_session_id TEXT,
-        active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
-        contract_json TEXT NOT NULL,
-        revision INTEGER NOT NULL,
-        spec_hash TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY(bound_session_id) REFERENCES harness_sessions(session_id) ON DELETE SET NULL
-      );
-    `);
   }
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS task_contracts_active_session

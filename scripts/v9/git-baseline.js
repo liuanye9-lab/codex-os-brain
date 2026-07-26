@@ -25,6 +25,15 @@ function canonicalFsPath(target) {
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
+function sameFsLocation(left, right) {
+  try {
+    const a = fs.statSync(left);
+    const b = fs.statSync(right);
+    if (a.dev === b.dev && a.ino === b.ino) return true;
+  } catch { /* fall through to canonical path comparison */ }
+  return canonicalFsPath(left) === canonicalFsPath(right);
+}
+
 function parseStatusZ(buffer) {
   const entries = buffer.toString('utf8').split('\0');
   const paths = [];
@@ -103,9 +112,8 @@ function captureGitBaseline(cwd, { watchPaths = [] } = {}) {
   if (!root.ok || !head.ok || !commonDir.ok || !gitDir.ok || !dirty.ok) {
     return { version: 2, repository: false, reason: root.stderr || head.stderr || commonDir.stderr || gitDir.stderr || dirty.error || 'git_baseline_unavailable' };
   }
-  const normalizedRoot = canonicalFsPath(root.stdout.toString('utf8').trim());
-  const normalizedCwd = canonicalFsPath(cwd);
-  if (normalizedRoot !== normalizedCwd) {
+  const rootPath = root.stdout.toString('utf8').trim();
+  if (!sameFsLocation(rootPath, cwd)) {
     return { version: 2, repository: false, reason: 'project_root_must_equal_git_root' };
   }
   const dirtyFingerprints = Object.fromEntries(dirty.paths.map(file => [file, fileFingerprint(cwd, file)]));

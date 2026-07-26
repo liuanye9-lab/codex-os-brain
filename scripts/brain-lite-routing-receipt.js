@@ -81,6 +81,9 @@ function runVerifier(check, options = {}, dependencies = {}) {
   if (!check?.command || typeof check.command !== 'string') throw coded('routing_verifier_command_required');
   const args = stringArray(check.args);
   if (check.expectedExitStatus !== undefined && check.expectedExitStatus !== 0) throw coded('routing_verifier_expected_status_must_be_zero');
+  const requestedName = path.basename(check.command, path.extname(check.command)).toLowerCase();
+  if (SHELLS.has(requestedName) || requestedName === 'env') throw coded('routing_verifier_shell_string_rejected');
+  if (TRIVIAL_VERIFIERS.has(requestedName)) throw coded('routing_verifier_trivial_command_rejected');
   const executable = resolveExecutable(check.command, options);
   const cwdInput = path.resolve(options.cwd || process.cwd());
   const cwd = fs.existsSync(cwdInput) ? fs.realpathSync(cwdInput) : cwdInput;
