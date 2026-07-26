@@ -1,6 +1,7 @@
 'use strict';
 
 const os = require('node:os');
+const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
@@ -30,6 +31,8 @@ function resolveV9Paths(env = process.env, options = {}) {
     localStateRoot,
     localRuntimeRoot,
     evidenceSealKeyPath: pathImpl.join(localRuntimeRoot, 'evidence', 'seal.key'),
+    controlDbPath: pathImpl.join(localRuntimeRoot, 'control', 'control.sqlite3'),
+    controlGuardPath: pathImpl.join(runtimeRoot, 'control', 'active.guard.json'),
     memoryRoot: pathImpl.join(localRuntimeRoot, 'memory'),
     memoryDbPath: pathImpl.join(localRuntimeRoot, 'memory', 'memory.sqlite3'),
     memoryBackupRoot: pathImpl.join(localRuntimeRoot, 'memory', 'backups'),
@@ -44,7 +47,9 @@ function resolveV9Paths(env = process.env, options = {}) {
 }
 
 function projectScopeId(projectRoot, pathImpl = path) {
-  const normalized = pathImpl.resolve(projectRoot);
+  const resolved = pathImpl.resolve(projectRoot);
+  let normalized = resolved;
+  try { normalized = fs.realpathSync.native(resolved); } catch {}
   return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 24);
 }
 
@@ -64,6 +69,8 @@ function scopeV9Paths(paths, projectRoot, pathImpl = path) {
     embeddingsRoot: pathImpl.join(projectRuntimeRoot, 'embeddings'),
     embeddingConfigPath: pathImpl.join(projectRuntimeRoot, 'embeddings', 'config.json'),
     localRuntimeRoot: projectLocalRuntimeRoot,
+    controlDbPath: pathImpl.join(projectLocalRuntimeRoot, 'control', 'control.sqlite3'),
+    controlGuardPath: pathImpl.join(projectRuntimeRoot, 'control', 'active.guard.json'),
     memoryRoot: pathImpl.join(projectLocalRuntimeRoot, 'memory'),
     memoryDbPath: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'memory.sqlite3'),
     memoryBackupRoot: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'backups'),

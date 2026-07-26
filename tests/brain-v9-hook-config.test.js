@@ -4,16 +4,19 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { BACKUP_FILE, STATE_FILE, buildProjectHookConfig, doctorHooks, setProjectHooks } = require('../scripts/v9/hook-config');
+const { BACKUP_FILE, REQUIRED_EVENTS, STATE_FILE, buildProjectHookConfig, doctorHooks, setProjectHooks } = require('../scripts/v9/hook-config');
 
 const root = path.resolve(__dirname, '..');
 
 test('hook manifest uses PLUGIN_ROOT and explicit short timeouts', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'hooks', 'hooks.json'), 'utf8'));
-  const commands = Object.values(manifest.hooks).flatMap(groups => groups.flatMap(group => group.hooks));
+  const commands = Object.entries(manifest.hooks).flatMap(([event, groups]) =>
+    groups.flatMap(group => group.hooks.map(hook => ({ ...hook, event }))));
   assert.ok(commands.every(hook => hook.command.includes('${PLUGIN_ROOT}')));
-  assert.ok(commands.every(hook => hook.timeout <= 2));
-  for (const event of ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'PostCompact', 'Stop']) assert.ok(manifest.hooks[event]);
+  assert.ok(commands.every(hook => hook.commandWindows.includes('%PLUGIN_ROOT%')));
+  assert.ok(commands.filter(hook => hook.event !== 'Stop').every(hook => hook.timeout <= 2));
+  assert.ok(commands.filter(hook => hook.event === 'Stop').every(hook => hook.timeout >= 120));
+  assert.deepEqual(Object.keys(manifest.hooks), REQUIRED_EVENTS);
 });
 
 test('enable writes only project hooks after confirmation', () => {
@@ -24,7 +27,8 @@ test('enable writes only project hooks after confirmation', () => {
   assert.equal(report.valid, true);
   assert.equal(fs.existsSync(path.join(projectRoot, '.codex', 'hooks.json')), true);
   assert.equal(fs.existsSync(path.join(fakeHome, '.codex', 'hooks.json')), false);
-  assert.equal(doctorHooks({ projectRoot }).scope, 'project');
+  assert.equal(doctorHooks({ projectRoot }).scope, 'host-user');
+  assert.equal(doctorHooks({ projectRoot }).projectStateScope, 'project');
 });
 
 test('enable merges foreign hooks, creates a backup, and disable restores the original byte-for-byte', () => {
@@ -40,6 +44,8 @@ test('enable merges foreign hooks, creates a backup, and disable restores the or
   assert.equal(enabled.enabled, true);
   assert.equal(enabled.eventsComplete, true);
   assert.equal(enabled.fingerprintMatch, true);
+  assert.equal(enabled.packageVersionMatch, true);
+  assert.equal(enabled.runtimeDigestMatch, true);
   assert.equal(enabled.foreignHookCount, 1);
   assert.equal(merged.integrationFixtureMarker, 'must-survive');
   assert.equal(merged.hooks.PreToolUse[0].hooks[0].command, 'node custom.js');
@@ -52,6 +58,18 @@ test('enable merges foreign hooks, creates a backup, and disable restores the or
   assert.equal(fs.readFileSync(path.join(codex, 'hooks.json'), 'utf8'), original);
   assert.equal(fs.existsSync(path.join(codex, BACKUP_FILE)), false);
   assert.equal(fs.existsSync(path.join(codex, STATE_FILE)), false);
+});
+
+test('doctor rejects an installation state with a stale runtime fingerprint', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-hook-runtime-drift-'));
+  setProjectHooks({ projectRoot, pluginRoot: root, enabled: true, confirm: true });
+  const stateFile = path.join(projectRoot, '.codex', STATE_FILE);
+  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  state.runtimeDigest = 'stale-runtime';
+  fs.writeFileSync(stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  const report = doctorHooks({ projectRoot, pluginRoot: root });
+  assert.equal(report.runtimeDigestMatch, false);
+  assert.equal(report.valid, false);
 });
 
 test('disable preserves foreign hooks added after installation instead of rolling them back', () => {
@@ -135,12 +153,16 @@ test('doctor reports unwritable runtime event storage instead of claiming health
   setProjectHooks({ projectRoot, pluginRoot: root, enabled: true, confirm: true });
   const runtime = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-hook-runtime-'));
   const runtimePaths = {
+    controlDbPath: path.join(runtime, 'control', 'control.sqlite3'),
     tasksRoot: path.join(runtime, 'tasks'),
     eventsRoot: path.join(runtime, 'events'),
     failuresRoot: path.join(runtime, 'failures'),
   };
-  for (const directory of Object.values(runtimePaths)) fs.mkdirSync(directory, { recursive: true });
-  const events = path.join(runtimePaths.eventsRoot, 'events.jsonl');
+  for (const directory of [runtimePaths.tasksRoot, runtimePaths.eventsRoot, runtimePaths.failuresRoot]) {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+  fs.mkdirSync(path.dirname(runtimePaths.controlDbPath), { recursive: true });
+  const events = runtimePaths.controlDbPath;
   fs.writeFileSync(events, '');
   fs.chmodSync(events, 0o400);
   try {

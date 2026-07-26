@@ -1,12 +1,16 @@
 'use strict';
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { atomicWriteJson } = require('./store');
 const { resolveV9Paths, scopeV9Paths } = require('./paths');
 
-const REQUIRED_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'PostCompact', 'Stop'];
+const REQUIRED_EVENTS = [
+  'SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse',
+  'PermissionRequest', 'SubagentStart', 'SubagentStop', 'PreCompact', 'PostCompact', 'Stop',
+];
 const OWNER = 'codex-brain-v9';
 const OWNER_MARKER = `BRAIN_V9_HOOK_OWNER=${OWNER}`;
 const STATE_FILE = 'hooks.codex-brain-v9.state.json';
@@ -15,8 +19,44 @@ const BACKUP_FILE = 'hooks.json.codex-brain-v9.backup';
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function hashText(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
 function fingerprint(value) { return hashText(JSON.stringify(value)); }
-function configPaths(projectRoot) {
-  const directory = path.join(path.resolve(projectRoot), '.codex');
+function packageVersion(pluginRoot) {
+  return JSON.parse(fs.readFileSync(path.join(pluginRoot, 'package.json'), 'utf8')).version;
+}
+function walkRuntimeFiles(directory, root = directory) {
+  if (!fs.existsSync(directory)) return [];
+  return fs.readdirSync(directory, { withFileTypes: true })
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .flatMap(entry => {
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) return walkRuntimeFiles(target, root);
+      return entry.isFile() && /\.(?:js|mjs|json)$/.test(entry.name)
+        ? [path.relative(root, target).replaceAll('\\', '/')]
+        : [];
+    });
+}
+function runtimeDigest(pluginRoot) {
+  const root = path.resolve(pluginRoot);
+  const fixed = ['bin/brain-hook.js', 'bin/run-brain-hook.js', 'hooks/hooks.json', 'package.json'];
+  const dynamic = [
+    ...walkRuntimeFiles(path.join(root, 'scripts', 'v9')).map(file => `scripts/v9/${file}`),
+    ...walkRuntimeFiles(path.join(root, 'mcp')).map(file => `mcp/${file}`),
+  ];
+  const hash = crypto.createHash('sha256');
+  for (const relative of [...new Set([...fixed, ...dynamic])].sort()) {
+    const target = path.join(root, relative);
+    if (!fs.existsSync(target)) throw new Error(`runtime_file_missing:${relative}`);
+    hash.update(relative);
+    hash.update('\0');
+    hash.update(fs.readFileSync(target));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+function configPaths(projectRoot, hostConfigRoot) {
+  const directory = path.resolve(hostConfigRoot
+    || (process.env.NODE_TEST_CONTEXT
+      ? path.join(path.resolve(projectRoot), '.codex')
+      : (process.env.CODEX_HOME || path.join(os.homedir(), '.codex'))));
   return {
     directory,
     file: path.join(directory, 'hooks.json'),
@@ -49,7 +89,11 @@ function sourceManifest(pluginRoot) {
 function buildProjectHookConfig(pluginRoot) {
   const resolved = path.resolve(pluginRoot);
   const manifest = sourceManifest(resolved);
-  return JSON.parse(JSON.stringify(manifest).replaceAll('${PLUGIN_ROOT}', resolved.replaceAll('\\', '/')));
+  return JSON.parse(
+    JSON.stringify(manifest)
+      .replaceAll('${PLUGIN_ROOT}', resolved.replaceAll('\\', '/'))
+      .replaceAll('%PLUGIN_ROOT%', resolved.replaceAll('/', '\\').replaceAll('\\', '\\\\')),
+  );
 }
 
 function validateManifest(manifest) {
@@ -66,6 +110,7 @@ function validateManifest(manifest) {
   const invalidHooks = hooks.filter(hook => (
     hook.type !== 'command'
     || !hook.command
+    || (hook.commandWindows !== undefined && (typeof hook.commandWindows !== 'string' || !hook.commandWindows.trim()))
     || (hook.timeout !== undefined && !(hook.timeout > 0))
   ));
   return {
@@ -80,8 +125,13 @@ function validateManifest(manifest) {
 function isOwnedHook(hook) {
   const command = String(hook?.command || '');
   return hook?.type === 'command'
-    && command.includes('/bin/brain-hook.js')
-    && (command.includes(OWNER_MARKER) || command.includes('BRAIN_V9_HOOKS=1'));
+    && (
+      command.includes('/bin/run-brain-hook.js')
+      || (
+        command.includes('/bin/brain-hook.js')
+        && (command.includes(OWNER_MARKER) || command.includes('BRAIN_V9_HOOKS=1'))
+      )
+    );
 }
 
 function isOwnedGroup(group) {
@@ -135,9 +185,8 @@ function nearestExisting(target) {
 function runtimeStorageWritable(projectRoot, runtimePaths) {
   const paths = runtimePaths || scopeV9Paths(resolveV9Paths(), projectRoot);
   const targets = [
-    path.join(paths.tasksRoot, 'active.json'),
-    path.join(paths.eventsRoot, 'events.jsonl'),
-    path.join(paths.failuresRoot, 'circuit.json'),
+    paths.controlDbPath || path.join(paths.eventsRoot, 'control.sqlite3'),
+    paths.controlGuardPath || path.join(paths.tasksRoot, 'active.guard.json'),
   ];
   const blocked = [];
   for (const target of targets) {
@@ -148,16 +197,30 @@ function runtimeStorageWritable(projectRoot, runtimePaths) {
   return { writable: blocked.length === 0, blocked };
 }
 
-function doctorHooks({ projectRoot, pluginRoot = path.resolve(__dirname, '..', '..'), runtimePaths }) {
-  const paths = configPaths(projectRoot);
+function doctorHooks({ projectRoot, pluginRoot = path.resolve(__dirname, '..', '..'), runtimePaths, hostConfigRoot }) {
+  const paths = configPaths(projectRoot, hostConfigRoot);
   const desired = buildProjectHookConfig(pluginRoot);
   const expectedFingerprint = fingerprint(ownedManifest(desired));
+  const expectedPackageVersion = packageVersion(pluginRoot);
+  const expectedRuntimeDigest = runtimeDigest(pluginRoot);
   const stateAvailable = fs.existsSync(paths.stateFile);
   const backupAvailable = fs.existsSync(paths.backupFile);
+  let state = null;
+  let stateError = null;
+  if (stateAvailable) {
+    try { state = readState(paths.stateFile); }
+    catch (error) { stateError = error.message; }
+  }
+  const installedPackageVersion = state?.packageVersion || null;
+  const installedRuntimeDigest = state?.runtimeDigest || null;
+  const packageVersionMatch = installedPackageVersion === expectedPackageVersion;
+  const runtimeDigestMatch = installedRuntimeDigest === expectedRuntimeDigest;
   if (!fs.existsSync(paths.file)) {
     return {
-      scope: 'project', owner: OWNER, enabled: false, valid: true, manifestValid: true,
+      scope: 'host-user', projectStateScope: 'project', owner: OWNER, enabled: false, valid: true, manifestValid: true,
       ownershipValid: false, eventsComplete: false, fingerprintMatch: false,
+      packageVersionMatch, runtimeDigestMatch, expectedPackageVersion, installedPackageVersion,
+      expectedRuntimeDigest, installedRuntimeDigest, stateError,
       expectedFingerprint, observedFingerprint: null, missingEvents: [...REQUIRED_EVENTS],
       mismatchedEvents: [], duplicateEvents: [], hookCount: 0, ownedHookCount: 0,
       foreignHookCount: 0, stateAvailable, backupAvailable, path: paths.file,
@@ -167,8 +230,10 @@ function doctorHooks({ projectRoot, pluginRoot = path.resolve(__dirname, '..', '
   try { manifest = JSON.parse(fs.readFileSync(paths.file, 'utf8')); }
   catch {
     return {
-      scope: 'project', owner: OWNER, enabled: false, valid: false, manifestValid: false,
+      scope: 'host-user', projectStateScope: 'project', owner: OWNER, enabled: false, valid: false, manifestValid: false,
       ownershipValid: false, eventsComplete: false, fingerprintMatch: false,
+      packageVersionMatch, runtimeDigestMatch, expectedPackageVersion, installedPackageVersion,
+      expectedRuntimeDigest, installedRuntimeDigest, stateError,
       expectedFingerprint, observedFingerprint: null, missingEvents: [...REQUIRED_EVENTS],
       mismatchedEvents: [], duplicateEvents: [], hookCount: 0, ownedHookCount: 0,
       foreignHookCount: 0, stateAvailable, backupAvailable, reason: 'invalid_json', path: paths.file,
@@ -197,11 +262,10 @@ function doctorHooks({ projectRoot, pluginRoot = path.resolve(__dirname, '..', '
   let runtimeExitStatus = null;
   const runtimeStorage = runtimeStorageWritable(projectRoot, runtimePaths);
   if (enabled && ownershipValid && fingerprintMatch) {
-    const smoke = spawnSync(process.execPath, [path.join(pluginRoot, 'bin', 'brain-hook.js')], {
+    const smoke = spawnSync(process.execPath, [path.join(pluginRoot, 'bin', 'run-brain-hook.js')], {
       cwd: path.resolve(projectRoot),
       env: {
         ...process.env,
-        BRAIN_V9_HOOKS: '1',
         BRAIN_PROJECT_ROOT: path.resolve(projectRoot),
       },
       input: `${JSON.stringify({ hook_event_name: 'UserPromptSubmit', project_root: path.resolve(projectRoot) })}\n`,
@@ -213,9 +277,15 @@ function doctorHooks({ projectRoot, pluginRoot = path.resolve(__dirname, '..', '
     runtimeHealthy = smoke.status === 0 && String(smoke.stdout || '').trim() === '{}';
   }
   return {
-    scope: 'project', owner: OWNER, enabled,
-    valid: structural.valid && (!enabled || (ownershipValid && fingerprintMatch && runtimeHealthy && runtimeStorage.writable)),
+    scope: 'host-user', projectStateScope: 'project', owner: OWNER, enabled,
+    valid: structural.valid && !stateError
+      && (!enabled || (
+        ownershipValid && fingerprintMatch && runtimeHealthy && runtimeStorage.writable
+        && packageVersionMatch && runtimeDigestMatch
+      )),
     manifestValid: structural.valid, ownershipValid, eventsComplete, fingerprintMatch,
+    packageVersionMatch, runtimeDigestMatch, expectedPackageVersion, installedPackageVersion,
+    expectedRuntimeDigest, installedRuntimeDigest, stateError,
     runtimeHealthy, runtimeExitStatus,
     runtimeStorageWritable: runtimeStorage.writable,
     runtimeStorageBlocked: runtimeStorage.blocked,
@@ -226,8 +296,8 @@ function doctorHooks({ projectRoot, pluginRoot = path.resolve(__dirname, '..', '
   };
 }
 
-function enableProjectHooks({ projectRoot, pluginRoot }) {
-  const paths = configPaths(projectRoot);
+function enableProjectHooks({ projectRoot, pluginRoot, hostConfigRoot }) {
+  const paths = configPaths(projectRoot, hostConfigRoot);
   const filePresent = fs.existsSync(paths.file);
   const fileStat = filePresent ? fs.statSync(paths.file) : null;
   const originalMode = fileStat ? fileStat.mode & 0o777 : null;
@@ -276,15 +346,17 @@ function enableProjectHooks({ projectRoot, pluginRoot }) {
   atomicWriteJson(paths.stateFile, {
     ...state,
     phase: 'installed',
+    packageVersion: packageVersion(pluginRoot),
+    runtimeDigest: runtimeDigest(pluginRoot),
     installedManifestSha256: hashText(installedRaw),
     installedFingerprint: fingerprint(ownedManifest(merged)),
     updatedAt: new Date().toISOString(),
   });
-  return { operation: 'enabled', backupCreated, ...doctorHooks({ projectRoot, pluginRoot }) };
+  return { operation: 'enabled', backupCreated, ...doctorHooks({ projectRoot, pluginRoot, hostConfigRoot }) };
 }
 
-function disableProjectHooks({ projectRoot, pluginRoot }) {
-  const paths = configPaths(projectRoot);
+function disableProjectHooks({ projectRoot, pluginRoot, hostConfigRoot }) {
+  const paths = configPaths(projectRoot, hostConfigRoot);
   const state = readState(paths.stateFile);
   let restoration = 'owned_hooks_removed';
   if (fs.existsSync(paths.file)) {
@@ -310,22 +382,22 @@ function disableProjectHooks({ projectRoot, pluginRoot }) {
       else writeTextAtomic(paths.file, `${JSON.stringify(next, null, 2)}\n`, { mode: state?.originalMode ?? 0o600 });
     }
   }
-  const postRemoval = doctorHooks({ projectRoot, pluginRoot });
+  const postRemoval = doctorHooks({ projectRoot, pluginRoot, hostConfigRoot });
   if (postRemoval.enabled || postRemoval.ownedHookCount > 0) throw new Error('hook_disable_incomplete');
   if (fs.existsSync(paths.stateFile)) fs.unlinkSync(paths.stateFile);
   if (fs.existsSync(paths.backupFile)) fs.unlinkSync(paths.backupFile);
-  return { operation: 'disabled', restoration, ...doctorHooks({ projectRoot, pluginRoot }) };
+  return { operation: 'disabled', restoration, ...doctorHooks({ projectRoot, pluginRoot, hostConfigRoot }) };
 }
 
-function setProjectHooks({ projectRoot, pluginRoot, enabled, confirm }) {
+function setProjectHooks({ projectRoot, pluginRoot, enabled, confirm, hostConfigRoot }) {
   if (confirm !== true) throw new Error('confirmation_required');
   return enabled
-    ? enableProjectHooks({ projectRoot, pluginRoot })
-    : disableProjectHooks({ projectRoot, pluginRoot });
+    ? enableProjectHooks({ projectRoot, pluginRoot, hostConfigRoot })
+    : disableProjectHooks({ projectRoot, pluginRoot, hostConfigRoot });
 }
 
 module.exports = {
   BACKUP_FILE, OWNER, REQUIRED_EVENTS, STATE_FILE,
-  buildProjectHookConfig, doctorHooks, isOwnedGroup, mergeOwnedHooks, removeOwnedHooks,
-  setProjectHooks, validateManifest,
+  buildProjectHookConfig, configPaths, doctorHooks, isOwnedGroup, mergeOwnedHooks, removeOwnedHooks,
+  packageVersion, runtimeDigest, setProjectHooks, validateManifest,
 };

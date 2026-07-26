@@ -17,7 +17,8 @@ function runNode(args, options = {}) {
 function main() {
   const isolated = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-brain-package-selftest-'));
   const projectRoot = path.join(isolated, 'project');
-  const codex = path.join(projectRoot, '.codex');
+  const codex = path.join(isolated, 'codex-home');
+  fs.mkdirSync(projectRoot, { recursive: true });
   fs.mkdirSync(codex, { recursive: true });
   const original = '{"version":1,"marker":"preserve","hooks":{"PreToolUse":[{"matcher":"Custom","hooks":[{"type":"command","command":"node custom.js","timeout":5}]}]}}\n';
   fs.writeFileSync(path.join(codex, 'hooks.json'), original);
@@ -25,6 +26,7 @@ function main() {
     ...process.env,
     CODEX_BRAIN_HOME: path.join(isolated, 'brain-home'),
     CODEX_BRAIN_STATE_HOME: path.join(isolated, 'state-home'),
+    CODEX_HOME: codex,
   };
   try {
     const help = JSON.parse(runNode([path.join(root, 'bin', 'brain.js'), '--help', '--json'], { cwd: projectRoot, env }));
@@ -32,15 +34,15 @@ function main() {
     const doctor = JSON.parse(runNode([path.join(root, 'bin', 'brain.js'), 'doctor', '--project', projectRoot, '--json'], { cwd: projectRoot, env }));
     if (!doctor.ok) throw new Error('doctor_contract_failed');
 
-    const enabled = setProjectHooks({ projectRoot, pluginRoot: root, enabled: true, confirm: true });
+    const enabled = setProjectHooks({ projectRoot, pluginRoot: root, hostConfigRoot: codex, enabled: true, confirm: true });
     if (!enabled.valid || !enabled.eventsComplete || !enabled.fingerprintMatch || enabled.foreignHookCount !== 1) throw new Error('hook_install_contract_failed');
-    const disabled = setProjectHooks({ projectRoot, pluginRoot: root, enabled: false, confirm: true });
+    const disabled = setProjectHooks({ projectRoot, pluginRoot: root, hostConfigRoot: codex, enabled: false, confirm: true });
     if (disabled.enabled || fs.readFileSync(path.join(codex, 'hooks.json'), 'utf8') !== original) throw new Error('hook_restore_contract_failed');
 
     const mcp = runNode([path.join(root, 'scripts', 'probe-v9-mcp.mjs')], { cwd: projectRoot, env }).trim();
     const api = runNode([
       '--eval',
-      "import(process.argv[1]).then(({ default: api }) => { if (typeof api.taskContract?.buildTaskContract !== 'function') process.exit(1); process.stdout.write('public-api-ok'); })",
+      "import(process.argv[1]).then(({ default: api }) => { if (typeof api.taskContract?.buildTaskContract !== 'function' || typeof api.v9?.core?.createV9Core !== 'function' || typeof api.v9?.evidenceSeal?.createEvidenceSealer !== 'function') process.exit(1); process.stdout.write('public-api-v9-ok'); })",
       path.join(root, 'index.js'),
     ], { cwd: projectRoot, env }).trim();
     process.stdout.write(`${JSON.stringify({ passed: true, cli: true, doctor: true, hooks: true, api, mcp }, null, 2)}\n`);

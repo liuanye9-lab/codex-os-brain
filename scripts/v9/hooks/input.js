@@ -8,6 +8,13 @@ function boundedObject(value, maxBytes = 16_384) {
   } catch { return {}; }
 }
 
+function boundedToolInput(value, maxBytes = 16_384) {
+  if (typeof value === 'string') {
+    return Buffer.byteLength(value) <= maxBytes ? { command: value } : {};
+  }
+  return boundedObject(value, maxBytes);
+}
+
 function normalizeHookInput(input = {}) {
   const toolResult = boundedObject(input.tool_result || input.tool_response || input.toolResult);
   const event = String(input.hook_event_name || input.hookEventName || input.event || '');
@@ -17,7 +24,7 @@ function normalizeHookInput(input = {}) {
     turnId: input.turn_id || input.turnId,
     taskId: input.task_id || input.taskId,
     toolName: input.tool_name || input.toolName,
-    toolInput: boundedObject(input.tool_input || input.toolInput),
+    toolInput: boundedToolInput(input.tool_input || input.toolInput),
     toolResult,
     errorType: input.error_type || input.errorType || toolResult.errorType,
     completionClaim: input.completion_claim === true || input.completionClaim === true || input.hook_event_name === 'Stop' || input.event === 'Stop',
@@ -41,4 +48,4 @@ function blockDecision(reasonCode, message) {
   };
 }
 
-module.exports = { additionalContext, blockDecision, normalizeHookInput };
+module.exports = { additionalContext, blockDecision, boundedToolInput, normalizeHookInput };

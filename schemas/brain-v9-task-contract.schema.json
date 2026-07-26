@@ -4,7 +4,7 @@
   "title": "Codex Brain V9 Task Contract",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "revision", "taskId", "objective", "lifecycle", "constraints", "scope", "criteria", "unresolved", "risk", "externalWrite", "compactionGeneration", "updatedAt"],
+  "required": ["schemaVersion", "revision", "taskId", "objective", "lifecycle", "constraints", "scope", "criteria", "unresolved", "risk", "executionMode", "externalWrite", "compactionGeneration", "updatedAt"],
   "properties": {
     "schemaVersion": { "const": 9 },
     "revision": { "type": "integer", "minimum": 1 },
@@ -46,10 +46,22 @@
     },
     "unresolved": { "type": "array", "items": { "type": "string" } },
     "risk": { "enum": ["low", "medium", "high", "critical"] },
+    "executionMode": { "enum": ["read_only", "write"] },
     "externalWrite": { "type": "boolean" },
     "compactionGeneration": { "type": "integer", "minimum": 0 },
     "lastVerifiedAt": { "type": ["string", "null"] },
-    "updatedAt": { "type": "string", "format": "date-time" }
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "trust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "specHash", "sealedAt", "seal"],
+      "properties": {
+        "version": { "const": 1 },
+        "specHash": { "type": "string" },
+        "sealedAt": { "type": "string", "format": "date-time" },
+        "seal": { "type": "string" }
+      }
+    }
   },
   "$defs": {
     "evidence": {

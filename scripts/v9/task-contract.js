@@ -30,6 +30,7 @@ function canonicalContractSpec(contract = {}) {
       verifierSpec: item.verifierSpec || null,
     })),
     risk: contract.risk || 'low',
+    executionMode: contract.executionMode || 'write',
     externalWrite: contract.externalWrite === true,
   });
 }
@@ -73,6 +74,7 @@ function createTaskContract(input = {}) {
     })),
     unresolved: [...(input.unresolved || [])],
     risk: ['low', 'medium', 'high', 'critical'].includes(input.risk) ? input.risk : 'low',
+    executionMode: input.executionMode === 'read_only' ? 'read_only' : 'write',
     externalWrite: input.externalWrite === true,
     compactionGeneration: Number(input.compactionGeneration || 0),
     updatedAt: input.updatedAt || new Date().toISOString(),

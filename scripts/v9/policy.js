@@ -10,9 +10,9 @@ const path = require('node:path');
 
 const DEFAULT_RISK_TABLE = Object.freeze({
   tools: {
-    Bash: 'high',
-    Shell: 'high',
-    shell: 'high',
+    Bash: 'medium',
+    Shell: 'medium',
+    shell: 'medium',
     Write: 'medium',
     Edit: 'medium',
     MultiEdit: 'medium',
@@ -69,21 +69,28 @@ function extractPathsFromToolInput(toolInput = {}) {
   }
   if (typeof toolInput.command === 'string') {
     // Light extraction of absolute-ish path tokens from shell commands.
-    const tokens = toolInput.command.match(/(?:\/|\.\/|\.\.\\)[^\s;'"]+/g) || [];
+    const tokens = [...toolInput.command.matchAll(/(?:^|\s)((?:\/|\.\/|\.\.\/)[^\s;'"]+)/g)]
+      .map(match => match[1]);
     found.push(...tokens);
+    const patchPaths = [...toolInput.command.matchAll(/^\*\*\* (?:Add|Update|Delete) File:\s*(.+)$/gm)]
+      .map(match => match[1].trim())
+      .filter(Boolean);
+    found.push(...patchPaths);
   }
   return found;
 }
 
 function pathMatchesPattern(normalizedPath, pattern, cwd) {
   if (!normalizedPath || !pattern) return false;
-  const needle = String(pattern).replace(/\\/g, '/');
+  const needle = String(pattern).replace(/\\/g, '/').replace(/^\.\//, '');
   const hay = normalizedPath.replace(/\\/g, '/');
   if (needle.startsWith('/') || /^[A-Za-z]:/.test(needle)) {
     const abs = normalizePath(needle, cwd)?.replace(/\\/g, '/') || needle;
-    return hay === abs || hay.startsWith(abs.endsWith('/') ? abs : `${abs}/`) || hay.includes(abs);
+    return hay === abs || hay.startsWith(abs.endsWith('/') ? abs : `${abs}/`);
   }
-  return hay.endsWith(`/${needle}`) || hay.includes(`/${needle}/`) || hay.endsWith(needle) || hay.includes(needle);
+  const relative = path.relative(path.resolve(cwd), normalizedPath).replace(/\\/g, '/');
+  if (!needle.includes('/')) return path.posix.basename(relative) === needle;
+  return relative === needle || relative.startsWith(needle.endsWith('/') ? needle : `${needle}/`);
 }
 
 function evaluatePathScope(toolInput, scope = {}, cwd = process.cwd()) {
@@ -102,7 +109,7 @@ function evaluatePathScope(toolInput, scope = {}, cwd = process.cwd()) {
       }
     }
   }
-  return { blocked: false, paths };
+  return { blocked: false, paths, unresolved: allowed.length > 0 && paths.length === 0 };
 }
 
 function classifyToolRisk(toolName, toolInput = {}, riskTable = DEFAULT_RISK_TABLE) {
@@ -135,6 +142,20 @@ function evaluateAction({ toolName, toolInput = {}, contract = null, cwd = proce
       message: scopeDecision.message,
       risk: 'critical',
       path: scopeDecision.path,
+    };
+  }
+  const commandLike = /^(?:Bash|Shell|shell)$/i.test(String(toolName))
+    || typeof toolInput.command === 'string'
+    || typeof toolInput.cmd === 'string';
+  const potentiallyMutating = commandLike
+    || /(?:^|__)(?:write|edit|delete|remove|update|create|insert|upsert|execute|query|agent)(?:_|$)/i.test(String(toolName))
+    || String(toolName) === 'Agent';
+  if (scopeDecision.unresolved && potentiallyMutating) {
+    return {
+      level: 3,
+      reasonCode: 'scope_unresolved',
+      message: 'The shell command scope could not be resolved; human confirmation is required.',
+      risk: 'high',
     };
   }
 

@@ -8,7 +8,7 @@
   "properties": {
     "schemaVersion": { "const": 9 },
     "eventId": { "type": "string", "minLength": 1 },
-    "kind": { "enum": ["session", "prompt", "tool", "failure", "compact", "completion", "checkpoint", "migration"] },
+    "kind": { "enum": ["session", "prompt", "tool", "failure", "compact", "completion", "checkpoint", "migration", "verify", "internal_error"] },
     "taskId": { "type": "string" },
     "turnId": { "type": "string" },
     "status": { "enum": ["observed", "passed", "failed", "blocked", "unverified"] },

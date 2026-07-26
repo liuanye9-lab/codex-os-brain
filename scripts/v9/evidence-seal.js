@@ -8,6 +8,40 @@ const { canonicalContractSpec, contractSpecHash } = require('./task-contract');
 
 const KEYCHAIN_SERVICE = 'com.codex-brain.v9.evidence-signing';
 const KEYCHAIN_ACCOUNT = 'contract-evidence-hmac';
+const KEY_BYTES = 32;
+
+function decodeKey(value) {
+  if (Buffer.isBuffer(value)) return value.length >= KEY_BYTES ? Buffer.from(value) : null;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const decoded = Buffer.from(value.trim(), 'base64');
+  return decoded.length >= KEY_BYTES ? decoded : null;
+}
+
+function createFileEvidenceKeyProvider({ keyPath, providerType = 'file-0600' } = {}) {
+  return {
+    type: providerType,
+    get({ create = false } = {}) {
+      if (!keyPath) return null;
+      try {
+        const loaded = fs.readFileSync(keyPath);
+        return loaded.length >= KEY_BYTES ? loaded : null;
+      } catch (error) {
+        if (error.code !== 'ENOENT' || !create) return null;
+      }
+      fs.mkdirSync(path.dirname(keyPath), { recursive: true, mode: 0o700 });
+      const generated = crypto.randomBytes(KEY_BYTES);
+      try {
+        fs.writeFileSync(keyPath, generated, { flag: 'wx', mode: 0o600 });
+      } catch (error) {
+        if (error.code !== 'EEXIST') throw error;
+        const loaded = fs.readFileSync(keyPath);
+        return loaded.length >= KEY_BYTES ? loaded : null;
+      }
+      try { fs.chmodSync(keyPath, 0o600); } catch {}
+      return generated;
+    },
+  };
+}
 
 function canonicalCriterionSpec(criterion = {}) {
   return JSON.stringify({
@@ -38,8 +72,8 @@ function createMacKeychainEvidenceKeyProvider({ service = KEYCHAIN_SERVICE, acco
     return spawnSync('/usr/bin/security', args, { encoding: 'utf8', timeout: 10_000 });
   }
   return {
+    type: 'macos-keychain',
     get({ create = false } = {}) {
-      if (process.platform !== 'darwin') return null;
       let result = run(['find-generic-password', '-s', service, '-a', account, '-w']);
       if (result.status !== 0 && create) {
         const generated = crypto.randomBytes(32).toString('base64');
@@ -48,56 +82,100 @@ function createMacKeychainEvidenceKeyProvider({ service = KEYCHAIN_SERVICE, acco
         result = run(['find-generic-password', '-s', service, '-a', account, '-w']);
       }
       if (result.status !== 0) return null;
-      const loaded = Buffer.from(String(result.stdout || '').trim(), 'base64');
-      return loaded.length >= 32 ? loaded : null;
+      return decodeKey(String(result.stdout || ''));
     },
   };
 }
 
+function createLinuxSecretServiceEvidenceKeyProvider({ run = spawnSync, service = KEYCHAIN_SERVICE, account = KEYCHAIN_ACCOUNT } = {}) {
+  return {
+    type: 'linux-libsecret',
+    get({ create = false } = {}) {
+      let result = run('secret-tool', ['lookup', 'service', service, 'account', account], {
+        encoding: 'utf8', timeout: 10_000,
+      });
+      let loaded = result.status === 0 ? decodeKey(String(result.stdout || '')) : null;
+      if (!loaded && create) {
+        const encoded = crypto.randomBytes(KEY_BYTES).toString('base64');
+        result = run('secret-tool', ['store', '--label', 'Codex Brain evidence signing key', 'service', service, 'account', account], {
+          encoding: 'utf8', timeout: 10_000, input: `${encoded}\n`,
+        });
+        if (result.status === 0) loaded = decodeKey(encoded);
+      }
+      return loaded;
+    },
+  };
+}
+
+function createWindowsDpapiEvidenceKeyProvider({ keyPath, run = spawnSync } = {}) {
+  const protectedPath = keyPath ? `${keyPath}.dpapi` : null;
+  function powershell(script, args = []) {
+    const executable = process.env.ComSpec ? 'powershell.exe' : 'powershell';
+    return run(executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script, ...args], {
+      encoding: 'utf8', timeout: 15_000, windowsHide: true,
+    });
+  }
+  return {
+    type: 'windows-dpapi-current-user',
+    get({ create = false } = {}) {
+      if (!protectedPath) return null;
+      if (fs.existsSync(protectedPath)) {
+        const result = powershell(
+          '$p=[IO.File]::ReadAllText($args[0]);$d=[Convert]::FromBase64String($p);$u=[Security.Cryptography.ProtectedData]::Unprotect($d,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);[Console]::Write([Convert]::ToBase64String($u))',
+          [protectedPath],
+        );
+        return result.status === 0 ? decodeKey(String(result.stdout || '')) : null;
+      }
+      if (!create) return null;
+      fs.mkdirSync(path.dirname(protectedPath), { recursive: true, mode: 0o700 });
+      const generated = crypto.randomBytes(KEY_BYTES);
+      const result = powershell(
+        '$d=[Convert]::FromBase64String($args[1]);$p=[Security.Cryptography.ProtectedData]::Protect($d,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);[IO.File]::WriteAllText($args[0],[Convert]::ToBase64String($p))',
+        [protectedPath, generated.toString('base64')],
+      );
+      return result.status === 0 ? generated : null;
+    },
+  };
+}
+
+function createProductionEvidenceKeyProvider({ paths, platform = process.platform, run = spawnSync } = {}) {
+  if (platform === 'darwin') return createMacKeychainEvidenceKeyProvider();
+  if (platform === 'win32') return createWindowsDpapiEvidenceKeyProvider({ keyPath: paths?.evidenceSealKeyPath, run });
+  if (platform === 'linux') {
+    const secretService = createLinuxSecretServiceEvidenceKeyProvider({ run });
+    return {
+      type: 'linux-libsecret-or-file-0600',
+      get(options = {}) {
+        const secret = secretService.get(options);
+        if (secret) return secret;
+        return createFileEvidenceKeyProvider({ keyPath: paths?.evidenceSealKeyPath, providerType: 'linux-file-0600' }).get(options);
+      },
+    };
+  }
+  return createFileEvidenceKeyProvider({ keyPath: paths?.evidenceSealKeyPath });
+}
+
 function createEvidenceSealer({ paths, key, keyProvider } = {}) {
-  const keyPath = process.env.NODE_TEST_CONTEXT ? paths?.evidenceSealKeyPath : null;
-  const environmentKey = process.env.CODEX_BRAIN_EVIDENCE_KEY_B64
-    ? Buffer.from(process.env.CODEX_BRAIN_EVIDENCE_KEY_B64, 'base64')
-    : null;
-  const provider = keyProvider || (
-    environmentKey?.length >= 32
-      ? { get: () => environmentKey }
-      : process.platform === 'darwin' && !process.env.NODE_TEST_CONTEXT
-        ? createMacKeychainEvidenceKeyProvider()
-        : null
-  );
-  let cachedKey = key && Buffer.from(key).length >= 32 ? Buffer.from(key) : null;
+  let cachedKey = decodeKey(key);
+  const environmentKey = decodeKey(process.env.CODEX_BRAIN_EVIDENCE_KEY_B64);
+  const provider = cachedKey
+    ? { type: 'explicit-key', get: () => cachedKey }
+    : keyProvider
+    || (environmentKey ? { type: 'external-environment', get: () => environmentKey } : null)
+    || (process.env.NODE_TEST_CONTEXT
+      ? createFileEvidenceKeyProvider({ keyPath: paths?.evidenceSealKeyPath, providerType: 'test-file-0600' })
+      : createProductionEvidenceKeyProvider({ paths }));
 
   function loadKey({ create = false } = {}) {
     if (cachedKey) return cachedKey;
     if (provider) {
       const loaded = provider.get({ create });
-      if (!loaded || loaded.length < 32) return null;
-      cachedKey = Buffer.from(loaded);
+      const decoded = decodeKey(loaded);
+      if (!decoded) return null;
+      cachedKey = decoded;
       return cachedKey;
     }
-    if (!keyPath) return null;
-    try {
-      const loaded = fs.readFileSync(keyPath);
-      if (loaded.length < 32) return null;
-      cachedKey = loaded;
-      return cachedKey;
-    } catch (error) {
-      if (error.code !== 'ENOENT' || !create) return null;
-    }
-
-    fs.mkdirSync(path.dirname(keyPath), { recursive: true, mode: 0o700 });
-    const generated = crypto.randomBytes(32);
-    try {
-      fs.writeFileSync(keyPath, generated, { flag: 'wx', mode: 0o600 });
-      cachedKey = generated;
-    } catch (error) {
-      if (error.code !== 'EEXIST') throw error;
-      const loaded = fs.readFileSync(keyPath);
-      if (loaded.length < 32) return null;
-      cachedKey = loaded;
-    }
-    return cachedKey;
+    return null;
   }
 
   function sealContract(contract, metadata = {}) {
@@ -140,6 +218,26 @@ function createEvidenceSealer({ paths, key, keyProvider } = {}) {
       .digest('base64url');
   }
 
+  function sealValue(namespace, value) {
+    const signingKey = loadKey({ create: true });
+    if (!signingKey) throw new Error('evidence_seal_key_unavailable');
+    return crypto.createHmac('sha256', signingKey)
+      .update(JSON.stringify({ namespace: String(namespace), value }))
+      .digest('base64url');
+  }
+
+  function verifyValue(namespace, value, receivedSeal) {
+    if (typeof receivedSeal !== 'string') return false;
+    const signingKey = loadKey({ create: false });
+    if (!signingKey) return false;
+    const expected = crypto.createHmac('sha256', signingKey)
+      .update(JSON.stringify({ namespace: String(namespace), value }))
+      .digest();
+    let received;
+    try { received = Buffer.from(receivedSeal, 'base64url'); } catch { return false; }
+    return received.length === expected.length && crypto.timingSafeEqual(received, expected);
+  }
+
   function verify(contract, criterion, evidence) {
     if (!evidence?.seal || typeof evidence.seal !== 'string') return false;
     if (!verifyContract(contract)) return false;
@@ -157,12 +255,17 @@ function createEvidenceSealer({ paths, key, keyProvider } = {}) {
     return received.length === expected.length && crypto.timingSafeEqual(received, expected);
   }
 
-  return { seal, sealContract, verify, verifyContract };
+  return { seal, sealContract, sealValue, verify, verifyContract, verifyValue, providerType: provider?.type || 'unavailable' };
 }
 
 module.exports = {
   canonicalCriterionSpec,
   canonicalEvidence,
   createEvidenceSealer,
+  createFileEvidenceKeyProvider,
+  createLinuxSecretServiceEvidenceKeyProvider,
   createMacKeychainEvidenceKeyProvider,
+  createProductionEvidenceKeyProvider,
+  createWindowsDpapiEvidenceKeyProvider,
+  decodeKey,
 };

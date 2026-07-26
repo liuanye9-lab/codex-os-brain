@@ -5,6 +5,14 @@
 Use Node.js 22.5 or newer. The transactional memory layer uses the built-in `node:sqlite` API.
 
 ```bash
+npm install --global codex-brain-v9@0.15.0
+codex-brain hooks enable --project "$PWD" --confirm --json
+codex-brain doctor --project "$PWD" --json
+```
+
+For source development:
+
+```bash
 git clone https://github.com/liuanye9-lab/codex-os-brain.git
 cd codex-os-brain
 npm install
@@ -36,6 +44,14 @@ brain task checkpoint --summary "mid-flight" --json
 ```
 
 `brain evidence attach` remains for compatibility but is treated as a claim unless an internal harness path sets `harnessVerified` with `allowHarnessAttach`.
+
+For a reviewed contract with custom verifiers, prefer a file:
+
+```bash
+brain task create --from task-contract.json --json
+```
+
+`command_exit_0` requires `verifierSpec.humanApproved: true` inside the signed contract. All verifier processes use executable/argv execution with `shell: false` and a cleaned environment. The quick CLI flag equivalent is `--approve-custom-verifier`, which should only be used after the operator reviews the command.
 
 ## Session handoff (P1)
 
@@ -86,11 +102,13 @@ brain hooks enable --project "$PWD" --confirm --json
 brain hooks disable --project "$PWD" --confirm --json
 ```
 
-Only the project's `.codex/hooks.json` is integrated. Enable preserves foreign hook groups, records the Codex Brain owner marker, and creates a private backup plus install-state file under `.codex/`. Disable restores the exact original, permissions, and symlink when the installed file has not drifted. If another tool adds hooks after installation, disable removes only Codex Brain-owned groups and preserves those later edits. Add `.codex/hooks.json`, `.codex/hooks.codex-brain-v9.state.json`, and `.codex/hooks.json.codex-brain-v9.backup` to the host repository's `.gitignore` because generated commands contain a machine-local absolute plugin path.
+Codex currently loads command hooks from `$CODEX_HOME/hooks.json` (normally `~/.codex/hooks.json`). Enable preserves foreign hook groups, records the Codex Brain owner marker, and creates a private backup plus install-state file beside that loader. Disable restores the exact original, permissions, and symlink when the installed file has not drifted. If another tool adds hooks after installation, disable removes only Codex Brain-owned groups and preserves those later edits. The loader is user-scoped, while control state, contracts, events, evidence, and memory remain project-scoped and are silent when no active project task exists.
 
-`brain hooks doctor` verifies owner, all seven required events, duplicate or mismatched groups, expected fingerprint, runtime smoke, and storage writability. A valid foreign-only manifest remains valid but reports `enabled: false`.
+`brain hooks doctor` verifies owner, all eleven declared events, duplicate or mismatched groups, manifest fingerprint, package version, installed runtime digest, runtime smoke, storage writability, and a real temporary evidence-signing round trip. It may initialize the OS-local evidence key. A valid foreign-only manifest remains valid but reports `enabled: false`.
 
-The signed acceptance contract pins `required`, verifier kind, and `verifierSpec`. Runtime calls cannot replace the verifier command. Empty criteria, unsigned waivers, or disabling harness verification never produce `complete`. On macOS the evidence signing key is held in Keychain instead of beside task JSON. Other platforms fail closed unless `CODEX_BRAIN_EVIDENCE_KEY_B64` is supplied by a protected secret manager; do not commit or place that value in a project-local env file.
+The signed acceptance contract pins `required`, verifier kind, and `verifierSpec`. Runtime calls cannot replace the verifier command. Empty criteria, unsigned waivers, or disabling harness verification never produce `complete`. Evidence keys use macOS Keychain, Windows current-user DPAPI, or Linux Secret Service. Linux falls back to a local `0600` key file when Secret Service is unavailable; this weaker mode does not defend against a malicious process running as the same OS user.
+
+See [Hook Coverage Matrix](hook-coverage.md) and [Privacy and Threat Model](privacy-and-threat-model.md).
 
 ## MCP
 

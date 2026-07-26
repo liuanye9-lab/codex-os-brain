@@ -5,6 +5,8 @@ const { createV9Core } = require('./core');
 const { resolveV9Paths } = require('./paths');
 const { doctorHooks, setProjectHooks } = require('./hook-config');
 const { inventoryLegacy, planMigration, applyMigration } = require('./migration');
+const { runEvidenceSigningLoop } = require('./doctor');
+const { inspectTrustBoundary } = require('./trust-boundary');
 
 const EXIT = Object.freeze({ ok: 0, usage: 2, blocked: 3, failed: 4 });
 
@@ -20,7 +22,7 @@ function commandGuide() {
     ],
     commands: {
       status: 'Read runtime status.',
-      doctor: 'Read environment, hook, MCP, and handoff checks without mutating the project.',
+      doctor: 'Check environment, hooks, and a temporary signed-evidence round trip. May initialize an OS-local evidence key.',
       task: 'create | show | checkpoint',
       verify: 'Re-run executable acceptance criteria.',
       evidence: 'claim | attach',
@@ -52,12 +54,29 @@ function defaultIo() {
   };
 }
 
+function readTaskContractFile(inputPath, projectRoot) {
+  const target = path.resolve(projectRoot, inputPath);
+  const stat = fs.lstatSync(target);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('task_contract_file_invalid');
+  if (stat.size > 1024 * 1024) throw new Error('task_contract_file_too_large');
+  const value = JSON.parse(fs.readFileSync(target, 'utf8'));
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('task_contract_file_invalid');
+  if (!String(value.objective || '').trim()) throw new Error('task_contract_objective_required');
+  if (value.criteria !== undefined && !Array.isArray(value.criteria)) throw new Error('task_contract_criteria_invalid');
+  return value;
+}
+
 async function runCli(argv, io = defaultIo(), services = {}) {
   const args = flags(argv);
   const [group, action] = args._;
   const paths = services.paths || resolveV9Paths();
   const projectRoot = args.project || process.cwd();
-  const core = services.core || createV9Core({ paths, projectRoot });
+  const core = services.core || createV9Core({
+    paths,
+    projectRoot,
+    sessionId: args.session,
+    taskId: group === 'task' && action === 'create' ? undefined : args['task-id'],
+  });
   const pluginRoot = services.pluginRoot || path.resolve(__dirname, '..', '..');
 
   if (!group || group === 'help' || args.help === true) return io.json(commandGuide());
@@ -65,12 +84,18 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   if (group === 'doctor') {
     const v9 = core.status();
     const hooks = doctorHooks({ projectRoot, pluginRoot, runtimePaths: core.paths });
+    const trustBoundary = inspectTrustBoundary({ pluginRoot, paths: core.paths, hookPath: hooks.path });
+    let signingLoop;
+    try { signingLoop = runEvidenceSigningLoop(services.doctorOptions); }
+    catch (error) { signingLoop = { passed: false, reason: error.code || error.message }; }
     const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
     const nodeSupported = nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 5);
     const checks = [
       { id: 'node-runtime', status: nodeSupported ? 'passed' : 'blocked', observed: process.versions.node, required: '>=22.5', remediation: nodeSupported ? null : 'Install Node.js 22.5 or newer.' },
       { id: 'v9-core', status: v9.enabled ? 'passed' : 'blocked', observed: { version: v9.version, enabled: v9.enabled }, remediation: v9.enabled ? null : 'Set config/brain-lite-v9.json enabled=true.' },
-      { id: 'project-hooks', status: hooks.valid ? (hooks.enabled ? 'passed' : 'optional') : 'blocked', observed: { enabled: hooks.enabled, valid: hooks.valid, owner: hooks.owner, eventsComplete: hooks.eventsComplete, fingerprintMatch: hooks.fingerprintMatch, runtimeHealthy: hooks.runtimeHealthy, runtimeStorageWritable: hooks.runtimeStorageWritable, foreignHookCount: hooks.foreignHookCount, path: hooks.path }, remediation: hooks.valid ? (hooks.enabled ? null : 'Optional: run brain hooks enable --project "$PWD" --confirm --json.') : 'Repair the manifest, runtime storage permissions, or re-enable Codex Brain hooks to restore owned events and fingerprint.' },
+      { id: 'project-hooks', status: hooks.valid ? (hooks.enabled ? 'passed' : 'optional') : 'blocked', observed: { enabled: hooks.enabled, valid: hooks.valid, owner: hooks.owner, eventsComplete: hooks.eventsComplete, fingerprintMatch: hooks.fingerprintMatch, packageVersionMatch: hooks.packageVersionMatch, runtimeDigestMatch: hooks.runtimeDigestMatch, runtimeHealthy: hooks.runtimeHealthy, runtimeStorageWritable: hooks.runtimeStorageWritable, foreignHookCount: hooks.foreignHookCount, path: hooks.path }, remediation: hooks.valid ? (hooks.enabled ? null : 'Optional: run brain hooks enable --project "$PWD" --confirm --json.') : 'Repair the manifest, runtime storage permissions, or re-enable Codex Brain hooks to restore owned events, package version, and runtime fingerprint.' },
+      { id: 'evidence-signing-loop', status: signingLoop.passed ? 'passed' : 'blocked', observed: signingLoop, remediation: signingLoop.passed ? null : 'Make the platform credential provider available, then rerun doctor.' },
+      { id: 'trust-boundary', status: trustBoundary.localIntegrityChecksPassed ? 'passed' : 'warning', observed: trustBoundary, remediation: trustBoundary.localIntegrityChecksPassed ? null : 'Remove symlinks and group/world write permissions from installed runtime and state paths.' },
       { id: 'mcp-probe', status: 'available', command: 'npm run mcp:probe', remediation: 'Run from the installed package checkout to exercise the stdio MCP boundary.' },
     ];
     return io.json({
@@ -79,6 +104,7 @@ async function runCli(argv, io = defaultIo(), services = {}) {
       v8: { selectable: core.config.fallbackVersion === 8 },
       v9,
       hooks,
+      trustBoundary,
       cli: { binaries: ['brain', 'codex-brain'], helpCommand: 'brain --help' },
       mcp: { probeCommand: 'npm run mcp:probe', serveCommand: 'brain mcp serve' },
       hosts: core.hosts.list(),
@@ -86,23 +112,49 @@ async function runCli(argv, io = defaultIo(), services = {}) {
     });
   }
   if (group === 'task' && action === 'create') {
-    if (!args.objective) return io.error('objective is required', EXIT.usage);
-    const criteria = args.criterion ? String(args.criterion).split(',').map(id => ({
-      id,
-      required: true,
-      verifier: id === 'tests' ? 'test_runner' : id === 'scope' ? 'git_diff_bounded' : 'command_exit_0',
-      verifierSpec: id === 'tests' ? { command: args.command || 'npm test' } : undefined,
-    })) : [];
+    let input;
+    if (args.from) {
+      try { input = readTaskContractFile(String(args.from), projectRoot); }
+      catch (error) { return io.error(error.code || error.message, EXIT.usage); }
+    } else {
+      if (!args.objective) return io.error('objective is required', EXIT.usage);
+      const criterionIds = args.criterion ? String(args.criterion).split(',') : [];
+      const customIds = criterionIds.filter(id => !['tests', 'scope'].includes(id));
+      if (customIds.length && (!args.command || args['approve-custom-verifier'] !== true)) {
+        return io.error('custom criteria require --command and --approve-custom-verifier', EXIT.usage);
+      }
+      const criteria = criterionIds.map(id => {
+        if (id === 'tests') {
+          return {
+            id, required: true, verifier: 'test_runner',
+            verifierSpec: args.command ? { command: args.command } : { executable: 'npm', args: ['test'] },
+          };
+        }
+        if (id === 'scope') return { id, required: true, verifier: 'git_diff_bounded' };
+        return {
+          id, required: true, verifier: 'command_exit_0',
+          verifierSpec: {
+            command: args.command,
+            humanApproved: args['approve-custom-verifier'] === true,
+          },
+        };
+      });
+      input = {
+        taskId: args['task-id'],
+        objective: args.objective,
+        criteria,
+        risk: args.risk,
+        externalWrite: args['external-write'] === true,
+        scope: {
+          allowed: args.allowed ? String(args.allowed).split(',') : [],
+          forbidden: args.forbidden ? String(args.forbidden).split(',') : [],
+        },
+      };
+    }
     return io.json(core.contracts.create({
-      taskId: args['task-id'],
-      objective: args.objective,
-      criteria,
-      risk: args.risk,
-      externalWrite: args['external-write'] === true,
-      scope: {
-        allowed: args.allowed ? String(args.allowed).split(',') : [],
-        forbidden: args.forbidden ? String(args.forbidden).split(',') : [],
-      },
+      ...input,
+      taskId: args['task-id'] || input.taskId,
+      objective: input.objective,
     }));
   }
   if (group === 'task' && (!action || action === 'show')) {
@@ -313,4 +365,4 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   return io.error('unknown command', EXIT.usage);
 }
 
-module.exports = { EXIT, commandGuide, flags, runCli };
+module.exports = { EXIT, commandGuide, flags, readTaskContractFile, runCli };

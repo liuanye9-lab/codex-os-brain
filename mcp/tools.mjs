@@ -13,16 +13,18 @@ export function toolDefinitions(core) {
     {
       name: 'brain_get_task_contract', description: 'Read the active task contract as local evidence.', inputSchema: { taskId: z.string().optional() }, readOnly: true,
       handler: async ({ taskId } = {}) => {
-        const contract = core.contracts.active();
-        if (!contract || (taskId && contract.taskId !== taskId)) throw new Error('task_not_found');
+        const selected = taskId ? core.forTask(taskId) : core;
+        const contract = selected.contracts.active();
+        if (!contract) throw new Error('task_not_found');
         return result(contract);
       },
     },
     {
-      name: 'brain_verify_task', description: 'Re-run executable verifiers for the active task. Only harness re-runs can mark criteria passed.', inputSchema: { taskId: z.string().optional(), statusOnly: z.boolean().optional() }, readOnly: true,
-      handler: async ({ statusOnly = false } = {}) => {
-        if (statusOnly) return result(core.verification.evaluateActive());
-        return result(core.verification.run({ cwd: process.cwd() }), 'Harness re-ran verifiers. Agent self-claims do not count.');
+      name: 'brain_verify_task', description: 'Re-run executable verifiers for the selected task. Only harness re-runs can mark criteria passed.', inputSchema: { taskId: z.string().optional(), statusOnly: z.boolean().optional() }, readOnly: false,
+      handler: async ({ taskId, statusOnly = false } = {}) => {
+        const selected = taskId ? core.forTask(taskId) : core;
+        if (statusOnly) return result(selected.verification.evaluateActive());
+        return result(selected.verification.run({ cwd: process.cwd() }), 'Harness re-ran verifiers. Agent self-claims do not count.');
       },
     },
     {
@@ -64,16 +66,20 @@ export function toolDefinitions(core) {
     },
     {
       name: 'brain_create_task', description: 'Create a bounded task contract in the local V9 namespace.', inputSchema: { taskId: z.string(), objective: z.string().min(1), criterionIds: z.array(z.string()).max(20).optional() }, readOnly: false,
-      handler: async ({ taskId, objective, criterionIds = [] }) => result(core.contracts.create({
-        taskId,
-        objective,
-        criteria: criterionIds.map(id => ({
-          id,
-          required: true,
-          verifier: id === 'tests' ? 'test_runner' : id === 'scope' ? 'git_diff_bounded' : 'command_exit_0',
-          verifierSpec: id === 'tests' ? { command: 'npm test' } : undefined,
-        })),
-      }), 'Task contract created; completion remains evidence-gated.'),
+      handler: async ({ taskId, objective, criterionIds = [] }) => {
+        const unsupported = criterionIds.filter(id => !['tests', 'scope'].includes(id));
+        if (unsupported.length) throw new Error(`unsupported_criterion_ids:${unsupported.join(',')}`);
+        return result(core.contracts.create({
+          taskId,
+          objective,
+          criteria: criterionIds.map(id => ({
+            id,
+            required: true,
+            verifier: id === 'tests' ? 'test_runner' : 'git_diff_bounded',
+            verifierSpec: id === 'tests' ? { executable: 'npm', args: ['test'] } : undefined,
+          })),
+        }), 'Task contract created; completion remains evidence-gated.');
+      },
     },
     {
       name: 'brain_checkpoint_task', description: 'Append a sanitized checkpoint for the active task and write handoff progress.', inputSchema: { taskId: z.string(), summary: z.string().optional() }, readOnly: false,
@@ -110,11 +116,12 @@ export function toolDefinitions(core) {
     {
       name: 'brain_close_task', description: 'Close a task only after all required evidence passes harness re-run.', inputSchema: { taskId: z.string() }, readOnly: false,
       handler: async ({ taskId }) => {
-        const contract = core.contracts.active();
-        if (!contract || contract.taskId !== taskId) throw new Error('task_not_found');
-        const verification = core.verification.run({ cwd: process.cwd() });
+        const selected = core.forTask(taskId);
+        const contract = selected.contracts.active();
+        if (!contract) throw new Error('task_not_found');
+        const verification = selected.verification.run({ cwd: process.cwd() });
         if (verification.status !== 'complete') throw new Error('completion_unverified');
-        return result(core.contracts.save({ ...core.contracts.active(), revision: Number(contract.revision || 1) + 1, lifecycle: 'complete', updatedAt: new Date().toISOString() }), 'Task closed after harness verification.');
+        return result(selected.contracts.close(), 'Task closed after harness verification.');
       },
     },
   ];

@@ -22,8 +22,8 @@ Plain-language map of the 0.10.0 reliability upgrades.
 
 ## Verifier kinds
 
-- `command_exit_0` / `command` — shell command must exit 0  
-- `test_runner` / `tests` — default `npm test` (override with `verifierSpec.command`)  
+- `command_exit_0` / `command` — reviewed executable/argv must exit 0; signed `humanApproved: true` is required
+- `test_runner` / `tests` — default `{ executable: "npm", args: ["test"] }`; subprocesses use `shell: false`
 - `git_diff_bounded` / `scope` — changed paths must stay in allow/deny lists  
 - `human_attestation` — shared token confirmation  
 - `file_exists` — path must exist  

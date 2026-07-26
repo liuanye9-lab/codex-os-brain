@@ -35,6 +35,14 @@ Files are created with private runtime permissions. Hot hooks make no network or
 | Unsupported completion claim | Fail closed |
 | Advisory telemetry or checkpoint observer | Fail open and record an internal error when possible |
 
+## Trust boundary and platform key storage
+
+Contract and evidence seals protect against direct edits to task JSON when the signing key remains outside that JSON tree. macOS uses Keychain, Windows uses current-user DPAPI, and Linux first attempts Secret Service through `secret-tool`. A Linux host without Secret Service falls back to a local `0600` key file; this is a compatibility mode with a weaker boundary.
+
+The same operating-system user is not treated as hostile. A process that can modify the installed npm package, hook runner, process environment, credential store, or local key file can replace the verifier or obtain equivalent authority. Use a separate OS account, container, VM, or CI protection boundary when same-UID adversaries are in scope.
+
+`brain doctor` verifies manifest ownership, declared event completeness, manifest fingerprint, installed package version, runtime digest, storage writability, hook process startup, and a temporary contract/evidence signing round trip. It may initialize the platform evidence key on first use. These checks detect drift and broken integration; they are not remote attestation.
+
 ## Public release boundary
 
 The public repository is constructed in a new directory from `config/public-export-allowlist.json`. The builder rejects parent traversal, absolute paths, symlinks, dataless files, and a nonempty destination. The export manifest contains public relative paths, sizes, and hashes only.

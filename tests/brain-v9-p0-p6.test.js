@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
 const { performance } = require('node:perf_hooks');
 const { createV9Core } = require('../scripts/v9/core');
 const { resolveV9Paths } = require('../scripts/v9/paths');
@@ -24,7 +25,7 @@ test('P0: verify re-run is the only path to complete; claims blocked at Stop', a
   core.contracts.create({
     taskId: 'p0',
     objective: 'evidence protocol',
-    criteria: [{ id: 'noop', required: true, verifier: 'command_exit_0', verifierSpec: { command: 'node -e "process.exit(0)"' } }],
+    criteria: [{ id: 'noop', required: true, verifier: 'command_exit_0', verifierSpec: { command: 'node -e "process.exit(0)"', humanApproved: true } }],
   });
   core.verification.claim('noop', { id: 'c1', provenance: { kind: 'claim', ref: 'agent' } });
   assert.equal(core.verification.evaluateActive().status, 'partial');
@@ -35,7 +36,7 @@ test('P0: verify re-run is the only path to complete; claims blocked at Stop', a
   assert.ok(verified.results[0].harnessVerified);
 });
 
-test('P0: direct edits to active.json cannot forge completion', () => {
+test('P0: direct edits to the SQLite contract cannot forge completion', () => {
   const { core } = tempCore();
   const contract = core.contracts.create({
     taskId: 'p0-file-forge',
@@ -53,19 +54,26 @@ test('P0: direct edits to active.json cannot forge completion', () => {
     verifiedAt: new Date().toISOString(),
     provenance: { kind: 'claim', ref: 'direct-file-edit' },
   }];
-  fs.writeFileSync(path.join(core.paths.tasksRoot, 'active.json'), `${JSON.stringify(contract)}\n`);
+  const db = new DatabaseSync(core.paths.controlDbPath);
+  try {
+    db.prepare('UPDATE task_contracts SET contract_json=? WHERE task_id=?').run(JSON.stringify(contract), contract.taskId);
+  } finally { db.close(); }
   assert.equal(core.verification.evaluateActive().status, 'partial');
   assert.deepEqual(core.verification.evaluateActive().unverified, ['tests']);
 });
 
-test('P0: deleting active.json does not remove the Stop gate', async () => {
+test('P0: deleting the active SQLite task does not remove the Stop gate', async () => {
   const { core } = tempCore();
   core.contracts.create({
     taskId: 'p0-delete',
     objective: 'guard deletion',
-    criteria: [{ id: 'tests', required: true, verifier: 'test_runner', verifierSpec: { command: 'npm test' } }],
+    criteria: [{ id: 'tests', required: true, verifier: 'test_runner', verifierSpec: { executable: 'npm', args: ['test'] } }],
   });
-  fs.unlinkSync(path.join(core.paths.tasksRoot, 'active.json'));
+  const db = new DatabaseSync(core.paths.controlDbPath);
+  try {
+    db.exec('PRAGMA foreign_keys=OFF');
+    db.prepare('DELETE FROM task_contracts WHERE task_id=?').run('p0-delete');
+  } finally { db.close(); }
   const stop = await handleStop({ event: 'Stop', completionClaim: true }, core);
   assert.equal(stop.decision, 'block');
   assert.equal(stop.reason_code, 'active_contract_missing');
@@ -78,7 +86,7 @@ test('P0: tasks and memory are isolated by project root', async () => {
   const projectB = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-project-b-'));
   const a = createV9Core({ paths: basePaths, projectRoot: projectA });
   const b = createV9Core({ paths: basePaths, projectRoot: projectB });
-  a.contracts.create({ taskId: 'alpha', objective: 'alpha billing key migration', criteria: [{ id: 'tests', verifier: 'test_runner', verifierSpec: { command: 'npm test' } }] });
+  a.contracts.create({ taskId: 'alpha', objective: 'alpha billing key migration', criteria: [{ id: 'tests', verifier: 'test_runner', verifierSpec: { executable: 'npm', args: ['test'] } }] });
   a.memory.createMemory({ memoryId: 'alpha-memory', content: 'alpha only' });
   assert.equal(b.contracts.active(), null);
   assert.equal(b.memory.getMemory('alpha-memory'), null);
@@ -120,6 +128,35 @@ test('P3: path policy blocks forbidden and critical shell patterns', () => {
     cwd: process.cwd(),
   });
   assert.ok(critical.level >= 3);
+});
+
+test('P3: unresolved shell paths require confirmation when the contract has an allowlist', () => {
+  const decision = evaluateAction({
+    toolName: 'Bash',
+    toolInput: { command: 'node generated-script.js' },
+    contract: { risk: 'low', externalWrite: false, scope: { allowed: ['src/'], forbidden: [] } },
+    cwd: process.cwd(),
+  });
+  assert.equal(decision.level, 3);
+  assert.equal(decision.reasonCode, 'scope_unresolved');
+});
+
+test('P3: apply_patch headers are scope checked and unknown MCP or Agent writes require confirmation', () => {
+  const contract = { risk: 'low', externalWrite: false, scope: { allowed: ['src/'], forbidden: ['secrets/'] } };
+  const patch = evaluateAction({
+    toolName: 'apply_patch',
+    toolInput: { command: '*** Begin Patch\n*** Update File: secrets/token.txt\n*** End Patch\n' },
+    contract,
+    cwd: process.cwd(),
+  });
+  assert.equal(patch.level, 4);
+  assert.equal(patch.reasonCode, 'scope_forbidden');
+
+  for (const toolName of ['mcp__database__query', 'Agent']) {
+    const decision = evaluateAction({ toolName, toolInput: { query: 'opaque write' }, contract, cwd: process.cwd() });
+    assert.equal(decision.level, 3);
+    assert.equal(decision.reasonCode, 'scope_unresolved');
+  }
 });
 
 test('P4: skill activation requires expected criteria and marks outputs as candidates', () => {

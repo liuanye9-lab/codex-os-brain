@@ -18,17 +18,26 @@ async function main() {
 
   const config = readV9Config(process.env.BRAIN_V9_CONFIG);
   const projectRoot = input.project_root || input.projectRoot || input.cwd || process.cwd();
-  const core = createV9Core({ config, projectRoot });
+  const core = createV9Core({
+    config,
+    projectRoot,
+    sessionId: input.session_id || input.sessionId || input.thread_id || input.threadId,
+    taskId: input.task_id || input.taskId,
+  });
   const hostName = process.env.BRAIN_HOST || input.host || 'codex';
   const adapter = getHostAdapter(hostName);
 
   const bind = handler => value => handler(value, core);
   const handlers = {
     SessionStart: bind(handleSession),
+    SessionEnd: bind(handleObservation),
     PostCompact: bind(handleSession),
     PreCompact: bind(handleSession),
     PreToolUse: bind(handleRisk),
     PostToolUse: bind(handleObservation),
+    PermissionRequest: bind(handleRisk),
+    SubagentStart: bind(handleObservation),
+    SubagentStop: bind(handleObservation),
     Stop: bind(handleStop),
     UserPromptSubmit: async () => ({}),
   };
@@ -37,7 +46,7 @@ async function main() {
   const output = await adapter.handle(input, async normalized => dispatchHook(normalized, {
     enabled,
     handlers,
-    failClosedEvents: new Set(['PreToolUse', 'Stop']),
+    failClosedEvents: new Set(['PreToolUse', 'PermissionRequest', 'Stop']),
     auditInternalError(event, error) {
       const reasonCode = String(error?.code || 'hook_internal_error').slice(0, 80);
       try {

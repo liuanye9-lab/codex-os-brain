@@ -1,6 +1,6 @@
-# Codex Brain V9：给 AI 编程助手装一个「安全副驾驶」
+# Codex Brain V9：AI 编程助手的本地可靠性副驾驶（研究预览）
 
-[![Version](https://img.shields.io/badge/version-0.12.0-5b5bd6)](package.json)
+[![Version](https://img.shields.io/badge/version-0.15.0-5b5bd6)](package.json)
 [![Runtime](https://img.shields.io/badge/runtime-local--first-1f883d)](docs/v9/privacy-and-threat-model.md)
 [![Interfaces](https://img.shields.io/badge/interfaces-hooks%20%7C%20CLI%20%7C%20MCP-0969da)](docs/v9/quickstart.md)
 [![Eval](https://img.shields.io/badge/eval-reliability%20suites-orange)](evals/v9-reliability/runner.cjs)
@@ -16,18 +16,18 @@
 
 ```text
 请在当前项目部署 Codex Brain V9 Harness。先确认 Node.js >= 22.5，再执行：
-npm install --global codex-brain-v9@latest && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
+npm install --global codex-brain-v9@0.15.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
 
-只允许安装 Codex Brain 的项目级 Hooks，不要安装全局 Hooks，不要改 Claude Code Hooks，不要修改项目业务文件。保留用户已有 Hooks；如果任一步失败就停止并报告原始错误。完成后只在 doctor 同时满足 ok=true、eventsComplete=true、fingerprintMatch=true、runtimeHealthy=true、runtimeStorageWritable=true 时告诉我部署成功。
+只允许把 Codex Brain 增量合并进当前用户的 Codex Hook loader，不要改 Claude Code Hooks，不要修改项目业务文件。保留用户已有 Hooks；项目 task、事件和记忆仍按 projectRoot 隔离。如果任一步失败就停止并报告原始错误。完成后只在 doctor 同时满足 ok=true、eventsComplete=true、fingerprintMatch=true、packageVersionMatch=true、runtimeDigestMatch=true、runtimeHealthy=true、runtimeStorageWritable=true，且 evidence-signing-loop=passed 时告诉我“安装完整”；只有真实 host canary 记录到事件后才能告诉我“宿主门禁已生效”。
 ```
 
 如果你自己在终端操作，先 `cd` 到目标项目，再复制这一行：
 
 ```bash
-npm install --global codex-brain-v9@latest && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
+npm install --global codex-brain-v9@0.15.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
 ```
 
-这条命令只把运行时安装到 npm 全局目录，Hooks 仍然只写入当前项目的 `.codex/hooks.json`。它会增量保留已有 Hooks，并自动保存可恢复的原配置。不要使用 `sudo npm install`；如果全局 npm 目录不可写，先改用用户级 Node 版本管理器。
+这条命令把运行时安装到 npm 全局目录，并把通用 loader 增量合并进当前用户的 `$CODEX_HOME/hooks.json`（默认 `~/.codex/hooks.json`）。loader 在没有活动项目合同的时候静默返回，task、事件、证据和记忆仍按 projectRoot 隔离。安装器会保留已有 Hooks，并自动保存可恢复的原配置。不要使用 `sudo npm install`；如果全局 npm 目录不可写，先改用用户级 Node 版本管理器。
 
 部署成功后可直接使用：
 
@@ -45,8 +45,8 @@ codex-brain hooks disable --project "$PWD" --confirm --json && npm uninstall --g
 把 AI 编程助手想成**司机**：它负责开车、认路、做决定。  
 Codex Brain 像坐在副驾的人：**平时不唠叨、不抢方向盘**；只有快碰到红线、要做高风险操作、连续撞同一堵墙、长对话被压缩，或它说「已经做完」时，才提醒、补小抄，或踩一脚刹车。
 
-> 它**不是**另一个 Agent，也**不承诺**让模型永远正确。  
-> 它是一层 **reliability control plane（可靠性控制平面）**：把「目标、边界、证据、失败、交接」变成可检查的规则——**先把事情说清楚，再拿证据验收**。
+> 它**不是**另一个 Agent，不是 OS 沙箱，也不承诺让模型永远正确。
+> 它是一套本地可靠性实验框架：把「目标、边界、证据、失败、交接」变成可回归检查的规则。Hooks 只覆盖宿主实际触发的事件，不能代替操作系统权限、容器隔离、代码审查或发布审批。
 
 ### Start here：先跑通，再决定开哪些增强
 
@@ -62,7 +62,7 @@ brain task create --task-id demo --objective "ship safely" --criterion tests --j
 brain verify --json
 ```
 
-Node.js 必须是 **22.5+**。`brain doctor` 默认只读；项目 hooks 默认关闭，只有显式执行 `brain hooks enable --project "$PWD" --confirm` 才会写入项目配置。
+Node.js 必须是 **22.5+**。`brain doctor` 不修改项目业务文件，但会运行临时签名闭环，并可能首次初始化本机证据密钥；项目 hooks 默认关闭，只有显式执行 `brain hooks enable --project "$PWD" --confirm` 才会写入项目配置。
 
 ### 可选的最小上下文续航
 
@@ -131,7 +131,9 @@ mindmap
       harnessVerified
       合同与题目签名
     信任边界
-      macOS Keychain 持钥
+      macOS Keychain
+      Windows DPAPI
+      Linux libsecret 或 0600 文件降级
       路由账本 hash chain + MAC
       降级成无签名记录也拒绝
     项目隔离
@@ -365,23 +367,19 @@ flowchart LR
 
 下面按**真实 coding agent 常见失败模式**对照。提升指的是 **可靠性 / 可控性 / 成本纪律**，不是 benchmark 上的「智商分数」。
 
-### 提升雷达（装 harness 改的是这些轴，不是「智商」）
+### 机制定位（装 harness 改的是流程，不是「智商」）
 
 ```mermaid
-quadrantChart
-  title 装 harness 主要抬升的能力象限
-  x-axis 低过程纪律 --> 高过程纪律
-  y-axis 低可观测/可验收 --> 高可观测/可验收
-  quadrant-1 目标区：可控可验
-  quadrant-2 只看得见但刹不住
-  quadrant-3 裸 Agent 常见区
-  quadrant-4 死板但看不见
-  裸 Agent: [0.28, 0.30]
-  重编排无验收: [0.45, 0.55]
-  Codex Brain V9: [0.78, 0.82]
+flowchart LR
+  A["Agent 自述完成"] --> B["签名任务合同"]
+  B --> C["固定 verifier 以 argv 重跑"]
+  C --> D["签名证据"]
+  D --> E{"required 全部通过？"}
+  E -->|"是"| F["允许完成"]
+  E -->|"否"| G["保持 partial / 拦截 Stop"]
 ```
 
-> 这是机制定位示意，不是实测分数或因果效果图。向右 = 更守边界、少盲重试；向上 = 完成可验、过程可复盘。真实可证明范围以 `npm run eval:reliability` 的机制回归结果为准。
+> 这是机制图，不是效果分数或因果实验。`npm run eval:reliability` 当前是机制回归套件；真实生产收益需要后续 A/B 任务、盲评和置信区间验证。
 
 ### 八种翻车 → 八种抬升（总览）
 
@@ -790,7 +788,7 @@ brain harness cycle
 
 ```mermaid
 timeline
-  title Codex Brain 从笔记本到安全副驾驶
+  title Codex Brain 从笔记本到可靠性实验框架
   section 记与诚实
     V1 笔记本 : 把目标从聊天里搬到本地可检查记录
                : 发现：记得住 ≠ 是真的
@@ -812,9 +810,10 @@ timeline
     V8 默认直做   : native-first + 计量增强
                   : 发现：三端仍需统一小规则
   section 副驾驶
-    V9 安全副驾驶 : 统一 core · 证据门 · 熔断 · 隐私
+    V9 可靠性副驾驶 : 统一 core · 证据门 · 熔断 · 隐私
     0.10 P0–P6    : 可重放验收 · 交接 · 考场 · 安检 · 技能/宿主/记忆
     0.12 信任加固 : 签整份合同 · 项目隔离 · 路由账本 MAC · 可逆 Hooks · 恢复闭环
+    0.13 生产基线 : 跨平台持钥 · 11 事件清单 · 运行时指纹 · 无 shell verifier
 ```
 
 ### 版本主线（一图串起来）
@@ -828,9 +827,10 @@ flowchart LR
   V5 --> V6["V6<br/>改完即查"]
   V6 --> V7["V7<br/>重 harness"]
   V7 --> V8["V8<br/>默认直做"]
-  V8 --> V9["V9<br/>安全副驾驶"]
+  V8 --> V9["V9<br/>可靠性副驾驶"]
   V9 --> V91["0.10<br/>P0–P6"]
   V91 --> V12["0.12<br/>信任边界加固"]
+  V12 --> V13["0.13<br/>跨平台生产基线"]
 ```
 
 ### V7 重编排 vs V9 副驾驶（为何变轻）
@@ -869,6 +869,9 @@ flowchart TB
 | **V9** | 三端策略不一致；要安静也要能刹得住 | 统一可靠性副驾驶 + 证据门 + 熔断 + 可选本地召回 | 同一 core、hooks/CLI/MCP、迁移回退、隐私导出 | 证据仍偏状态字段；长程交接与硬评测不足 → **0.10 P0–P6** |
 | **0.10** | 假完成、弱交接、弱评测、弱策略、弱技能/记忆/多宿主 | 可重放验收 + handoff + eval + capability policy | 本文 P0–P6 | 仍不替代语义专家；继续用 eval 说话 |
 | **0.12** | 合同题目可被换、项目状态串线、路由证据自证、Hooks 恢复不可信 | 把每条安全声明变成会失败的可执行门禁 | 合同整体签名、Keychain、项目分区、账本 MAC、运行时 doctor、恢复清理 | 同 UID 全权限进程仍是系统信任边界；旧无 MAC 备份需受控迁移 |
+| **0.13** | Linux/Windows 持钥缺口、POSIX-only Hook、doctor 只看表面、任意 shell verifier、版本漂移 | 先把可安装和可诊断基线做实 | Keychain/DPAPI/libsecret、Windows Hook 命令、11 事件矩阵、包与运行时 digest、真实签名闭环、`shell:false` argv、三平台 CI | 仍不是 same-UID 安全边界；Hook 宿主差异和真实效果需持续验证 |
+| **0.14** | 任务开始前的脏文件被误算、并发会话串线、JSONL 与合同分步写 | 把“相对任务开始时”与“按会话归因”做成数据模型 | Git baseline、ignored forbidden 取样、rename 双端、mode 指纹、SQLite task/session/event/CAS、worktree 写租约 | 同一 worktree 只允许一个可归因写任务；并行写需独立 worktree |
+| **0.15** | 机制测试不能回答真实收益、误拦截和成本 | 建立可重复且不泄露内容的 paired A/B | `npm run eval:ab` 离线回放；`npm run eval:ab:live -- --model <model>` 运行 4 对真实 Codex smoke；输出误完成、越权、拦截混淆矩阵、P50/P95/P99、token、人工打断等价成本 | 首次真实 canary 发现 CLI 0.146 未发出 Hook 事件，当前只能声明实验框架完成，不能声明门禁收益；见 [真实 A/B 结果](docs/v9/codex-ab-v0.15-results.md) |
 
 ### 分版细说（优化出发点写清楚）
 
@@ -1041,11 +1044,11 @@ brain hooks enable --project "$PWD" --confirm --json
 brain hooks disable --project "$PWD" --confirm --json
 ```
 
-默认**不**装全局 hooks，**不**擅自装 Claude Code hooks；只写项目内配置。启用时会增量保留已有 Hook，并在 `.codex/` 下创建原配置备份和安装状态文件。未发生外部修改时，禁用会逐字节恢复原文件、原权限和软链；安装后若其他工具又增加了 Hook，禁用只移除带 `codex-brain-v9` 所有权标记的条目，不回滚新配置。若 clone 下来的 `hooks.json` 已含 owned hooks 但没有 sidecar，安装器会先剥离 owned 部分再重建原件，避免把自己的 hooks 备份成“用户原件”。
+默认**不**改 Claude Code hooks。Codex 当前从用户级 `$CODEX_HOME/hooks.json` 加载命令 Hook，因此启用会增量合并通用 loader，并在同目录创建原配置备份和安装状态文件；真正的 task/control/memory 数据仍按 projectRoot 隔离。未发生外部修改时，禁用会逐字节恢复原文件、原权限和软链；安装后若其他工具又增加了 Hook，禁用只移除带 `codex-brain-v9` 所有权标记的条目，不回滚新配置。若 loader 已含 owned hooks 但没有 sidecar，安装器会先剥离 owned 部分再重建原件，避免把自己的 hooks 备份成“用户原件”。
 
-`brain hooks doctor` 不再把“存在一个合法 JSON 文件”当成已启用。它会核对所有权、七个实际事件、重复项、预期指纹、hook 进程烟测和运行时存储可写性；只有这些条件都满足才算完整安装。外部合法 hook 可以省略可选 `timeout`，owned hook 仍由预期指纹钉住短超时。
+`brain hooks doctor` 不再把“存在一个合法 JSON 文件”当成已启用。它会核对所有权、11 个声明事件、重复项、预期指纹、hook 进程烟测和运行时存储可写性；只有这些条件都满足才算完整安装。外部合法 hook 可以省略可选 `timeout`；owned 热路径使用短超时，Stop 为容纳最长 120 秒 verifier 使用 130 秒预算。
 
-项目 hooks 会写入安装机器的绝对插件路径，不应提交。仓库 `.gitignore` 默认排除 `.codex/hooks.json` 和两个安装 sidecar；集成到其他仓库时也应加入相同规则。
+用户 Hook loader 会写入安装机器的绝对插件路径，不应提交。安装 sidecar 与备份保存在 `$CODEX_HOME`，卸载成功后自动移除。
 
 ```mermaid
 flowchart LR
@@ -1061,14 +1064,16 @@ flowchart LR
 
 ### 验收信任边界
 
-V0.12 起，验收题目与验收结果分开保护：任务创建时会规范化并签署整份合同规范，覆盖 objective、scope、`required`、verifier 类型和完整 `verifierSpec`；每条证据再绑定合同指纹与标准指纹。运行时参数不能把已钉死的命令替换成 `echo ok`，空 criteria、未签名 waiver 和 `requireHarness:false` 都不能完成任务。macOS 的签名密钥存放在 Keychain，而不是任务 JSON 同一可写目录；其他平台必须提供受保护的签名后端，文件密钥只用于测试兼容路径。
+V0.13 起，验收题目与验收结果分开保护：任务创建时会规范化并签署整份合同规范，覆盖 objective、scope、`required`、verifier 类型和完整 `verifierSpec`；每条证据再绑定合同指纹与标准指纹。运行时参数不能把已钉死的命令替换成 `echo ok`，空 criteria、未签名 waiver 和 `requireHarness:false` 都不能完成任务。macOS 使用 Keychain，Windows 使用当前用户 DPAPI，Linux 优先使用 libsecret；没有 Secret Service 时会降级为权限为 `0600` 的本地文件，并在 threat model 中明确标为较弱模式。
+
+这不是对同一操作系统用户的恶意进程建立强隔离。同 UID 且能改 npm 安装目录、运行时脚本、进程环境或凭据存储的攻击者仍在可信计算基之外。doctor 会核对 Hook 所有权、11 个声明事件、manifest 指纹、包版本、实际运行时 digest，并跑一次临时合同→verifier→证据签名→完成判定闭环；这能发现常见漂移和直接改 JSON，不能代替容器、独立账户或硬件隔离。
 
 `projectScoped: true` 现在会实际消费：task、event、failure、embedding 和 SQLite memory 都按规范化 project root 的哈希分区。一个项目的 active task 与记忆不会注入另一个项目。`active.json` 旁还有独立 guard；只删除合同文件会让 Stop fail closed，而不是静默放行。
 
 ```mermaid
 flowchart LR
   Create["创建任务"] --> Canonical["规范化整份合同<br/>objective / scope / criteria / verifierSpec"]
-  Canonical --> Sign["Keychain HMAC 签合同"]
+  Canonical --> Sign["平台密钥提供者<br/>HMAC 签合同"]
   Sign --> Run["Stop 实时重跑固定 verifier"]
   Run --> Evidence["证据绑定<br/>合同指纹 + 标准指纹"]
   Evidence --> Gate{"完成门禁"}
@@ -1078,6 +1083,8 @@ flowchart LR
   Receipt --> Ledger["路由账本<br/>hash chain + MAC"]
   Ledger -->|"手改 / 重算 hash / 降级无签名"| Reject["拒绝进入路由策略"]
 ```
+
+Hook 覆盖、阻断能力和已知缺口见 [Hook Coverage Matrix](docs/v9/hook-coverage.md)。核心区别是：观察到事件不等于能阻断事件；只有宿主接受并执行返回决策的路径才属于门禁。
 
 ### MCP
 
@@ -1165,6 +1172,13 @@ flowchart TB
 
 副驾驶不是方向盘。它减少的是：**遗忘、越界、死循环、假完成、无交接、无计量的编排税**。
 
+### 当前已知缺口与路线图
+
+- **0.13 已覆盖**：跨平台证据密钥提供者、Windows Hook 命令、11 个声明事件、Hook/包/运行时指纹、临时签名闭环 doctor、`shell:false` verifier、清理后的子进程环境、精确版本部署。
+- **0.14 已覆盖**：baseline-based diff、被 ignore 的 forbidden 路径、rename 两端与 chmod、按 session/task 选择、CAS 更新、SQLite 事务事件与 session-scoped circuit；同一 worktree 的写任务使用 lease，真正并行写应使用独立 worktree。
+- **0.15 实验框架已覆盖**：离线 replay 进入三平台 CI，真实 Codex paired smoke 需要显式 `--confirm-paid`；报告不保存 prompt、tool output、绝对路径、凭据或 transcript。
+- **仍需外部证据**：三平台 Runner 要以本次推送后的 GitHub Actions 为准；真实 4 对 smoke 不是 release-grade 因果结论，P95/P99 与误拦截率需要至少 64 对 pilot，P99 建议 300–500 个样本。
+
 ---
 
 ## 文档索引
@@ -1172,6 +1186,7 @@ flowchart TB
 | 文档 | 内容 |
 |---|---|
 | [CLI / hooks / MCP 快速开始](docs/v9/quickstart.md) | 命令与接入 |
+| [Hook Coverage Matrix](docs/v9/hook-coverage.md) | 11 个声明事件、阻断能力与已知宿主边界 |
 | [P0–P6 可靠性控制平面](docs/v9/p0-p6-reliability-plane.md) | 0.10 机制说明 |
 | [可选 Ollama 本地嵌入](docs/v9/local-embeddings.md) | 资料柜 |
 | [事务记忆基础设施](docs/v9/memory-infrastructure.md) | SQLite、检索、图与持续评测 |

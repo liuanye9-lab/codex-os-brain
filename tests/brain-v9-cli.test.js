@@ -16,7 +16,7 @@ function run(args, brainHome = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-c
 test('status emits stable JSON', () => {
   const result = run(['status', '--json']);
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(Object.keys(JSON.parse(result.stdout)).sort(), ['enabled', 'memory', 'runtimeRoot', 'version']);
+  assert.deepEqual(Object.keys(JSON.parse(result.stdout)).sort(), ['controlStore', 'enabled', 'memory', 'runtimeRoot', 'version']);
 });
 
 test('help and doctor expose an actionable public interface contract', () => {
@@ -30,6 +30,25 @@ test('help and doctor expose an actionable public interface contract', () => {
   const report = JSON.parse(doctor.stdout);
   assert.equal(report.mcp.probeCommand, 'npm run mcp:probe');
   assert.ok(report.checks.some(check => check.id === 'node-runtime'));
+  assert.equal(report.checks.find(check => check.id === 'evidence-signing-loop').status, 'passed');
+});
+
+test('task create accepts a reviewed contract file and gates custom commands', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-cli-contract-home-'));
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-cli-contract-project-'));
+  const contractFile = path.join(project, 'task-contract.json');
+  fs.writeFileSync(contractFile, JSON.stringify({
+    taskId: 'from_file',
+    objective: 'verify a reviewed contract',
+    criteria: [{ id: 'marker', verifier: 'file_exists', verifierSpec: { path: 'task-contract.json' } }],
+  }));
+  const created = run(['task', 'create', '--from', contractFile, '--project', project, '--json'], home);
+  assert.equal(created.status, 0, created.stderr);
+  assert.equal(JSON.parse(created.stdout).taskId, 'from_file');
+
+  const blocked = run(['task', 'create', '--objective', 'unsafe custom', '--criterion', 'custom', '--command', 'node ok.js', '--json'], home);
+  assert.equal(blocked.status, 2);
+  assert.match(blocked.stderr, /approve-custom-verifier/);
 });
 
 test('migration apply is impossible without confirmation', () => {

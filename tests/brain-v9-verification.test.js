@@ -50,7 +50,7 @@ test('harness re-run can pass a command_exit_0 criterion', () => {
   const contract = trustedContract({
     taskId: 'task_ok',
     objective: 'ok',
-    criteria: [{ id: 'noop', required: true, verifier: 'command_exit_0', verifierSpec: { command: 'node -e "process.exit(0)"' } }],
+    criteria: [{ id: 'noop', required: true, verifier: 'command_exit_0', verifierSpec: { command: 'node -e "process.exit(0)"', humanApproved: true } }],
   }, evidenceSealer);
   const { contract: next, result } = verifyCriterion(contract, 'noop', { command: 'node -e "process.exit(0)"' }, { evidenceSealer });
   assert.equal(result.status, 'passed');
@@ -63,7 +63,7 @@ test('harness re-run fails when command exits non-zero', () => {
   const contract = trustedContract({
     taskId: 'task_fail',
     objective: 'fail',
-    criteria: [{ id: 'noop', required: true, verifier: 'command_exit_0', verifierSpec: { command: 'node -e "process.exit(1)"' } }],
+    criteria: [{ id: 'noop', required: true, verifier: 'command_exit_0', verifierSpec: { command: 'node -e "process.exit(1)"', humanApproved: true } }],
   }, evidenceSealer);
   const { contract: next, result } = verifyCriterion(contract, 'noop', { command: 'node -e "process.exit(1)"' }, { evidenceSealer });
   assert.equal(result.status, 'failed');
@@ -111,7 +111,7 @@ test('contract signature pins verifier command, required flags, and nonempty cri
   const contract = trustedContract({
     taskId: 'task_pinned',
     objective: 'pin the acceptance question',
-    criteria: [{ id: 'tests', required: true, verifier: 'command_exit_0', verifierSpec: { command: 'node -e "process.exit(1)"' } }],
+    criteria: [{ id: 'tests', required: true, verifier: 'command_exit_0', verifierSpec: { command: 'node -e "process.exit(1)"', humanApproved: true } }],
   }, evidenceSealer);
   contract.criteria[0].verifierSpec.command = 'echo ok';
   assert.deepEqual(evaluate(contract, evidenceSealer).failed, ['contract_integrity']);
@@ -120,7 +120,7 @@ test('contract signature pins verifier command, required flags, and nonempty cri
   const optional = trustedContract({
     taskId: 'task_required',
     objective: 'pin required',
-    criteria: [{ id: 'tests', required: true, verifier: 'command_exit_0', verifierSpec: { command: 'node -e "process.exit(0)"' } }],
+    criteria: [{ id: 'tests', required: true, verifier: 'command_exit_0', verifierSpec: { command: 'node -e "process.exit(0)"', humanApproved: true } }],
   }, evidenceSealer);
   optional.criteria[0].required = false;
   assert.deepEqual(evaluate(optional, evidenceSealer).failed, ['contract_integrity']);

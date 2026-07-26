@@ -9,7 +9,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const brainHome = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-mcp-probe-'));
 const transport = new StdioClientTransport({ command: process.execPath, args: [path.join(root, 'mcp', 'server.mjs')], cwd: root, env: { ...process.env, CODEX_BRAIN_HOME: path.join(brainHome, 'brain'), CODEX_BRAIN_STATE_HOME: path.join(brainHome, 'state') }, stderr: 'pipe' });
-const client = new Client({ name: 'brain-v9-probe', version: '0.12.0' });
+const client = new Client({ name: 'brain-v9-probe', version: '0.15.0' });
 try {
   await client.connect(transport);
   const tools = await client.listTools();

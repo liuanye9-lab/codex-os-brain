@@ -4,7 +4,10 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { resolveV9Paths, scopeV9Paths } = require('./paths');
-const { appendJsonl, atomicWriteJson, readJsonSafe } = require('./store');
+const { atomicWriteJson, readJsonSafe } = require('./store');
+const { createControlStore } = require('./control-store');
+const { createControlGuard } = require('./control-guard');
+const { captureGitBaseline } = require('./git-baseline');
 const { createTaskContract, sealTaskContract } = require('./task-contract');
 const { claimEvidence, evaluateCompletion, verifyActive, verifyCriterion } = require('./verification');
 const { createEvidenceSealer } = require('./evidence-seal');
@@ -41,56 +44,114 @@ function readV9Config(configPath) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), projectRoot: configuredProjectRoot } = {}) {
+function createV9Core({
+  paths = resolveV9Paths(),
+  config = readV9Config(),
+  projectRoot: configuredProjectRoot,
+  sessionId: configuredSessionId,
+  taskId: configuredTaskId,
+} = {}) {
+  const basePaths = paths;
   const enabled = config.enabled === true;
   const projectRoot = () => path.resolve(configuredProjectRoot || process.env.BRAIN_PROJECT_ROOT || process.cwd());
+  const rawSessionId = String(configuredSessionId || process.env.BRAIN_SESSION_ID || process.env.CODEX_THREAD_ID || 'default');
   const runtimePaths = config.hooks?.projectScoped === false ? paths : scopeV9Paths(paths, projectRoot());
   paths = runtimePaths;
-  const activeTaskFile = path.join(paths.tasksRoot, 'active.json');
-  const activeTaskGuardFile = path.join(paths.tasksRoot, 'active.guard.json');
-  const eventsFile = path.join(paths.eventsRoot, 'events.jsonl');
-  const failuresFile = path.join(paths.failuresRoot, 'circuit.json');
+  const legacyActiveTaskFile = path.join(paths.tasksRoot, 'active.json');
+  const legacyEventsFile = path.join(paths.eventsRoot, 'events.jsonl');
+  const controlStore = createControlStore({
+    dbPath: paths.controlDbPath,
+    sessionId: rawSessionId,
+    taskId: configuredTaskId,
+  });
   const embeddings = createEmbeddingService({ paths });
   const skills = createSkillsService({ paths });
   const memory = createMemoryService({ paths });
   const memoryHarness = createMemoryHarness({ paths });
   const memoryBackupKeyStore = createMacKeychainStore();
   const evidenceSealer = createEvidenceSealer({ paths });
+  const controlGuard = createControlGuard({ guardPath: paths.controlGuardPath, evidenceSealer });
+  if (enabled) {
+    const legacy = readJsonSafe(legacyActiveTaskFile, null);
+    const legacyGuard = readJsonSafe(path.join(paths.tasksRoot, 'active.guard.json'), null);
+    const legacyEvents = [];
+    if (fs.existsSync(legacyEventsFile)) {
+      for (const line of fs.readFileSync(legacyEventsFile, 'utf8').split(/\r?\n/).filter(Boolean)) {
+        try { legacyEvents.push(JSON.parse(line)); } catch {}
+      }
+    }
+    controlStore.importLegacy({
+      contract: legacy.value,
+      guardExpected: legacyGuard.missing === false,
+      events: legacyEvents,
+    });
+  }
   function activeTask() {
     if (!enabled) return null;
-    return readJsonSafe(activeTaskFile, null).value;
+    return activeTaskState().contract;
   }
 
   function activeTaskState() {
     if (!enabled) return { expected: false, contract: null, missing: false, corrupt: false };
-    const contract = readJsonSafe(activeTaskFile, null);
-    const guard = readJsonSafe(activeTaskGuardFile, null);
-    return {
-      expected: guard.missing === false,
-      contract: contract.value,
-      missing: contract.missing,
-      corrupt: contract.corrupt || guard.corrupt,
-      guard: guard.value,
-    };
+    const state = controlStore.activeState();
+    const guard = controlGuard.read();
+    if (!guard.valid) return { expected: true, contract: null, missing: false, corrupt: true, guard };
+    const guardedTaskIds = Object.keys(guard.tasks);
+    if (!state.contract) {
+      return guardedTaskIds.length > 0
+        ? { ...state, expected: true, missing: true, guard }
+        : { ...state, guard };
+    }
+    const guarded = guard.tasks[state.contract.taskId];
+    if (guarded && guarded.specHash !== state.contract.trust?.specHash) {
+      return { expected: true, contract: null, missing: false, corrupt: true, guard };
+    }
+    return { ...state, guard };
   }
 
   function saveTask(contract) {
     if (!enabled) return contract;
-    atomicWriteJson(activeTaskFile, contract);
-    atomicWriteJson(activeTaskGuardFile, {
-      schemaVersion: 1,
-      taskId: contract.taskId,
-      specHash: contract.trust?.specHash || null,
-      createdAt: new Date().toISOString(),
-    });
-    return contract;
+    if (contract.lifecycle !== 'complete') controlGuard.add(contract);
+    const saved = controlStore.saveTask(contract);
+    if (contract.lifecycle === 'complete') controlGuard.remove(contract.taskId);
+    return saved;
+  }
+
+  function saveTaskWithEvent(contract, eventInput) {
+    if (!enabled) return contract;
+    if (contract.lifecycle !== 'complete') controlGuard.add(contract);
+    const event = events.sanitize(eventInput);
+    const saved = controlStore.saveTaskAndEvent(contract, event);
+    if (contract.lifecycle === 'complete') controlGuard.remove(contract.taskId);
+    return saved;
   }
 
   const contracts = {
     active: activeTask,
     state: activeTaskState,
     create(input) {
-      const contract = saveTask(sealTaskContract(createTaskContract(input), evidenceSealer));
+      const criteria = (input.criteria || []).map(criterion => {
+        const verifier = criterion.verifier || (criterion.id === 'scope' ? 'git_diff_bounded' : null);
+        if (verifier !== 'git_diff_bounded' && criterion.id !== 'scope') return criterion;
+        return {
+          ...criterion,
+          verifier: 'git_diff_bounded',
+          verifierSpec: {
+            ...(criterion.verifierSpec || {}),
+            baseline: captureGitBaseline(projectRoot(), {
+              watchPaths: input.scope?.forbidden || [],
+            }),
+          },
+        };
+      });
+      const contract = sealTaskContract(createTaskContract({ ...input, criteria }), evidenceSealer);
+      controlGuard.add(contract);
+      try {
+        controlStore.createTask(contract);
+      } catch (error) {
+        controlGuard.remove(contract.taskId);
+        throw error;
+      }
       try {
         handoff.initHandoff({ projectRoot: projectRoot(), objective: contract.objective });
       } catch {
@@ -100,12 +161,40 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
     },
     save: saveTask,
     evaluateAction(toolName, toolInput = {}) {
+      const state = activeTaskState();
+      if (state.expected && (!state.contract || state.missing || state.corrupt || state.ambiguous)) {
+        return {
+          level: 4,
+          reasonCode: state.ambiguous ? 'task_selector_ambiguous' : 'active_contract_missing',
+          risk: 'critical',
+          message: 'Action paused because the active task selector is missing, corrupt, or ambiguous.',
+        };
+      }
       return evaluateAction({
         toolName,
         toolInput,
-        contract: activeTask(),
+        contract: state.contract,
         cwd: projectRoot(),
         riskTable: config.riskTable,
+      });
+    },
+    close() {
+      const contract = activeTask();
+      if (!contract) throw new Error('active_task_required');
+      const evaluation = verification.evaluateActive();
+      if (evaluation.status !== 'complete') throw new Error('completion_unverified');
+      const closed = sealTaskContract({
+        ...contract,
+        revision: Number(contract.revision || 1) + 1,
+        lifecycle: 'complete',
+        updatedAt: new Date().toISOString(),
+        trust: undefined,
+      }, evidenceSealer);
+      return saveTaskWithEvent(closed, {
+        kind: 'checkpoint',
+        taskId: closed.taskId,
+        status: 'complete',
+        reasonCode: 'task_closed',
       });
     },
   };
@@ -121,14 +210,11 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
     },
     append(input) {
       const event = this.sanitize(input);
-      if (enabled) appendJsonl(eventsFile, event);
+      if (enabled) controlStore.appendEvent(event);
       return event;
     },
     list() {
-      if (!enabled || !fs.existsSync(eventsFile)) return [];
-      return fs.readFileSync(eventsFile, 'utf8').split(/\r?\n/).filter(Boolean).flatMap(line => {
-        try { return [JSON.parse(line)]; } catch { return []; }
-      });
+      return enabled ? controlStore.listEvents() : [];
     },
   };
 
@@ -166,8 +252,7 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
         cwd: options.cwd || projectRoot(),
         evidenceSealer,
       });
-      saveTask(outcome.contract);
-      events.append({
+      saveTaskWithEvent(outcome.contract, {
         kind: 'verify',
         taskId: outcome.contract.taskId,
         status: outcome.evaluation.status,
@@ -196,8 +281,7 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
         providedToken: options.providedToken,
         evidenceSealer,
       });
-      saveTask(next);
-      events.append({ kind: 'verify', taskId: next.taskId, status: result.status, evidenceId: result.evidenceId });
+      saveTaskWithEvent(next, { kind: 'verify', taskId: next.taskId, status: result.status, evidenceId: result.evidenceId });
       return result;
     },
   };
@@ -205,22 +289,27 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
   const failures = {
     record(input) {
       const failure = classifyFailure(input);
-      const state = readJsonSafe(failuresFile, { signature: null, consecutive: 0, status: 'closed' }).value;
-      const next = advanceCircuit(state, failure, config.failureCircuit);
-      if (enabled) atomicWriteJson(failuresFile, next);
+      const next = enabled
+        ? controlStore.updateCircuit(failure.operation, state => advanceCircuit(state, failure, config.failureCircuit))
+        : advanceCircuit({ signature: null, consecutive: 0, status: 'closed' }, failure, config.failureCircuit);
       return { failure, state: next };
     },
     succeed({ operation } = {}) {
-      const state = readJsonSafe(failuresFile, { signature: null, operation: null, consecutive: 0, status: 'closed' }).value;
-      const next = resetCircuitForOperation(state, operation);
-      if (enabled) atomicWriteJson(failuresFile, next);
-      return next;
+      return enabled
+        ? controlStore.updateCircuit(operation, state => resetCircuitForOperation(state, operation))
+        : resetCircuitForOperation({ signature: null, operation, consecutive: 0, status: 'closed' }, operation);
     },
-    status() { return readJsonSafe(failuresFile, { signature: null, consecutive: 0, status: 'closed' }).value; },
+    status(operation) { return enabled ? controlStore.circuitStatus(operation) : []; },
   };
 
   return {
-    status: () => ({ version: 9, enabled, runtimeRoot: paths.runtimeRoot, memory: enabled ? memory.status() : { enabled: false } }),
+    status: () => ({
+      version: 9,
+      enabled,
+      runtimeRoot: paths.runtimeRoot,
+      controlStore: enabled ? { kind: 'sqlite', sessionId: controlStore.sessionId, integrity: controlStore.integrity() } : { enabled: false },
+      memory: enabled ? memory.status() : { enabled: false },
+    }),
     contracts,
     events,
     verification,
@@ -247,8 +336,16 @@ function createV9Core({ paths = resolveV9Paths(), config = readV9Config(), proje
     },
     hosts: { get: getHostAdapter, list: listHosts },
     paths,
+    sessionId: controlStore.sessionId,
     config,
     projectRoot,
+    forTask: taskId => createV9Core({
+      paths: basePaths,
+      config,
+      projectRoot: projectRoot(),
+      sessionId: rawSessionId,
+      taskId,
+    }),
   };
 }
 
