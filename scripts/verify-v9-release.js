@@ -26,6 +26,15 @@ function verifyPackageContents(pack) {
   return { passed: missing.length === 0 && forbidden.length === 0, files, missing, forbidden };
 }
 
+function npmPackDryRun(cwd) {
+  const siblingCli = path.resolve(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  const npmCli = [process.env.npm_execpath, siblingCli].find(candidate => candidate && fs.existsSync(candidate));
+  if (npmCli) {
+    return spawnSync(process.execPath, [npmCli, 'pack', '--dry-run', '--json'], { cwd, encoding: 'utf8' });
+  }
+  return spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['pack', '--dry-run', '--json'], { cwd, encoding: 'utf8' });
+}
+
 function markdownFiles(root) {
   const files = [];
   function visit(directory) {
@@ -89,7 +98,7 @@ function main() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-release-'));
   const exportRoot = path.join(temp, 'public');
   const manifest = buildPublicExport({ sourceRoot: root, outputRoot: exportRoot, allowlistPath: path.join(root, 'config', 'public-export-allowlist.json') });
-  const packed = spawnSync('npm', ['pack', '--dry-run', '--json'], { cwd: exportRoot, encoding: 'utf8' });
+  const packed = npmPackDryRun(exportRoot);
   if (packed.status !== 0) throw new Error(packed.stderr || 'npm_pack_failed');
   const pack = JSON.parse(packed.stdout)[0];
   const contents = verifyPackageContents(pack);
@@ -102,4 +111,4 @@ if (require.main === module) {
   try { main(); } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 2; }
 }
 
-module.exports = { verifyPackageContents, verifyReadmeLinks, verifyVisualProvenance };
+module.exports = { npmPackDryRun, verifyPackageContents, verifyReadmeLinks, verifyVisualProvenance };
