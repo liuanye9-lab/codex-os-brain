@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { spawnSync } = require('node:child_process');
 const { setProjectHooks } = require('./v9/hook-config');
 
@@ -46,7 +47,7 @@ function main() {
     const api = runNode([
       '--eval',
       "import(process.argv[1]).then(({ default: api }) => { if (typeof api.taskContract?.buildTaskContract !== 'function' || typeof api.v9?.core?.createV9Core !== 'function' || typeof api.v9?.evidenceSeal?.createEvidenceSealer !== 'function') process.exit(1); process.stdout.write('public-api-v9-ok'); })",
-      path.join(root, 'index.js'),
+      pathToFileURL(path.join(root, 'index.js')).href,
     ], { cwd: projectRoot, env }).trim();
     process.stdout.write(`${JSON.stringify({ passed: true, cli: true, doctor: true, hooks: true, api, mcp }, null, 2)}\n`);
   } finally {
