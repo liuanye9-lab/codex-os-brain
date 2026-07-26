@@ -36,7 +36,7 @@ test('changing model identity marks the complete index for rebuild', () => {
   assert.equal(changed.requiresReindex, true);
   assert.notEqual(changed.fingerprint, first.fingerprint);
   if (process.platform !== 'win32') {
-    assert.equal(fs.statSync(paths.embeddingConfigPath).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') assert.equal(fs.statSync(paths.embeddingConfigPath).mode & 0o777, 0o600);
   }
 });
 

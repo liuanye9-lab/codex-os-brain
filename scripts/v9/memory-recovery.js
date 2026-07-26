@@ -27,15 +27,26 @@ function coded(code) { const error = new Error(code); error.code = code; return 
 function safeMkdir(dir) { fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); fs.chmodSync(dir, 0o700); }
 function within(root, target) { const relative = path.relative(path.resolve(root), path.resolve(target)); return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative)); }
 function xor(a, b) { if (a.length !== b.length) throw coded('share_length_mismatch'); const out = Buffer.alloc(a.length); for (let i = 0; i < a.length; i += 1) out[i] = a[i] ^ b[i]; return out; }
-function fsyncFile(file) { const fd = fs.openSync(file, 'r'); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); } }
-function fsyncDir(dir) { const fd = fs.openSync(dir, 'r'); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); } }
+function fsyncPath(target) {
+  let fd;
+  try {
+    fd = fs.openSync(target, 'r');
+    fs.fsyncSync(fd);
+  } catch (error) {
+    if (process.platform !== 'win32' || error.code !== 'EPERM') throw error;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+function fsyncFile(file) { fsyncPath(file); }
+function fsyncDir(dir) { fsyncPath(dir); }
 
 function readPassphrase(file) {
   const resolved = path.resolve(file || '');
   const linkStat = fs.lstatSync(resolved);
   if (linkStat.isSymbolicLink()) throw coded('passphrase_file_symlink_rejected');
   const stat = fs.statSync(resolved);
-  if (!stat.isFile() || (stat.mode & 0o077) !== 0) throw coded('passphrase_file_must_be_0600');
+  if (!stat.isFile() || (process.platform !== 'win32' && (stat.mode & 0o077) !== 0)) throw coded('passphrase_file_must_be_0600');
   const passphrase = fs.readFileSync(resolved, 'utf8').replace(/[\r\n]+$/u, '');
   if (Buffer.byteLength(passphrase) < 20) throw coded('passphrase_too_short');
   return passphrase;

@@ -51,7 +51,7 @@ test('2-of-2 recovery shares drill and import without exposing or installing dur
   const shareA = path.join(fixture.offlineA, 'share-a.cbkey'); const shareB = path.join(fixture.offlineB, 'share-b.cbkey');
   const exported = exportRecoveryKey({ paths: fixture.paths, keyStore, outputA: shareA, outputB: shareB, passphraseAFile: fixture.passA, passphraseBFile: fixture.passB, allowSameDevice: true, confirm: true });
   assert.equal(exported.keyFingerprint, keyFingerprint(key));
-  assert.equal(fs.statSync(shareA).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(shareA).mode & 0o777, 0o600);
   assert.equal(fs.readFileSync(shareA).includes(key), false);
   const drill = await drillRecoveryKey({ paths: fixture.paths, shareA, shareB, passphraseAFile: fixture.passA, passphraseBFile: fixture.passB, input: backup.target });
   assert.equal(drill.passed, true); assert.equal(drill.keyInstalled, false); assert.equal(drill.backup.passed, true);

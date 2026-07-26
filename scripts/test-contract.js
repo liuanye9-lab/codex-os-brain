@@ -12,7 +12,7 @@ function discoverSourceTests(directory = path.join(root, 'tests')) {
       const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) return discoverSourceTests(absolute);
       return /\.(?:test|spec)\.(?:cjs|mjs|js)$/.test(entry.name)
-        ? [path.relative(root, absolute)]
+        ? [path.relative(root, absolute).replaceAll('\\', '/')]
         : [];
     })
     .sort();

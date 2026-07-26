@@ -55,9 +55,17 @@ function resolveExecutable(command, options = {}) {
   const paths = path.isAbsolute(candidate) || candidate.includes(path.sep)
     ? [path.resolve(cwd, candidate)]
     : String(env.PATH || '').split(path.delimiter).filter(Boolean).map(directory => path.join(directory, candidate));
-  for (const target of paths) {
+  if (process.platform === 'win32'
+    && path.basename(process.execPath, path.extname(process.execPath)).toLowerCase() === candidate.toLowerCase()) {
+    paths.unshift(process.execPath);
+  }
+  const extensions = process.platform === 'win32' && !path.extname(candidate)
+    ? String(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
+    : [''];
+  const targets = paths.flatMap(target => path.extname(target) ? [target] : [target, ...extensions.map(extension => `${target}${extension.toLowerCase()}`)]);
+  for (const target of targets) {
     try {
-      fs.accessSync(target, fs.constants.X_OK);
+      fs.accessSync(target, process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK);
       const resolved = fs.realpathSync(target);
       return { resolved, sha256: crypto.createHash('sha256').update(fs.readFileSync(resolved)).digest('hex') };
     } catch { /* try next PATH entry */ }
@@ -82,7 +90,7 @@ function runVerifier(check, options = {}, dependencies = {}) {
     && (within(cwd, executable.resolved) || within(temporaryRoot, executable.resolved))) {
     throw coded('routing_verifier_untrusted_executable');
   }
-  const commandName = path.basename(executable.resolved);
+  const commandName = path.basename(executable.resolved, path.extname(executable.resolved)).toLowerCase();
   if (SHELLS.has(commandName) || commandName === 'env') throw coded('routing_verifier_shell_string_rejected');
   if (TRIVIAL_VERIFIERS.has(commandName)) throw coded('routing_verifier_trivial_command_rejected');
   if ((commandName === 'node' || executable.resolved === process.execPath)

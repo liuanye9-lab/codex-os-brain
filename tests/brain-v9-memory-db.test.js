@@ -20,7 +20,7 @@ test('memory database creates ACID schema with WAL, FTS5, and private permission
   assert.equal(db.prepare("SELECT sqlite_compileoption_used('ENABLE_FTS5') AS enabled").get().enabled, 1);
   assert.equal(integrity(db).passed, true);
   db.close();
-  assert.equal(fs.statSync(paths.memoryDbPath).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(paths.memoryDbPath).mode & 0o777, 0o600);
 });
 
 test('transaction rolls back all writes on failure', () => {
@@ -41,5 +41,5 @@ test('backup API checkpoints and verifies a recoverable private snapshot', async
   const report = await backupMemoryDatabase({ paths });
   assert.equal(report.integrity.passed, true);
   assert.equal(fs.existsSync(report.target), true);
-  assert.equal(fs.statSync(report.target).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(report.target).mode & 0o777, 0o600);
 });

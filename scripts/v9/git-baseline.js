@@ -20,6 +20,11 @@ function runGit(cwd, args) {
   };
 }
 
+function canonicalFsPath(target) {
+  const resolved = fs.realpathSync(path.resolve(target));
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
 function parseStatusZ(buffer) {
   const entries = buffer.toString('utf8').split('\0');
   const paths = [];
@@ -98,8 +103,8 @@ function captureGitBaseline(cwd, { watchPaths = [] } = {}) {
   if (!root.ok || !head.ok || !commonDir.ok || !gitDir.ok || !dirty.ok) {
     return { version: 2, repository: false, reason: root.stderr || head.stderr || commonDir.stderr || gitDir.stderr || dirty.error || 'git_baseline_unavailable' };
   }
-  const normalizedRoot = fs.realpathSync(path.resolve(root.stdout.toString('utf8').trim()));
-  const normalizedCwd = fs.realpathSync(path.resolve(cwd));
+  const normalizedRoot = canonicalFsPath(root.stdout.toString('utf8').trim());
+  const normalizedCwd = canonicalFsPath(cwd);
   if (normalizedRoot !== normalizedCwd) {
     return { version: 2, repository: false, reason: 'project_root_must_equal_git_root' };
   }
@@ -108,8 +113,8 @@ function captureGitBaseline(cwd, { watchPaths = [] } = {}) {
     version: 2,
     repository: true,
     head: head.stdout.toString('utf8').trim(),
-    repositoryId: crypto.createHash('sha256').update(fs.realpathSync(commonDir.stdout.toString('utf8').trim())).digest('hex'),
-    worktreeId: crypto.createHash('sha256').update(fs.realpathSync(gitDir.stdout.toString('utf8').trim())).digest('hex'),
+    repositoryId: crypto.createHash('sha256').update(canonicalFsPath(commonDir.stdout.toString('utf8').trim())).digest('hex'),
+    worktreeId: crypto.createHash('sha256').update(canonicalFsPath(gitDir.stdout.toString('utf8').trim())).digest('hex'),
     dirty: dirtyFingerprints,
     watched: watchedFingerprints(cwd, watchPaths),
     capturedAt: new Date().toISOString(),

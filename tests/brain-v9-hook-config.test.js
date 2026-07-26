@@ -128,7 +128,7 @@ test('adopts committed owned hooks without backing them up as the user original'
   assert.equal(fs.existsSync(path.join(codex, BACKUP_FILE)), false);
 });
 
-test('foreign hooks may omit optional timeout and original mode and symlink survive round trip', () => {
+test('foreign hooks may omit optional timeout and original mode and symlink survive round trip', { skip: process.platform === 'win32' }, () => {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-hook-symlink-'));
   const codex = path.join(projectRoot, '.codex');
   fs.mkdirSync(codex);

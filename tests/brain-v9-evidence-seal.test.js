@@ -23,7 +23,7 @@ test('Linux production mode creates a private fallback key without NODE_TEST_CON
   const provider = createProductionEvidenceKeyProvider({ paths, platform: 'linux', run });
   const key = provider.get({ create: true });
   assert.equal(key.length, 32);
-  assert.equal(fs.statSync(paths.evidenceSealKeyPath).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(paths.evidenceSealKeyPath).mode & 0o777, 0o600);
   assert.deepEqual(provider.get({ create: false }), key);
 });
 

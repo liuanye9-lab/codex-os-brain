@@ -32,7 +32,7 @@ test('encrypted backup round-trips through AES-GCM without exposing plaintext', 
   const created = await createEncryptedMemoryBackup({ paths, keyStore, clock: () => new Date('2026-07-22T00:00:00Z') });
   assert.equal(created.integrity.passed, true);
   assert.equal(fs.readFileSync(created.target).includes(Buffer.from('encrypted content')), false);
-  assert.equal(fs.statSync(created.target).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(created.target).mode & 0o777, 0o600);
   const inspected = inspectEncryptedMemoryBackup(created.target);
   assert.equal(inspected.authenticated, false);
   assert.match(inspected.warning, /untrusted/i);

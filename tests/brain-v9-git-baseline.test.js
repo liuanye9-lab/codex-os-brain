@@ -80,6 +80,8 @@ test('committed rename reports both old and new path and chmod is visible', () =
   assert.deepEqual(renamed, ['secrets/token.txt', 'src/token.txt']);
 
   const modeBaseline = captureGitBaseline(root);
-  fs.chmodSync(path.join(root, 'src', 'app.js'), 0o755);
-  assert.deepEqual(changedPathsSinceBaseline(root, modeBaseline).paths, ['src/app.js']);
+  if (process.platform !== 'win32') {
+    fs.chmodSync(path.join(root, 'src', 'app.js'), 0o755);
+    assert.deepEqual(changedPathsSinceBaseline(root, modeBaseline).paths, ['src/app.js']);
+  }
 });

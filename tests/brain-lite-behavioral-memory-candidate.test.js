@@ -92,7 +92,7 @@ test('atomically upserts deduplicated candidates into a private local store', ()
   assert.equal(stored.revision, 2);
   assert.equal(stored.candidates.length, 1);
   assert.equal(stored.candidates[0].occurrences, 2);
-  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
 });
 
 test('flags same-scope divergent rules for review instead of silently merging', () => {
