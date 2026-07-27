@@ -1,6 +1,6 @@
-# Codex Brain V9：AI 编程助手的本地可靠性副驾驶（研究预览）
+# Codex Brain V10：可复利的个人认知资产 Harness（研究预览）
 
-[![Version](https://img.shields.io/badge/version-0.15.0-5b5bd6)](package.json)
+[![Version](https://img.shields.io/badge/version-0.16.0-5b5bd6)](package.json)
 [![Runtime](https://img.shields.io/badge/runtime-local--first-1f883d)](docs/v9/privacy-and-threat-model.md)
 [![Interfaces](https://img.shields.io/badge/interfaces-hooks%20%7C%20CLI%20%7C%20MCP-0969da)](docs/v9/quickstart.md)
 [![Eval](https://img.shields.io/badge/eval-reliability%20suites-orange)](evals/v9-reliability/runner.cjs)
@@ -10,13 +10,17 @@
 
 > Unofficial community project. Codex and related marks belong to OpenAI; this generated illustration does not imply affiliation or endorsement. Visual provenance is recorded in [`assets/visual-provenance.json`](assets/visual-provenance.json).
 
+V10 的定位不再只是给 Agent 增加可靠性护栏，而是把真实任务和自然语言中可验证的 know-how，沉淀为可追溯、可执行、可复用、可撤回、可按用途授权给其他 Agent 的数字认知资产。
+
+底层任务合同、Hooks、CLI、MCP、SQLite 和 verifier 继续使用已经稳定的 V9 runtime contract，避免为了改产品代号破坏现有安装与数据兼容。因此 npm 包名、`scripts/v9` 路径和部分 schema 名称在 V10 中仍保留；它们表示兼容层，不表示产品仍停留在 V9。
+
 ## 最快部署：把一句话交给 Agent
 
 先让 Agent 进入你要保护的项目目录，然后把下面整段发给它：
 
 ```text
 请在当前项目部署 Codex Brain V9 Harness。先确认 Node.js >= 22.5，再执行：
-npm install --global codex-brain-v9@0.15.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
+npm install --global codex-brain-v9@0.16.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
 
 只允许把 Codex Brain 增量合并进当前用户的 Codex Hook loader，不要改 Claude Code Hooks，不要修改项目业务文件。保留用户已有 Hooks；项目 task、事件和记忆仍按 projectRoot 隔离。如果任一步失败就停止并报告原始错误。完成后只在 doctor 同时满足 ok=true、eventsComplete=true、fingerprintMatch=true、packageVersionMatch=true、runtimeDigestMatch=true、runtimeHealthy=true、runtimeStorageWritable=true，且 evidence-signing-loop=passed 时告诉我“安装完整”；只有真实 host canary 记录到事件后才能告诉我“宿主门禁已生效”。
 ```
@@ -24,7 +28,7 @@ npm install --global codex-brain-v9@0.15.0 && codex-brain hooks enable --project
 如果你自己在终端操作，先 `cd` 到目标项目，再复制这一行：
 
 ```bash
-npm install --global codex-brain-v9@0.15.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
+npm install --global codex-brain-v9@0.16.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
 ```
 
 这条命令把运行时安装到 npm 全局目录，并把通用 loader 增量合并进当前用户的 `$CODEX_HOME/hooks.json`（默认 `~/.codex/hooks.json`）。loader 在没有活动项目合同的时候静默返回，task、事件、证据和记忆仍按 projectRoot 隔离。安装器会保留已有 Hooks，并自动保存可恢复的原配置。不要使用 `sudo npm install`；如果全局 npm 目录不可写，先改用用户级 Node 版本管理器。
@@ -100,10 +104,11 @@ flowchart LR
 5. [P0–P6：0.10 可靠性控制平面](#p0p6-010-可靠性控制平面)
 6. [历代版本：解决了什么问题，为什么那样改](#历代版本解决了什么问题为什么那样改)
 7. [事务记忆与加密同步](#事务记忆与加密同步)
-8. [五分钟跑起来](#五分钟跑起来)
-9. [工程术语对照](#工程术语对照)
-10. [它做不到什么](#它做不到什么)
-11. [文档索引](#文档索引)
+8. [认知资产协议](#认知资产协议)
+9. [五分钟跑起来](#五分钟跑起来)
+10. [工程术语对照](#工程术语对照)
+11. [它做不到什么](#它做不到什么)
+12. [文档索引](#文档索引)
 
 ---
 
@@ -971,6 +976,32 @@ flowchart TB
 
 ---
 
+## 认知资产协议
+
+0.16 增加了一个默认隔离、候选优先的 Cognitive Asset Protocol。它把来源、证据判断、认知单元、可执行 Playbook、真实复用回执和只读授权投影连成同一条可审计链，但不会把日常聊天直接升级成人格结论，也不保存隐藏推理或完整工具输出。
+
+```mermaid
+flowchart LR
+  S["Source Envelope<br/>默认 quarantine"] --> C["Cognition Candidate"]
+  C --> H["人工确认 + 四级证据门"]
+  H --> U["Cognition Unit"]
+  U --> P["Playbook"]
+  P --> R["生产路径 Reuse Receipt"]
+  R --> V["Verified Capability"]
+  V --> G["只读 Projection Grant"]
+```
+
+语义成熟度与部署状态分开；`runnable_playbook` 只代表结构可执行。晋升 `verified_capability` 至少需要 10 个语义不同案例、3 个边界或对抗案例、80% 成功率、零关键安全失败，并要求 executor 与 verifier 独立。每次运行、晋升和投影读取前都会重算依赖；证据或认知版本漂移会持久化为 `stale_blocked`。
+
+```bash
+brain cognition status --json
+brain cognition digest --limit 5 --json
+```
+
+默认 `operator_guardrail_only` 模式只允许检查，不具备跨 Agent 导出授权能力。完整协议、安全边界和 MCP 投影说明见 [Cognitive Asset Protocol v1](docs/v9/cognitive-assets.md)。
+
+---
+
 ## 五分钟跑起来
 
 需要 **Node.js 22.5+**（事务记忆使用内置 `node:sqlite`）。
@@ -1190,6 +1221,7 @@ flowchart TB
 | [P0–P6 可靠性控制平面](docs/v9/p0-p6-reliability-plane.md) | 0.10 机制说明 |
 | [可选 Ollama 本地嵌入](docs/v9/local-embeddings.md) | 资料柜 |
 | [事务记忆基础设施](docs/v9/memory-infrastructure.md) | SQLite、检索、图与持续评测 |
+| [Cognitive Asset Protocol v1](docs/v9/cognitive-assets.md) | 来源隔离、证据门、Playbook、复用门槛与只读投影 |
 | [加密备份及冲突同步](docs/v9/encrypted-backup-and-sync.md) | `.cbmem`、Keychain 与血缘判定 |
 | [离线恢复密钥仪式](docs/v9/recovery-key-ceremony.md) | 2-of-2 分离保管、演练、导入与轮换 |
 | [V1–V8 迁移与回退](docs/v9/migration.md) | 搬家协议 |

@@ -17,7 +17,7 @@ function git(cwd, args) {
 function repository() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-baseline-'));
   git(root, ['init', '-q']);
-  git(root, ['config', 'user.email', 'test@example.invalid']);
+  git(root, ['config', 'user.email', 'test@invalid']);
   git(root, ['config', 'user.name', 'Test']);
   fs.mkdirSync(path.join(root, 'src'));
   fs.mkdirSync(path.join(root, 'secrets'));

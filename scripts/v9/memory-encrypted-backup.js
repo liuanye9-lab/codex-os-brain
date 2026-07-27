@@ -8,7 +8,7 @@ const { spawnSync } = require('node:child_process');
 const { pipeline } = require('node:stream/promises');
 const { DatabaseSync } = require('node:sqlite');
 const { atomicWriteJson, readJsonSafe } = require('./store');
-const { backupMemoryDatabase, integrity } = require('./memory-db');
+const { SCHEMA_VERSION, backupMemoryDatabase, integrity } = require('./memory-db');
 const { resolveV9Paths } = require('./paths');
 
 const MAGIC = Buffer.from('CBMEM001');
@@ -254,7 +254,7 @@ async function createEncryptedMemoryBackup({ paths = resolveV9Paths(), keyStore 
         generation,
         deviceId: ensureDeviceId(paths),
         createdAt,
-        sqliteSchemaVersion: 1,
+        sqliteSchemaVersion: SCHEMA_VERSION,
         keyFingerprint: keyFingerprint(key),
         lineage,
       },

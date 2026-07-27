@@ -28,6 +28,7 @@ function commandGuide() {
       evidence: 'claim | attach',
       handoff: 'init | status | progress',
       memory: 'status | create | get | update | transition | delete | query | aggregate | entity | link | traverse | recover',
+      cognition: 'status | digest',
       embeddings: 'status | recommend | configure | doctor | probe | pull | prompt',
       hooks: 'doctor | enable | disable',
       mcp: 'serve',
@@ -81,6 +82,8 @@ async function runCli(argv, io = defaultIo(), services = {}) {
 
   if (!group || group === 'help' || args.help === true) return io.json(commandGuide());
   if (group === 'status') return io.json(core.status());
+  if (group === 'cognition' && (!action || action === 'status')) return io.json(core.cognitiveAssets.status());
+  if (group === 'cognition' && action === 'digest') return io.json(core.cognitiveAssets.dailyDigest({ limit: args.limit }));
   if (group === 'doctor') {
     const v9 = core.status();
     const hooks = doctorHooks({ projectRoot, pluginRoot, runtimePaths: core.paths });

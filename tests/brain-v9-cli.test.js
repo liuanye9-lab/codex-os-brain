@@ -16,7 +16,7 @@ function run(args, brainHome = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-c
 test('status emits stable JSON', () => {
   const result = run(['status', '--json']);
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(Object.keys(JSON.parse(result.stdout)).sort(), ['controlStore', 'enabled', 'memory', 'runtimeRoot', 'version']);
+  assert.deepEqual(Object.keys(JSON.parse(result.stdout)).sort(), ['cognitiveAssets', 'controlStore', 'enabled', 'memory', 'runtimeRoot', 'version']);
 });
 
 test('help and doctor expose an actionable public interface contract', () => {

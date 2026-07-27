@@ -1,6 +1,6 @@
 {
   "name": "codex-brain-v9",
-  "version": "0.15.0",
-  "description": "Adaptive, evidence-gated reliability hooks for Codex projects",
+  "version": "0.16.0",
+  "description": "Codex Brain V10 cognitive asset and evidence-gated reliability harness",
   "hooks": "./hooks/hooks.json"
 }

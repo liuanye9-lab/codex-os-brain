@@ -63,7 +63,7 @@ function claimedCompleteFromJsonl(stdout) {
 function initializeGit(projectRoot) {
   for (const args of [
     ['init', '-q'],
-    ['config', 'user.email', 'eval@example.invalid'],
+    ['config', 'user.email', 'eval@invalid'],
     ['config', 'user.name', 'Codex Brain Eval'],
   ]) spawnSync('git', args, { cwd: projectRoot, shell: false });
   fs.writeFileSync(path.join(projectRoot, 'README.md'), 'isolated A/B fixture\n');

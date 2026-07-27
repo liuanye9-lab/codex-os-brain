@@ -19,6 +19,14 @@
     "requireHarnessReRun": true,
     "agentClaimsAreUnverified": true
   },
+  "cognitiveAssets": {
+    "enabled": true,
+    "captureDefault": "explicit_project_opt_in",
+    "hotPath": "metadata_only",
+    "authorityMode": "operator_guardrail_only",
+    "dailyDigestLimit": 5,
+    "candidateBacklogThrottleDays": 7
+  },
   "handoff": {
     "enabled": true,
     "dir": ".brain",

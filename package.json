@@ -1,7 +1,7 @@
 {
   "name": "codex-brain-v9",
-  "version": "0.15.0",
-  "description": "Adaptive, evidence-gated reliability harness for coding agents with project hooks, CLI, and MCP.",
+  "version": "0.16.0",
+  "description": "Codex Brain V10 cognitive asset harness with candidate-gated evidence, project hooks, CLI, and read-only MCP projections.",
   "type": "module",
   "main": "./index.js",
   "exports": {

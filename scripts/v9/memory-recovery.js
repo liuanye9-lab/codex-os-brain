@@ -159,7 +159,12 @@ function databaseHasAuthoritativeState(dbPath) {
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
     const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row => row.name));
-    for (const table of ['memory_items','source_documents','entities','edges']) if (tables.has(table) && Number(db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count) > 0) return true;
+    for (const table of [
+      'memory_items','source_documents','entities','edges','cognitive_evidence_assertions',
+      'cognition_units','cognitive_playbooks','cognitive_reuse_receipts','cognitive_projection_grants',
+      'cognitive_asset_versions','cognitive_asset_events',
+      'cognitive_dependency_registry','cognitive_playbook_dependencies',
+    ]) if (tables.has(table) && Number(db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count) > 0) return true;
     return false;
   } finally { db.close(); }
 }

@@ -20,6 +20,7 @@ const { createSkillsService } = require('./skills');
 const { createMemoryService } = require('./memory-service');
 const { createMemoryHarness } = require('./memory-harness');
 const { backupMemoryDatabase } = require('./memory-db');
+const { createCognitiveAssetProvider } = require('./cognitive-assets');
 const {
   compareEncryptedMemoryBackup,
   createEncryptedMemoryBackup,
@@ -50,6 +51,8 @@ function createV9Core({
   projectRoot: configuredProjectRoot,
   sessionId: configuredSessionId,
   taskId: configuredTaskId,
+  cognitiveAssetAuthorityMode = 'operator_guardrail_only',
+  cognitiveAssetApprovalVerifier = null,
 } = {}) {
   const basePaths = paths;
   const enabled = config.enabled === true;
@@ -68,6 +71,11 @@ function createV9Core({
   const skills = createSkillsService({ paths });
   const memory = createMemoryService({ paths });
   const memoryHarness = createMemoryHarness({ paths });
+  const cognitiveAssets = createCognitiveAssetProvider({
+    paths,
+    authorityMode: cognitiveAssetAuthorityMode,
+    approvalVerifier: cognitiveAssetApprovalVerifier,
+  });
   const memoryBackupKeyStore = createMacKeychainStore();
   const evidenceSealer = createEvidenceSealer({ paths });
   const controlGuard = createControlGuard({ guardPath: paths.controlGuardPath, evidenceSealer });
@@ -309,6 +317,7 @@ function createV9Core({
       runtimeRoot: paths.runtimeRoot,
       controlStore: enabled ? { kind: 'sqlite', sessionId: controlStore.sessionId, integrity: controlStore.integrity() } : { enabled: false },
       memory: enabled ? memory.status() : { enabled: false },
+      cognitiveAssets: enabled ? cognitiveAssets.status() : { enabled: false },
     }),
     contracts,
     events,
@@ -320,6 +329,7 @@ function createV9Core({
     skills,
     memory,
     memoryHarness,
+    cognitiveAssets,
     backupMemory: () => backupMemoryDatabase({ paths }),
     encryptedMemoryBackup: {
       initKey: options => memoryBackupKeyStore.init(options),

@@ -53,6 +53,8 @@
     "tests/brain-v9-migration.test.js",
     "tests/brain-v9-memory-db.test.js",
     "tests/brain-v9-memory-service.test.js",
+    "tests/brain-v9-cognitive-assets.test.js",
+    "tests/brain-v9-cognitive-assets-security.test.js",
     "tests/brain-v9-memory-harness.test.js",
     "tests/brain-v9-memory-encrypted-backup.test.js",
     "tests/brain-v9-memory-recovery.test.js",

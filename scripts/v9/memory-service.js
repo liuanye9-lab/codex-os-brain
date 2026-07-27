@@ -14,6 +14,11 @@ function json(value, fallback) { try { return JSON.parse(value); } catch { retur
 function stableJson(value) { return JSON.stringify(value || {}); }
 function hash(value) { return crypto.createHash('sha256').update(String(value)).digest('hex'); }
 function coded(code) { const error = new Error(code); error.code = code; return error; }
+function stringList(value, allowed = null) {
+  const items = [...new Set((Array.isArray(value) ? value : []).map(item => String(item || '').trim()).filter(Boolean))];
+  if (allowed && items.some(item => !allowed.has(item))) throw coded('invalid_source_allowed_use');
+  return items;
+}
 function sourceRef(value) {
   if (!value) return null;
   try { const url = new URL(value); return ['http:','https:'].includes(url.protocol) ? value : `source:${hash(value).slice(0, 16)}`; }
@@ -184,14 +189,36 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
     if (!content || !input.sourceUri) throw coded('source_document_required');
     const contentHash = input.contentHash || hash(content);
     const existing = db.prepare('SELECT * FROM source_documents WHERE content_hash=?').get(contentHash);
-    if (existing) return { imported: false, documentId: existing.document_id, contentHash };
+    if (existing) {
+      const existingUses = json(existing.allowed_uses_json, []);
+      return {
+        imported: false,
+        documentId: existing.document_id,
+        contentHash,
+        trustStatus: existing.trust_status,
+        indexed: existing.trust_status === 'trusted' && existingUses.includes('recall'),
+      };
+    }
     const documentId = input.documentId || id('doc');
     const at = now();
-    db.prepare('INSERT INTO source_documents(document_id,source_uri,title,content,content_hash,metadata_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)')
-      .run(documentId, input.sourceUri, input.title || null, content, contentHash, stableJson(input.metadata), at, at);
-    indexOwner(db, 'document', documentId, input.title, content);
-    if (input.embedding) putEmbeddingFrom(db, { ownerType: 'document', ownerId: documentId, vector: input.embedding, model: input.model || 'unknown', fingerprint: input.fingerprint || 'unknown' });
-    return { imported: true, documentId, contentHash };
+    const trustStatus = ['trusted','untrusted','quarantined','revoked'].includes(input.trustStatus) ? input.trustStatus : 'quarantined';
+    const privacyLevel = ['local_only','private','restricted','public'].includes(input.privacyLevel) ? input.privacyLevel : 'private';
+    const allowedUses = stringList(input.allowedUses, new Set(['evidence_extraction','recall','playbook_compile','projection']));
+    if (trustStatus !== 'trusted' && allowedUses.some(use => use !== 'evidence_extraction')) throw coded('untrusted_source_use_forbidden');
+    const validity = normalizeValidity(input);
+    db.prepare(`INSERT INTO source_documents(
+      document_id,source_uri,title,content,content_hash,metadata_json,capture_mode,trust_status,privacy_level,
+      subjects_json,allowed_uses_json,retention_policy_json,valid_from,valid_to,created_at,updated_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(documentId, input.sourceUri, input.title || null, content, contentHash, stableJson(input.metadata),
+        String(input.captureMode || 'import').slice(0, 80), trustStatus, privacyLevel, stableJson(stringList(input.subjects)),
+        stableJson(allowedUses), stableJson(input.retentionPolicy), validity.validFrom, validity.validTo, at, at);
+    const indexable = trustStatus === 'trusted' && allowedUses.includes('recall');
+    if (indexable) {
+      indexOwner(db, 'document', documentId, input.title, content);
+      if (input.embedding) putEmbeddingFrom(db, { ownerType: 'document', ownerId: documentId, vector: input.embedding, model: input.model || 'unknown', fingerprint: input.fingerprint || 'unknown' });
+    }
+    return { imported: true, documentId, contentHash, trustStatus, indexed: indexable };
   }
 
   function importDocument(input = {}) {
@@ -224,7 +251,7 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
               fingerprint: payload.embeddingFingerprint || payload.fingerprint || 'legacy',
             });
             if (result.imported) report.imported += 1; else report.duplicates += 1;
-            if (Array.isArray(chunk.embedding) && chunk.embedding.length) report.vectors += 1;
+            if (result.indexed && Array.isArray(chunk.embedding) && chunk.embedding.length) report.vectors += 1;
           } catch (error) {
             report.failed += 1;
             report.failures.push({ index, code: String(error.code || error.message).slice(0, 120) });
@@ -297,7 +324,13 @@ function createMemoryService({ paths = resolveV9Paths(), dbPath = paths.memoryDb
           if (!record || (!includeCandidates && record.status !== 'confirmed')) continue;
           if ((record.valid_from && record.valid_from > at) || (record.valid_to && record.valid_to <= at)) continue;
         } else if (item.owner_type === 'document') {
-          record = db.prepare(`SELECT title,content,'source' AS status,source_uri,updated_at FROM source_documents WHERE document_id=?`).get(item.owner_id);
+          record = db.prepare(`SELECT title,content,'source' AS status,source_uri,trust_status,privacy_level,
+            allowed_uses_json,valid_from,valid_to,updated_at FROM source_documents WHERE document_id=?`).get(item.owner_id);
+          const allowedUses = json(record?.allowed_uses_json, []);
+          if (!record || record.trust_status !== 'trusted' || !allowedUses.includes('recall')) continue;
+          if ((record.valid_from && record.valid_from > at) || (record.valid_to && record.valid_to <= at)) continue;
+          record.allowed_uses_json = undefined;
+          record.allowedUses = allowedUses;
         } else continue;
         const lexicalScore = Number(item.lexicalScore || 0);
         const vectorScore = item.vectorScore === null || item.vectorScore === undefined ? 0 : Math.max(0, Number(item.vectorScore));

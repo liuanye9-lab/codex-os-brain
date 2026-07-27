@@ -5,7 +5,7 @@
 Use Node.js 22.5 or newer. The transactional memory layer uses the built-in `node:sqlite` API.
 
 ```bash
-npm install --global codex-brain-v9@0.15.0
+npm install --global codex-brain-v9@0.16.0
 codex-brain hooks enable --project "$PWD" --confirm --json
 codex-brain doctor --project "$PWD" --json
 ```

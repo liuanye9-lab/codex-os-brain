@@ -17,7 +17,12 @@ function setup() {
 
 test('harness learns from accumulated feedback but only creates reviewable candidates', () => {
   const { memory, harness } = setup();
-  memory.importDocument({ sourceUri: 'source:test', content: '可检索来源证据' });
+  memory.importDocument({
+    sourceUri: 'source:test',
+    content: '可检索来源证据',
+    trustStatus: 'trusted',
+    allowedUses: ['recall'],
+  });
   const evidence = memory.search({ query: '可检索来源证据' }).results[0];
   memory.addEvalCase({ caseId: 'case_1', query: '可检索来源证据', expectedOwnerIds: [evidence.ownerId], tags: ['zh'] });
   for (let i = 0; i < 5; i += 1) memory.feedback({ query: `missing ${i}`, signal: 'missed' });
