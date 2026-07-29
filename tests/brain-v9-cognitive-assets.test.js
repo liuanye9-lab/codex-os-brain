@@ -19,9 +19,37 @@ function setup() {
     paths,
     authorityMode: 'protected',
     approvalVerifier: () => true,
+    reuseReceiptVerifier: receipt => receipt?.signature === 'valid-reuse-signature',
     clock: () => CLOCK,
   });
   return { provider, paths };
+}
+
+function reuseReceipt(playbook, index, overrides = {}) {
+  const digest = label => crypto.createHash('sha256').update(`${label}-${index}`).digest('hex');
+  return {
+    receiptId: `reuse-${index}`,
+    nonce: `nonce-${String(index).padStart(16, '0')}`,
+    taskId: `task-${index}`,
+    playbookId: playbook.playbookId,
+    playbookVersion: playbook.version,
+    executor: { principal: 'codex-executor', trustDomain: 'agent-workspace' },
+    verifier: { principal: 'independent-test-runner', trustDomain: 'verifier-service' },
+    contextHash: digest('context'),
+    semanticCaseHash: digest('case'),
+    inputDigest: digest('input'),
+    outputDigest: digest('output'),
+    artifactDigest: digest('artifact'),
+    runnerDigest: digest('runner'),
+    policyDigest: digest('policy'),
+    startedAt: '2026-07-27T23:58:00.000Z',
+    finishedAt: '2026-07-27T23:59:00.000Z',
+    outcome: index < 8 ? 'success' : 'failure',
+    caseKind: index < 3 ? 'boundary' : 'ordinary',
+    productionPath: true,
+    signature: 'valid-reuse-signature',
+    ...overrides,
+  };
 }
 
 let receiptSequence = 0;
@@ -145,7 +173,10 @@ test('Cognitive Asset Protocol is candidate-first, evidence-gated and approval-b
 test('playbooks stale-block on dependency drift before another run', () => {
   const { provider, paths } = setup();
   const playbook = runnablePlaybook(provider);
-  assert.equal(provider.requestRun(playbook.playbookId, { input: { task: '交付报告' } }).sourceContentIncluded, false);
+  const prepared = provider.prepareRun(playbook.playbookId, { input: { task: '交付报告' } });
+  assert.equal(prepared.sourceContentIncluded, false);
+  assert.equal(prepared.executionMode, 'external_executor_required');
+  assert.equal(prepared.executionPerformed, false);
   const db = openMemoryDatabase({ paths });
   db.prepare("UPDATE cognitive_evidence_assertions SET entailment_status='failed',updated_at='2026-07-29T00:00:00.000Z' WHERE evidence_id='evidence-1'").run();
   db.close();
@@ -153,6 +184,83 @@ test('playbooks stale-block on dependency drift before another run', () => {
   const verifyDb = openMemoryDatabase({ paths });
   assert.equal(verifyDb.prepare("SELECT validation_status FROM cognitive_playbooks WHERE playbook_id='playbook-1'").get().validation_status, 'stale_blocked');
   verifyDb.close();
+});
+
+test('sensitive cognition fails closed while live SQLite is unencrypted', () => {
+  const { provider } = setup();
+  for (const cognitionType of ['health', 'Health', 'mental-health', 'medical_profile', 'Personality Profile']) {
+    assert.throws(() => provider.proposeCognition({
+      claim: 'private inference canary',
+      cognitionType,
+      evidenceDependencies: ['missing'],
+    }), /sensitive_store_unavailable/, cognitionType);
+  }
+  assert.throws(() => provider.proposeCognition({
+    claim: 'unknown personal inference',
+    cognitionType: 'custom_profile',
+    inferenceScope: 'personal',
+    evidenceDependencies: ['missing'],
+  }), /sensitive_store_unavailable/);
+  assert.throws(() => provider.ingestSource({
+    sourceUri: 'local:sensitive',
+    content: 'raw sensitive source canary',
+    containsSensitivePersonalData: true,
+  }), /sensitive_store_unavailable/);
+  const status = provider.status();
+  assert.equal(status.liveDatabaseEncrypted, false);
+  assert.equal(status.sensitivePersistenceAllowed, false);
+  assert.equal(status.playbookExecution, false);
+});
+
+test('expired source retention is confirmation-gated and removes recall plaintext', () => {
+  const { provider, paths } = setup();
+  provider.ingestSource({
+    documentId: 'source-expired',
+    sourceUri: 'local:expired',
+    content: 'retention plaintext canary',
+    retentionPolicy: { expiresAt: '2026-07-27T00:00:00.000Z' },
+    subjects: ['private-subject-canary'],
+  });
+  provider.addEvidenceAssertion({
+    evidenceId: 'expired-evidence',
+    sourceId: 'source-expired',
+    epistemicType: 'source_fact',
+    anchorRef: { quote: 'anchor plaintext canary' },
+  });
+  provider.proposeCognition({
+    unitId: 'expired-unit',
+    claim: 'derived cognition plaintext canary',
+    cognitionType: 'principle',
+    evidenceDependencies: ['expired-evidence'],
+  });
+  assert.equal(provider.retentionStatus().due, 1);
+  assert.throws(() => provider.enforceRetention(), /retention_confirmation_required/);
+  const receipt = provider.enforceRetention({ confirm: true, actor: 'test_operator' });
+  assert.deepEqual(receipt.sourceIds, ['source-expired']);
+  assert.equal(receipt.logicalTombstone, true);
+  assert.equal(receipt.forensicErasure, false);
+  const db = openMemoryDatabase({ paths });
+  try {
+    const source = db.prepare('SELECT source_uri,content,subjects_json,trust_status,allowed_uses_json FROM source_documents WHERE document_id=?').get('source-expired');
+    assert.equal(source.content, '[retention-expired]');
+    assert.match(source.source_uri, /^retention:[a-f0-9]{16}$/);
+    assert.equal(source.subjects_json, '[]');
+    assert.equal(source.trust_status, 'revoked');
+    assert.equal(source.allowed_uses_json, '[]');
+    const evidence = db.prepare('SELECT anchor_ref_json,anchor_status,entailment_status FROM cognitive_evidence_assertions WHERE evidence_id=?').get('expired-evidence');
+    assert.equal(evidence.anchor_ref_json, '{"retentionPurged":true}');
+    assert.equal(evidence.anchor_status, 'failed');
+    assert.equal(evidence.entailment_status, 'failed');
+    const unit = db.prepare('SELECT claim,status,evidence_dependencies_json FROM cognition_units WHERE unit_id=?').get('expired-unit');
+    assert.equal(unit.claim, '[retention-expired]');
+    assert.equal(unit.status, 'retired');
+    assert.equal(unit.evidence_dependencies_json, '[]');
+    const versions = db.prepare("SELECT snapshot_json FROM cognitive_asset_versions WHERE asset_type='cognition' AND asset_id=?").all('expired-unit');
+    assert.equal(versions.length, 1);
+    assert.equal(versions[0].snapshot_json.includes('derived cognition plaintext canary'), false);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM search_index WHERE owner_type='document' AND owner_id=?").get('source-expired').count, 0);
+  } finally { db.close(); }
+  assert.equal(provider.retentionStatus().due, 0);
 });
 
 test('policy and tool-contract registry drift stale-blocks pinned playbooks', () => {
@@ -179,28 +287,37 @@ test('policy and tool-contract registry drift stale-blocks pinned playbooks', ()
 });
 
 test('verified capability needs ten distinct real cases, three boundaries and an independent verifier', () => {
-  const { provider } = setup();
+  const { provider, paths } = setup();
   const playbook = runnablePlaybook(provider);
+  const unsignedProvider = createCognitiveAssetProvider({
+    paths,
+    authorityMode: 'protected',
+    approvalVerifier: () => true,
+    clock: () => CLOCK,
+  });
+  assert.throws(() => unsignedProvider.verifyRun(playbook.playbookId, {
+    receipt: reuseReceipt(playbook, 97),
+  }), /trusted_reuse_receipt_verifier_required/);
   assert.throws(() => provider.verifyRun(playbook.playbookId, {
-    outcome: 'success',
-    contextHash: 'a'.repeat(64),
-    semanticCaseHash: 'b'.repeat(64),
-    executorIdentity: 'same',
-    verifierIdentity: 'same',
-    productionPath: true,
+    receipt: reuseReceipt(playbook, 99, {
+      executor: { principal: 'same', trustDomain: 'same-domain' },
+      verifier: { principal: 'same', trustDomain: 'same-domain' },
+    }),
   }), /independent_verifier_required/);
+  assert.throws(() => provider.verifyRun(playbook.playbookId, {
+    receipt: reuseReceipt(playbook, 98, { signature: 'forged' }),
+  }), /reuse_receipt_signature_invalid/);
   for (let index = 0; index < 10; index += 1) {
     provider.verifyRun(playbook.playbookId, {
-      receiptId: `reuse-${index}`,
-      outcome: index < 8 ? 'success' : 'failure',
-      caseKind: index < 3 ? 'boundary' : 'ordinary',
-      contextHash: crypto.createHash('sha256').update(`context-${index}`).digest('hex'),
-      semanticCaseHash: crypto.createHash('sha256').update(`case-${index}`).digest('hex'),
-      executorIdentity: 'codex-executor',
-      verifierIdentity: 'independent-test-runner',
-      productionPath: true,
+      receipt: reuseReceipt(playbook, index),
     });
   }
+  assert.throws(() => provider.verifyRun(playbook.playbookId, {
+    receipt: reuseReceipt(playbook, 77, {
+      receiptId: 'replayed-nonce',
+      nonce: reuseReceipt(playbook, 0).nonce,
+    }),
+  }), /UNIQUE/);
   const metrics = { realCases: 10, boundaryCases: 3, successRate: 0.8, criticalSafetyFailures: 0 };
   const verified = provider.promotePlaybook(playbook.playbookId, {
     expectedVersion: playbook.version,
@@ -218,14 +335,12 @@ test('projection grants are local, purpose-bound, expiring and read-only', () =>
   const runnable = runnablePlaybook(provider);
   for (let index = 0; index < 10; index += 1) {
     provider.verifyRun(runnable.playbookId, {
-      receiptId: `projection-reuse-${index}`,
-      outcome: index < 8 ? 'success' : 'failure',
-      caseKind: index < 3 ? 'adversarial' : 'ordinary',
-      contextHash: crypto.createHash('sha256').update(`projection-context-${index}`).digest('hex'),
-      semanticCaseHash: crypto.createHash('sha256').update(`projection-case-${index}`).digest('hex'),
-      executorIdentity: 'executor',
-      verifierIdentity: 'verifier',
-      productionPath: true,
+      receipt: reuseReceipt(runnable, index + 1000, {
+        receiptId: `projection-reuse-${index}`,
+        nonce: `projection-nonce-${String(index).padStart(16, '0')}`,
+        outcome: index < 8 ? 'success' : 'failure',
+        caseKind: index < 3 ? 'adversarial' : 'ordinary',
+      }),
     });
   }
   const verified = provider.promotePlaybook(runnable.playbookId, {
@@ -237,7 +352,7 @@ test('projection grants are local, purpose-bound, expiring and read-only', () =>
     }),
   });
   const policyDigest = 'c'.repeat(64);
-  const expiresAt = '2026-07-29T00:00:00.000Z';
+  const expiresAt = '2026-07-30T00:00:00.000Z';
   const contentVersion = crypto.createHash('sha256').update(JSON.stringify([[verified.playbookId, verified.version]])).digest('hex');
   const projectionScope = {
     recipientAgent: 'agent-a',

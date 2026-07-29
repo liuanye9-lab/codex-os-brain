@@ -4,9 +4,9 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { runCli } = require('../scripts/v9/cli');
 
-async function serveMcp() {
+async function serveMcp(core) {
   const module = await import(pathToFileURL(path.resolve(__dirname, '..', 'mcp', 'server.mjs')).href);
-  return module.serve();
+  return module.serve(core);
 }
 
 runCli(process.argv.slice(2), undefined, { serveMcp })

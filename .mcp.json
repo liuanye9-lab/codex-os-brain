@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "codex-brain": {
+      "cwd": ".",
+      "command": "node",
+      "args": ["./mcp/standalone.mjs"]
+    }
+  }
+}

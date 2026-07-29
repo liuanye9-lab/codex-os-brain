@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { toolDefinitions } from '../mcp/tools.mjs';
 
 const require = createRequire(import.meta.url);
-const { createV9Core } = require('../scripts/v9/core');
+const { createV9Core, readV9Config } = require('../scripts/v9/core');
 const { resolveV9Paths } = require('../scripts/v9/paths');
 
 test('MCP exposes approved tools and omits privileged capabilities', () => {
@@ -17,6 +17,30 @@ test('MCP exposes approved tools and omits privileged capabilities', () => {
   for (const name of ['brain_get_status', 'brain_get_task_contract', 'brain_verify_task', 'brain_checkpoint_task', 'brain_get_embedding_status', 'brain_get_embedding_adaptation_prompt']) assert.ok(names.includes(name));
   for (const name of ['brain_approve_canary', 'brain_apply_migration', 'brain_publish', 'brain_bypass_policy']) assert.equal(names.includes(name), false);
   assert.equal(new Set(names).size, names.length);
+  assert.equal(names.includes('brain_memory_recall'), false);
+  assert.equal(names.includes('brain_get_cognitive_asset_status'), false);
+});
+
+test('disabled labs do not initialize the memory database', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-disabled-labs-'));
+  const paths = resolveV9Paths({ CODEX_BRAIN_HOME: path.join(home, 'brain'), CODEX_BRAIN_STATE_HOME: path.join(home, 'state') });
+  const core = createV9Core({ paths });
+  const status = core.status();
+  assert.equal(status.features.memory, false);
+  assert.equal(status.features.cognitiveAssets, false);
+  assert.equal(fs.existsSync(core.paths.memoryDbPath), false);
+  const pending = [path.join(home, 'state')];
+  const memoryDatabases = [];
+  while (pending.length) {
+    const directory = pending.pop();
+    if (!fs.existsSync(directory)) continue;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) pending.push(target);
+      else if (entry.name === 'memory.sqlite3') memoryDatabases.push(target);
+    }
+  }
+  assert.deepEqual(memoryDatabases, []);
 });
 
 test('MCP handlers return structured content from the shared core', async () => {
@@ -31,7 +55,9 @@ test('MCP handlers return structured content from the shared core', async () => 
 
 test('MCP memory recall uses the governed search path and never leaks source_uri', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-mcp-memory-'));
-  const core = createV9Core({ paths: resolveV9Paths({ CODEX_BRAIN_HOME: path.join(home, 'brain'), CODEX_BRAIN_STATE_HOME: path.join(home, 'state') }) });
+  const config = structuredClone(readV9Config());
+  config.memory.enabled = true;
+  const core = createV9Core({ config, paths: resolveV9Paths({ CODEX_BRAIN_HOME: path.join(home, 'brain'), CODEX_BRAIN_STATE_HOME: path.join(home, 'state') }) });
   core.memory.createMemory({
     memoryId: 'mem_mcp',
     content: 'governed recall canary',

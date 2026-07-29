@@ -6,7 +6,11 @@ const { createMemoryService } = require('./memory-service');
 const { resolveV9Paths } = require('./paths');
 
 const PROTOCOL_VERSION = 'cognitive-asset-v1';
-const SENSITIVE_TYPES = new Set(['personality','emotion','health','relationship','values']);
+const SENSITIVE_TYPES = new Set([
+  'personality', 'personality_profile', 'emotion', 'emotional_state', 'health', 'mental_health',
+  'medical', 'psychiatric', 'psychological', 'relationship', 'values', 'biometric', 'sexuality',
+  'religion', 'political_affiliation',
+]);
 const EPISTEMIC_TYPES = new Set(['source_fact','speaker_claim','user_experience','synthesis_inference','project_application']);
 const ALLOWED_USES = new Set(['evidence_extraction','recall','playbook_compile','projection']);
 
@@ -31,6 +35,37 @@ function stable(value) {
 }
 function stableJson(value) { return JSON.stringify(stable(value)); }
 function scopeHash(value) { return hash(stableJson(value || {})); }
+function normalizedCognitionType(value) {
+  return clean(value, 80).toLowerCase().replace(/[\s-]+/g, '_') || 'insight';
+}
+function isSensitiveCognition(input, cognitionType) {
+  if (input.sensitiveInference === true || input.inferenceScope === 'personal') return true;
+  if (SENSITIVE_TYPES.has(cognitionType)) return true;
+  return ['medical', 'health', 'mental', 'psycho', 'personality', 'emotion', 'relationship', 'biometric', 'sexual', 'religion', 'political']
+    .some(token => cognitionType.includes(token));
+}
+
+function normalizeRetentionPolicy(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw coded('invalid_retention_policy');
+  const output = {};
+  if (value.expiresAt !== undefined) output.expiresAt = normalizeInstant(value.expiresAt, 'retention_expiry');
+  if (value.retentionDays !== undefined) {
+    const days = Number(value.retentionDays);
+    if (!Number.isInteger(days) || days < 1 || days > 3650) throw coded('invalid_retention_days');
+    output.retentionDays = days;
+  }
+  if (!output.expiresAt && !output.retentionDays) return {};
+  return output;
+}
+
+function retentionDeadline(row) {
+  const policy = json(row.retention_policy_json, {});
+  if (policy.expiresAt && Number.isFinite(Date.parse(policy.expiresAt))) return new Date(policy.expiresAt).toISOString();
+  if (Number.isInteger(policy.retentionDays) && policy.retentionDays > 0) {
+    return new Date(Date.parse(row.created_at) + policy.retentionDays * 86_400_000).toISOString();
+  }
+  return null;
+}
 
 function recordAssetVersion(db, assetType, asset, action, payload = {}) {
   const assetId = assetType === 'cognition' ? asset.unitId : asset.playbookId;
@@ -136,6 +171,8 @@ function createCognitiveAssetProvider({
   dbPath = paths.memoryDbPath,
   authorityMode = 'operator_guardrail_only',
   approvalVerifier = null,
+  reuseReceiptVerifier = null,
+  sensitiveContentProtector = null,
   clock = () => new Date(),
 } = {}) {
   const memory = createMemoryService({ paths, dbPath });
@@ -173,14 +210,109 @@ function createCognitiveAssetProvider({
   }
 
   function ingestSource(input = {}) {
+    if (input.sensitive === true || input.containsSensitivePersonalData === true) {
+      if (typeof sensitiveContentProtector !== 'function') throw coded('sensitive_store_unavailable');
+      throw coded('sensitive_live_store_not_implemented');
+    }
     const allowedUses = uniqueStrings(input.allowedUses).filter(use => ALLOWED_USES.has(use));
+    const retentionPolicy = normalizeRetentionPolicy(input.retentionPolicy);
     return memory.importDocument({
       ...input,
       captureMode: clean(input.captureMode, 80) || 'daily',
       trustStatus: input.trustStatus || 'quarantined',
       privacyLevel: input.privacyLevel || 'local_only',
       allowedUses,
+      retentionPolicy,
     });
+  }
+
+  function retentionStatus() {
+    return using(db => {
+      const observedAt = clock().toISOString();
+      const due = db.prepare("SELECT * FROM source_documents WHERE trust_status<>'revoked'").all()
+        .map(row => ({ row, deadline: retentionDeadline(row) }))
+        .filter(item => item.deadline && item.deadline <= observedAt);
+      return {
+        protocolVersion: PROTOCOL_VERSION,
+        observedAt,
+        due: due.length,
+        sources: due.map(item => ({ sourceId: item.row.document_id, deadline: item.deadline })),
+      };
+    });
+  }
+
+  function enforceRetention(input = {}) {
+    if (input.confirm !== true) throw coded('retention_confirmation_required');
+    return using(db => transaction(db, () => {
+      const observedAt = clock().toISOString();
+      const due = db.prepare("SELECT * FROM source_documents WHERE trust_status<>'revoked'").all()
+        .map(row => ({ row, deadline: retentionDeadline(row) }))
+        .filter(item => item.deadline && item.deadline <= observedAt);
+      for (const item of due) {
+        const documentId = item.row.document_id;
+        const evidenceIds = new Set(db.prepare('SELECT evidence_id FROM cognitive_evidence_assertions WHERE document_id=?')
+          .all(documentId).map(row => row.evidence_id));
+        const affectedUnits = db.prepare('SELECT * FROM cognition_units').all()
+          .filter(row => json(row.evidence_dependencies_json, []).some(evidenceId => evidenceIds.has(evidenceId)));
+        db.prepare("DELETE FROM search_index WHERE owner_type='document' AND owner_id=?").run(documentId);
+        db.prepare("DELETE FROM embeddings WHERE owner_type='document' AND owner_id=?").run(documentId);
+        db.prepare(`UPDATE source_documents SET title=NULL,content='[retention-expired]',
+          source_uri=?,metadata_json='{"retentionPurged":true}',trust_status='revoked',
+          subjects_json='[]',allowed_uses_json='[]',valid_from=NULL,valid_to=NULL,
+          version=version+1,updated_at=? WHERE document_id=?`).run(
+          `retention:${hash(item.row.source_uri).slice(0, 16)}`, observedAt, documentId,
+        );
+        db.prepare(`UPDATE cognitive_evidence_assertions SET
+          anchor_ref_json='{"retentionPurged":true}',anchor_status='failed',
+          attribution_status=CASE WHEN attribution_status='not_applicable' THEN 'not_applicable' ELSE 'failed' END,
+          entailment_status='failed',
+          external_fact_status=CASE WHEN external_fact_status='not_applicable' THEN 'not_applicable' ELSE 'failed' END,
+          uncertainty=1,updated_at=? WHERE document_id=?`).run(observedAt, documentId);
+        const affectedUnitIds = new Set();
+        for (const unit of affectedUnits) {
+          affectedUnitIds.add(unit.unit_id);
+          db.prepare(`UPDATE cognition_units SET claim='[retention-expired]',context_json='{}',
+            mechanism_json='{}',boundary='',falsifier='',counterexample='',transfer_scope_json='{}',
+            evidence_dependencies_json='[]',status='retired',sensitive_inference=0,
+            version=version+1,updated_at=? WHERE unit_id=?`).run(observedAt, unit.unit_id);
+          db.prepare("DELETE FROM cognitive_asset_versions WHERE asset_type='cognition' AND asset_id=?").run(unit.unit_id);
+          db.prepare("DELETE FROM cognitive_asset_events WHERE asset_type='cognition' AND asset_id=?").run(unit.unit_id);
+          recordAssetVersion(db, 'cognition',
+            mapUnit(db.prepare('SELECT * FROM cognition_units WHERE unit_id=?').get(unit.unit_id)),
+            'retention_tombstone',
+            { sourceId: documentId });
+        }
+        const affectedPlaybooks = db.prepare('SELECT * FROM cognitive_playbooks').all()
+          .filter(row => json(row.evidence_dependencies_json, []).some(unitId => affectedUnitIds.has(unitId)));
+        for (const playbook of affectedPlaybooks) {
+          db.prepare(`UPDATE cognitive_playbooks SET manifest_json='{"retentionBlocked":true,"steps":[]}',
+            evidence_dependencies_json='[]',validation_status='stale_blocked',deployment_state='revoked',
+            version=version+1,updated_at=? WHERE playbook_id=?`).run(observedAt, playbook.playbook_id);
+          db.prepare("UPDATE cognitive_projection_grants SET status='revoked',revoked_at=? WHERE grant_id IN (SELECT grant_id FROM cognitive_projection_items WHERE asset_type='playbook' AND asset_id=?)")
+            .run(observedAt, playbook.playbook_id);
+          db.prepare("DELETE FROM cognitive_asset_versions WHERE asset_type='playbook' AND asset_id=?").run(playbook.playbook_id);
+          db.prepare("DELETE FROM cognitive_asset_events WHERE asset_type='playbook' AND asset_id=?").run(playbook.playbook_id);
+          recordAssetVersion(db, 'playbook',
+            mapPlaybook(db.prepare('SELECT * FROM cognitive_playbooks WHERE playbook_id=?').get(playbook.playbook_id)),
+            'retention_tombstone',
+            { sourceId: documentId });
+        }
+        db.prepare(`INSERT INTO memory_events(event_id,memory_id,action,actor,payload_json,created_at)
+          VALUES(?,NULL,'source_retention_purge',?,?,?)`).run(
+          id('mevt'), clean(input.actor, 120) || 'retention_controller',
+          stableJson({ sourceId: documentId, deadline: item.deadline }), observedAt,
+        );
+      }
+      return {
+        protocolVersion: PROTOCOL_VERSION,
+        observedAt,
+        tombstoned: due.length,
+        sourceIds: due.map(item => item.row.document_id),
+        logicalTombstone: true,
+        forensicErasure: false,
+        residues: ['source_id', 'content_hash', 'sqlite_free_pages', 'wal_history', 'external_backups_if_any'],
+      };
+    }));
   }
 
   function reviewSource(sourceId, input = {}) {
@@ -233,21 +365,25 @@ function createCognitiveAssetProvider({
   function proposeCognition(input = {}) {
     return using(db => transaction(db, () => {
       const claim = clean(input.claim, 2000);
-      const cognitionType = clean(input.cognitionType, 80) || 'insight';
+      const cognitionType = normalizedCognitionType(input.cognitionType);
       const dependencies = uniqueStrings(input.evidenceDependencies, 50, 160);
       if (!claim || !dependencies.length) throw coded('cognition_claim_and_evidence_required');
+      const sensitive = isSensitiveCognition(input, cognitionType);
+      if (sensitive) {
+        if (typeof sensitiveContentProtector !== 'function') throw coded('sensitive_store_unavailable');
+        throw coded('sensitive_live_store_not_implemented');
+      }
       const found = db.prepare(`SELECT evidence_id FROM cognitive_evidence_assertions
         WHERE evidence_id IN (${dependencies.map(() => '?').join(',')})`).all(...dependencies);
       if (found.length !== dependencies.length) throw coded('cognition_evidence_not_found');
       const unitId = input.unitId || id('cognition');
       const at = now();
-      const sensitive = input.sensitiveInference === true || SENSITIVE_TYPES.has(cognitionType);
       db.prepare(`INSERT INTO cognition_units(
         unit_id,claim,cognition_type,context_json,mechanism_json,boundary,falsifier,counterexample,
         transfer_scope_json,evidence_dependencies_json,status,privacy_level,sensitive_inference,created_at,updated_at
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,'candidate',?,?,?,?)`).run(unitId, claim, cognitionType, stableJson(input.context),
-        stableJson(input.mechanism), clean(input.boundary, 2000), clean(input.falsifier, 2000),
-        clean(input.counterexample, 2000), stableJson(input.transferScope), stableJson(dependencies),
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,'candidate',?,?,?,?)`).run(unitId, claim, cognitionType, stableJson(input.context || {}),
+        stableJson(input.mechanism || {}), clean(input.boundary, 2000), clean(input.falsifier, 2000),
+        clean(input.counterexample, 2000), stableJson(input.transferScope || {}), stableJson(dependencies),
         ['local_only','private','restricted','public'].includes(input.privacyLevel) ? input.privacyLevel : 'local_only',
         sensitive ? 1 : 0, at, at);
       return recordAssetVersion(db, 'cognition',
@@ -461,6 +597,8 @@ function createCognitiveAssetProvider({
         playbook: mapPlaybook(row),
         input: input.input && typeof input.input === 'object' ? input.input : {},
         requiresApproval: true,
+        executionMode: 'external_executor_required',
+        executionPerformed: false,
         sourceContentIncluded: false,
       };
     }));
@@ -471,29 +609,64 @@ function createCognitiveAssetProvider({
       const row = db.prepare('SELECT * FROM cognitive_playbooks WHERE playbook_id=?').get(playbookId);
       if (!row) throw coded('playbook_not_found');
       validatePlaybookDependencies(db, row);
-      const outcome = ['success','failure','not_applicable','infrastructure_failure'].includes(input.outcome) ? input.outcome : null;
-      const caseKind = ['ordinary','boundary','adversarial'].includes(input.caseKind) ? input.caseKind : 'ordinary';
-      const executorIdentity = clean(input.executorIdentity, 160);
-      const verifierIdentity = clean(input.verifierIdentity, 160);
-      if (!outcome || !executorIdentity || !verifierIdentity || executorIdentity === verifierIdentity) throw coded('independent_verifier_required');
-      if (input.productionPath !== true) throw coded('production_path_receipt_required');
-      const contextHash = clean(input.contextHash, 64);
-      const semanticCaseHash = clean(input.semanticCaseHash, 64);
-      if (!/^[a-f0-9]{64}$/.test(contextHash) || !/^[a-f0-9]{64}$/.test(semanticCaseHash)) throw coded('case_hash_required');
-      const receiptId = input.receiptId || id('reuse');
+      if (typeof reuseReceiptVerifier !== 'function') throw coded('trusted_reuse_receipt_verifier_required');
+      const receipt = input.receipt && typeof input.receipt === 'object' ? input.receipt : {};
+      const outcome = ['success','failure','not_applicable','infrastructure_failure'].includes(receipt.outcome) ? receipt.outcome : null;
+      const caseKind = ['ordinary','boundary','adversarial'].includes(receipt.caseKind) ? receipt.caseKind : 'ordinary';
+      const executorIdentity = clean(receipt.executor?.principal, 160);
+      const verifierIdentity = clean(receipt.verifier?.principal, 160);
+      const executorTrustDomain = clean(receipt.executor?.trustDomain, 160);
+      const verifierTrustDomain = clean(receipt.verifier?.trustDomain, 160);
+      if (!outcome || !executorIdentity || !verifierIdentity || executorIdentity === verifierIdentity
+        || !executorTrustDomain || !verifierTrustDomain || executorTrustDomain === verifierTrustDomain) {
+        throw coded('independent_verifier_required');
+      }
+      if (receipt.productionPath !== true) throw coded('production_path_receipt_required');
+      const contextHash = clean(receipt.contextHash, 64);
+      const semanticCaseHash = clean(receipt.semanticCaseHash, 64);
+      const digests = ['inputDigest','outputDigest','artifactDigest','runnerDigest','policyDigest']
+        .map(field => clean(receipt[field], 64));
+      if (![contextHash, semanticCaseHash, ...digests].every(value => /^[a-f0-9]{64}$/.test(value))) {
+        throw coded('receipt_digest_required');
+      }
+      const receiptId = clean(receipt.receiptId, 200);
+      const nonce = clean(receipt.nonce, 200);
+      const taskId = clean(receipt.taskId, 200);
+      const signature = clean(receipt.signature, 2000);
+      if (!receiptId || nonce.length < 16 || !taskId || !signature) throw coded('signed_receipt_identity_required');
+      if (receipt.playbookId !== playbookId || Number(receipt.playbookVersion) !== row.version) {
+        throw coded('reuse_receipt_playbook_mismatch');
+      }
+      const startedAt = normalizeInstant(receipt.startedAt, 'receipt_started_at');
+      const finishedAt = normalizeInstant(receipt.finishedAt, 'receipt_finished_at');
+      if (Date.parse(finishedAt) < Date.parse(startedAt)) throw coded('receipt_time_order_invalid');
+      if (reuseReceiptVerifier(receipt) !== true) throw coded('reuse_receipt_signature_invalid');
       db.prepare(`INSERT INTO cognitive_reuse_receipts(
         receipt_id,playbook_id,playbook_version,context_hash,semantic_case_hash,outcome,case_kind,
-        verifier_identity,executor_identity,critical_safety_failure,production_path,payload_json,created_at
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(receiptId, playbookId, row.version, contextHash, semanticCaseHash, outcome,
-        caseKind, verifierIdentity, executorIdentity, input.criticalSafetyFailure === true ? 1 : 0, 1,
-        stableJson({ triggerMatches: input.triggerMatches || [], deviations: input.deviations || [], corrections: input.corrections || [], transferDimensions: input.transferDimensions || [] }), now());
-      return { protocolVersion: PROTOCOL_VERSION, receiptId, recorded: true };
+        verifier_identity,executor_identity,critical_safety_failure,production_path,payload_json,created_at,
+        receipt_nonce,task_id,input_digest,output_digest,artifact_digest,runner_digest,policy_digest,
+        started_at,finished_at,signature,signature_verified
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`).run(
+        receiptId, playbookId, row.version, contextHash, semanticCaseHash, outcome,
+        caseKind, verifierIdentity, executorIdentity, receipt.criticalSafetyFailure === true ? 1 : 0, 1,
+        stableJson({
+          executorTrustDomain,
+          verifierTrustDomain,
+          triggerMatches: receipt.triggerMatches || [],
+          deviations: receipt.deviations || [],
+          corrections: receipt.corrections || [],
+          transferDimensions: receipt.transferDimensions || [],
+        }),
+        now(), nonce, taskId, ...digests, startedAt, finishedAt, signature,
+      );
+      return { protocolVersion: PROTOCOL_VERSION, receiptId, recorded: true, signatureVerified: true };
     }));
   }
 
   function promotionMetrics(db, row) {
     const samples = db.prepare(`SELECT * FROM cognitive_reuse_receipts
-      WHERE playbook_id=? AND playbook_version=? AND outcome<>'infrastructure_failure'`).all(row.playbook_id, row.version);
+      WHERE playbook_id=? AND playbook_version=? AND signature_verified=1
+        AND outcome<>'infrastructure_failure'`).all(row.playbook_id, row.version);
     const applicable = samples.filter(sample => sample.outcome !== 'not_applicable');
     const success = applicable.filter(sample => sample.outcome === 'success').length;
     return {
@@ -625,19 +798,33 @@ function createCognitiveAssetProvider({
   }
 
   function status() {
-    return using(db => ({
-      protocolVersion: PROTOCOL_VERSION,
-      authorityMode,
-      singleWriterRequired: true,
-      counts: {
+    return using(db => {
+      const observedAt = clock().toISOString();
+      const retentionDue = db.prepare("SELECT * FROM source_documents WHERE trust_status<>'revoked'").all()
+        .filter(row => {
+          const deadline = retentionDeadline(row);
+          return deadline && deadline <= observedAt;
+        }).length;
+      return {
+        protocolVersion: PROTOCOL_VERSION,
+        authorityMode,
+        singleWriterRequired: true,
+        enabled: true,
+        lab: true,
+        playbookExecution: false,
+        liveDatabaseEncrypted: false,
+        sensitivePersistenceAllowed: false,
+        counts: {
         sources: Number(db.prepare('SELECT COUNT(*) AS count FROM source_documents').get().count),
         quarantinedSources: Number(db.prepare("SELECT COUNT(*) AS count FROM source_documents WHERE trust_status='quarantined'").get().count),
         cognitionCandidates: Number(db.prepare("SELECT COUNT(*) AS count FROM cognition_units WHERE status='candidate'").get().count),
         confirmedCognition: Number(db.prepare("SELECT COUNT(*) AS count FROM cognition_units WHERE status='confirmed'").get().count),
         playbooks: Number(db.prepare('SELECT COUNT(*) AS count FROM cognitive_playbooks').get().count),
-        activeProjections: Number(db.prepare("SELECT COUNT(*) AS count FROM cognitive_projection_grants WHERE status='active' AND expires_at>?").get(now()).count),
-      },
-    }));
+          activeProjections: Number(db.prepare("SELECT COUNT(*) AS count FROM cognitive_projection_grants WHERE status='active' AND expires_at>?").get(now()).count),
+          retentionDue,
+        },
+      };
+    });
   }
 
   return {
@@ -650,12 +837,15 @@ function createCognitiveAssetProvider({
     approveCognition,
     registerDependency,
     compilePlaybook,
+    prepareRun: requestRun,
     requestRun,
     verifyRun,
     promotePlaybook,
     revoke,
     createProjection,
     readProjection,
+    retentionStatus,
+    enforceRetention,
     dailyDigest,
     status,
   };

@@ -20,3 +20,11 @@ test('contract patch advances compaction generation without mutating input', () 
   assert.equal(contract.compactionGeneration, 0);
   assert.deepEqual(next.unresolved, ['verify tests']);
 });
+
+test('repeated objectives get unique task instances and a stable analysis fingerprint', () => {
+  const first = createTaskContract({ objective: 'repeatable objective', scope: { allowed: ['src'], forbidden: [] } });
+  const second = createTaskContract({ objective: 'repeatable objective', scope: { allowed: ['src'], forbidden: [] } });
+  assert.notEqual(first.taskId, second.taskId);
+  assert.equal(first.taskFingerprint, second.taskFingerprint);
+  assert.match(first.taskFingerprint, /^[a-f0-9]{64}$/);
+});

@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const { createV9Core } = require('./core');
+const { createV9Core, readV9Config } = require('./core');
 const { resolveV9Paths } = require('./paths');
 const { doctorHooks, setProjectHooks } = require('./hook-config');
 const { inventoryLegacy, planMigration, applyMigration } = require('./migration');
@@ -12,7 +12,7 @@ const EXIT = Object.freeze({ ok: 0, usage: 2, blocked: 3, failed: 4 });
 
 function commandGuide() {
   return {
-    name: 'Codex Brain V9',
+    name: 'Codex Brain V10',
     usage: 'brain <command> [action] [--flags] [--json]',
     startHere: [
       'brain doctor --json',
@@ -28,7 +28,7 @@ function commandGuide() {
       evidence: 'claim | attach',
       handoff: 'init | status | progress',
       memory: 'status | create | get | update | transition | delete | query | aggregate | entity | link | traverse | recover',
-      cognition: 'status | digest',
+      cognition: 'status | digest | retention-status | retention-enforce',
       embeddings: 'status | recommend | configure | doctor | probe | pull | prompt',
       hooks: 'doctor | enable | disable',
       mcp: 'serve',
@@ -72,7 +72,15 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   const [group, action] = args._;
   const paths = services.paths || resolveV9Paths();
   const projectRoot = args.project || process.cwd();
+  const config = structuredClone(readV9Config());
+  const labsRequested = args['enable-memory'] === true || args['enable-cognitive-assets'] === true;
+  if (labsRequested && args['confirm-labs'] !== true) {
+    return io.error('enabling Memory or Cognitive Labs requires --confirm-labs', EXIT.blocked);
+  }
+  if (args['enable-memory'] === true || args['enable-cognitive-assets'] === true) config.memory.enabled = true;
+  if (args['enable-cognitive-assets'] === true) config.cognitiveAssets.enabled = true;
   const core = services.core || createV9Core({
+    config,
     paths,
     projectRoot,
     sessionId: args.session,
@@ -84,6 +92,11 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   if (group === 'status') return io.json(core.status());
   if (group === 'cognition' && (!action || action === 'status')) return io.json(core.cognitiveAssets.status());
   if (group === 'cognition' && action === 'digest') return io.json(core.cognitiveAssets.dailyDigest({ limit: args.limit }));
+  if (group === 'cognition' && action === 'retention-status') return io.json(core.cognitiveAssets.retentionStatus());
+  if (group === 'cognition' && action === 'retention-enforce') {
+    if (args['confirm-retention'] !== true) return io.error('retention enforcement requires --confirm-retention', EXIT.blocked);
+    return io.json(core.cognitiveAssets.enforceRetention({ confirm: true, actor: 'cli_operator' }));
+  }
   if (group === 'doctor') {
     const v9 = core.status();
     const hooks = doctorHooks({ projectRoot, pluginRoot, runtimePaths: core.paths });
@@ -362,7 +375,7 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   if (group === 'config' && (!action || action === 'show')) return io.json(core.config);
   if (group === 'mcp' && action === 'serve') {
     if (!services.serveMcp) return io.error('MCP server unavailable', EXIT.failed);
-    await services.serveMcp();
+    await services.serveMcp(core);
     return EXIT.ok;
   }
   return io.error('unknown command', EXIT.usage);

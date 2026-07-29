@@ -5,7 +5,7 @@ const path = require('node:path');
 const { DatabaseSync, backup } = require('node:sqlite');
 const { resolveV9Paths } = require('./paths');
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function openMemoryDatabase({ paths = resolveV9Paths(), dbPath = paths.memoryDbPath, readonly = false, ignoreRestoreLock = false } = {}) {
   if (!ignoreRestoreLock && fs.existsSync(paths.memoryRestoreLockPath)) {
@@ -379,6 +379,40 @@ function migrate(db) {
       db.prepare('INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)').run(2, new Date().toISOString());
       db.exec('COMMIT');
       current = 2;
+    } catch (error) {
+      try { db.exec('ROLLBACK'); } catch { /* preserve the original transaction error */ }
+      throw error;
+    }
+  }
+  if (current < 3) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const receiptColumns = new Set(db.prepare('PRAGMA table_info(cognitive_reuse_receipts)').all().map(row => row.name));
+      const additions = [
+        ['receipt_nonce', 'TEXT'],
+        ['task_id', 'TEXT'],
+        ['input_digest', 'TEXT'],
+        ['output_digest', 'TEXT'],
+        ['artifact_digest', 'TEXT'],
+        ['runner_digest', 'TEXT'],
+        ['policy_digest', 'TEXT'],
+        ['started_at', 'TEXT'],
+        ['finished_at', 'TEXT'],
+        ['signature', 'TEXT'],
+        ['signature_verified', 'INTEGER NOT NULL DEFAULT 0 CHECK(signature_verified IN (0,1))'],
+      ];
+      for (const [column, definition] of additions) {
+        if (!receiptColumns.has(column)) db.exec(`ALTER TABLE cognitive_reuse_receipts ADD COLUMN ${column} ${definition}`);
+      }
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS cognitive_reuse_receipt_nonce
+          ON cognitive_reuse_receipts(receipt_nonce) WHERE receipt_nonce IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS cognitive_reuse_verified_playbook
+          ON cognitive_reuse_receipts(playbook_id,playbook_version,signature_verified,created_at DESC);
+      `);
+      db.prepare('INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)').run(3, new Date().toISOString());
+      db.exec('COMMIT');
+      current = 3;
     } catch (error) {
       try { db.exec('ROLLBACK'); } catch { /* preserve the original transaction error */ }
       throw error;

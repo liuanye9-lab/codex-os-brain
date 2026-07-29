@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { performance } = require('node:perf_hooks');
-const { createV9Core } = require('../scripts/v9/core');
+const { createV9Core, readV9Config } = require('../scripts/v9/core');
 const { resolveV9Paths } = require('../scripts/v9/paths');
 const { evaluateAction } = require('../scripts/v9/policy');
 const { getHostAdapter, listHosts } = require('../scripts/v9/hosts');
@@ -17,7 +17,9 @@ const { createTaskContract } = require('../scripts/v9/task-contract');
 
 function tempCore() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-p0p6-'));
-  return { home, core: createV9Core({ paths: resolveV9Paths({ CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: path.join(home, 'state') }) }) };
+  const config = structuredClone(readV9Config());
+  config.memory.enabled = true;
+  return { home, core: createV9Core({ config, paths: resolveV9Paths({ CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: path.join(home, 'state') }) }) };
 }
 
 test('P0: verify re-run is the only path to complete; claims blocked at Stop', async () => {
@@ -79,13 +81,39 @@ test('P0: deleting the active SQLite task does not remove the Stop gate', async 
   assert.equal(stop.reason_code, 'active_contract_missing');
 });
 
+test('P0: deleting the guard while SQLite still has an active task fails closed', () => {
+  const { core } = tempCore();
+  core.contracts.create({ taskId: 'p0-guard-delete', objective: 'guard must exist', criteria: [] });
+  fs.unlinkSync(core.paths.controlGuardPath);
+  const state = core.contracts.state();
+  assert.equal(state.corrupt, true);
+  assert.equal(state.contract, null);
+  const decision = core.contracts.evaluateAction('Write', { file_path: 'src/file.js' });
+  assert.equal(decision.level, 4);
+  assert.equal(decision.reasonCode, 'active_contract_missing');
+});
+
+test('P0: duplicate explicit task id does not mutate the existing guard', () => {
+  const { core } = tempCore();
+  core.contracts.create({ taskId: 'duplicate', objective: 'original', criteria: [] });
+  const before = fs.readFileSync(core.paths.controlGuardPath, 'utf8');
+  assert.throws(
+    () => core.contracts.create({ taskId: 'duplicate', objective: 'replacement', criteria: [] }),
+    /task_id_exists/,
+  );
+  assert.equal(fs.readFileSync(core.paths.controlGuardPath, 'utf8'), before);
+  assert.equal(core.contracts.active().objective, 'original');
+});
+
 test('P0: tasks and memory are isolated by project root', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-project-scope-'));
   const basePaths = resolveV9Paths({ CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: path.join(home, 'state') });
   const projectA = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-project-a-'));
   const projectB = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-project-b-'));
-  const a = createV9Core({ paths: basePaths, projectRoot: projectA });
-  const b = createV9Core({ paths: basePaths, projectRoot: projectB });
+  const config = structuredClone(readV9Config());
+  config.memory.enabled = true;
+  const a = createV9Core({ config, paths: basePaths, projectRoot: projectA });
+  const b = createV9Core({ config, paths: basePaths, projectRoot: projectB });
   a.contracts.create({ taskId: 'alpha', objective: 'alpha billing key migration', criteria: [{ id: 'tests', verifier: 'test_runner', verifierSpec: { executable: 'npm', args: ['test'] } }] });
   a.memory.createMemory({ memoryId: 'alpha-memory', content: 'alpha only' });
   assert.equal(b.contracts.active(), null);
@@ -128,6 +156,23 @@ test('P3: path policy blocks forbidden and critical shell patterns', () => {
     cwd: process.cwd(),
   });
   assert.ok(critical.level >= 3);
+});
+
+test('P0: a new file below a symlinked parent is resolved outside the allowed scope', () => {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-symlink-scope-'));
+  const allowed = path.join(project, 'src');
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-symlink-outside-'));
+  fs.mkdirSync(allowed);
+  fs.symlinkSync(outside, path.join(allowed, 'link'), 'dir');
+  const decision = evaluateAction({
+    toolName: 'Write',
+    toolInput: { file_path: path.join(allowed, 'link', 'new-file.js') },
+    contract: { risk: 'low', externalWrite: false, scope: { allowed: [allowed], forbidden: [] } },
+    cwd: project,
+  });
+  assert.equal(decision.level, 4);
+  assert.equal(decision.reasonCode, 'scope_outside_allowed');
+  assert.equal(decision.path, path.join(fs.realpathSync(outside), 'new-file.js'));
 });
 
 test('P3: unresolved shell paths require confirmation when the contract has an allowlist', () => {

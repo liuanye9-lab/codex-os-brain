@@ -53,8 +53,20 @@ function normalizePath(inputPath, cwd = process.cwd()) {
   try {
     return fs.realpathSync.native ? fs.realpathSync.native(absolute) : fs.realpathSync(absolute);
   } catch {
-    // Path may not exist yet (writes). Normalize without realpath.
-    return path.normalize(absolute);
+    // New write targets do not exist yet. Resolve the nearest existing parent
+    // so a symlinked ancestor cannot make a lexical in-scope path escape.
+    const remainder = [];
+    let ancestor = absolute;
+    while (!fs.existsSync(ancestor)) {
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) return path.normalize(absolute);
+      remainder.unshift(path.basename(ancestor));
+      ancestor = parent;
+    }
+    const realAncestor = fs.realpathSync.native
+      ? fs.realpathSync.native(ancestor)
+      : fs.realpathSync(ancestor);
+    return path.join(realAncestor, ...remainder);
   }
 }
 
@@ -88,9 +100,10 @@ function pathMatchesPattern(normalizedPath, pattern, cwd) {
     const abs = normalizePath(needle, cwd)?.replace(/\\/g, '/') || needle;
     return hay === abs || hay.startsWith(abs.endsWith('/') ? abs : `${abs}/`);
   }
-  const relative = path.relative(path.resolve(cwd), normalizedPath).replace(/\\/g, '/');
-  if (!needle.includes('/')) return path.posix.basename(relative) === needle;
-  return relative === needle || relative.startsWith(needle.endsWith('/') ? needle : `${needle}/`);
+  if (!needle.includes('/')) return path.posix.basename(hay) === needle;
+  const absoluteNeedle = normalizePath(needle, cwd)?.replace(/\\/g, '/');
+  if (!absoluteNeedle) return false;
+  return hay === absoluteNeedle || hay.startsWith(absoluteNeedle.endsWith('/') ? absoluteNeedle : `${absoluteNeedle}/`);
 }
 
 function evaluatePathScope(toolInput, scope = {}, cwd = process.cwd()) {

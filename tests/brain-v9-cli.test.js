@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { runCli } = require('../scripts/v9/cli');
+const { resolveV9Paths } = require('../scripts/v9/paths');
 
 const root = path.resolve(__dirname, '..');
 const bin = path.join(root, 'bin', 'brain.js');
@@ -16,7 +18,18 @@ function run(args, brainHome = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-c
 test('status emits stable JSON', () => {
   const result = run(['status', '--json']);
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(Object.keys(JSON.parse(result.stdout)).sort(), ['cognitiveAssets', 'controlStore', 'enabled', 'memory', 'runtimeRoot', 'version']);
+  assert.deepEqual(Object.keys(JSON.parse(result.stdout)).sort(), ['cognitiveAssets', 'controlStore', 'enabled', 'features', 'identity', 'memory', 'runtimeRoot', 'version']);
+});
+
+test('Memory and Cognitive Labs require explicit per-launch confirmation', () => {
+  const blocked = run(['cognition', 'status', '--enable-cognitive-assets', '--json']);
+  assert.equal(blocked.status, 3);
+  assert.match(blocked.stderr, /confirm-labs/);
+  const enabled = run(['cognition', 'status', '--enable-cognitive-assets', '--confirm-labs', '--json']);
+  assert.equal(enabled.status, 0, enabled.stderr);
+  const status = JSON.parse(enabled.stdout);
+  assert.equal(status.enabled, true);
+  assert.equal(status.lab, true);
 });
 
 test('help and doctor expose an actionable public interface contract', () => {
@@ -55,6 +68,25 @@ test('migration apply is impossible without confirmation', () => {
   const result = run(['migrate', 'apply', '--json']);
   assert.equal(result.status, 3);
   assert.match(result.stderr, /confirm-migration/);
+});
+
+test('full MCP receives the explicitly scoped project core', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-cli-mcp-home-'));
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-cli-mcp-project-'));
+  const paths = resolveV9Paths({
+    CODEX_BRAIN_HOME: home,
+    CODEX_BRAIN_STATE_HOME: path.join(home, 'state'),
+  });
+  let observedCore;
+  const code = await runCli(['mcp', 'serve', '--project', project], {
+    json() { return 0; },
+    error() { return 4; },
+  }, {
+    paths,
+    async serveMcp(core) { observedCore = core; },
+  });
+  assert.equal(code, 0);
+  assert.equal(observedCore.paths.projectRoot, project);
 });
 
 test('task create, show, and verify share persisted core state', () => {

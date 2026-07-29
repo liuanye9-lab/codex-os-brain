@@ -15,6 +15,59 @@ function fingerprint(parts) {
   return crypto.createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 24);
 }
 
+function verifierInputSnapshot(cwd, inputPaths = ['package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'test', 'tests']) {
+  const root = path.resolve(cwd || process.cwd());
+  const entries = [];
+  let files = 0;
+  let bytes = 0;
+  const visit = relative => {
+    const absolute = path.join(root, relative);
+    if (!fs.existsSync(absolute)) return;
+    const stat = fs.lstatSync(absolute);
+    if (stat.isSymbolicLink()) {
+      entries.push([relative.replaceAll('\\', '/'), 'symlink', fs.readlinkSync(absolute)]);
+      return;
+    }
+    if (stat.isDirectory()) {
+      for (const name of fs.readdirSync(absolute).sort()) visit(path.join(relative, name));
+      return;
+    }
+    if (!stat.isFile()) return;
+    files += 1;
+    bytes += stat.size;
+    if (files > 2000 || bytes > 20 * 1024 * 1024) throw new Error('verifier_baseline_budget_exceeded');
+    entries.push([
+      relative.replaceAll('\\', '/'),
+      stat.size,
+      crypto.createHash('sha256').update(fs.readFileSync(absolute)).digest('hex'),
+    ]);
+  };
+  for (const relative of inputPaths) visit(relative);
+  return { version: 1, inputPaths, files, bytes, digest: crypto.createHash('sha256').update(JSON.stringify(entries)).digest('hex') };
+}
+
+function captureVerifierBaseline(cwd, inputPaths) {
+  try {
+    return verifierInputSnapshot(cwd, inputPaths);
+  } catch (error) {
+    return { version: 1, inputPaths: inputPaths || [], error: error.message };
+  }
+}
+
+function verifyVerifierBaseline(cwd, baseline) {
+  if (!baseline || baseline.version !== 1 || !baseline.digest) {
+    return { valid: false, reason: baseline?.error || 'verifier_baseline_required' };
+  }
+  const current = captureVerifierBaseline(cwd, baseline.inputPaths);
+  if (!current.digest) return { valid: false, reason: current.error || 'verifier_baseline_unavailable' };
+  return {
+    valid: current.digest === baseline.digest,
+    reason: current.digest === baseline.digest ? null : 'verifier_inputs_changed',
+    expectedDigest: baseline.digest,
+    currentDigest: current.digest,
+  };
+}
+
 function sanitizedEnvironment(source = process.env) {
   const allowed = [
     'PATH', 'HOME', 'USERPROFILE', 'TMPDIR', 'TMP', 'TEMP', 'CI', 'NODE_ENV',
@@ -157,6 +210,33 @@ function verifierCommandExit0(spec = {}, context = {}) {
 
 function verifierTestRunner(spec = {}, context = {}) {
   const cwd = spec.cwd || context.cwd || process.cwd();
+  const baseline = verifyVerifierBaseline(cwd, spec.baseline);
+  if (!baseline.valid) {
+    const fp = fingerprint({ kind: 'test_runner', reason: baseline.reason, expectedDigest: baseline.expectedDigest });
+    return {
+      kind: 'test_runner',
+      status: 'failed',
+      harnessVerified: true,
+      evidenceLevel: 'project_tests',
+      trustedAcceptance: false,
+      fingerprint: fp,
+      summary: { exitCode: null, reason: baseline.reason },
+      provenance: { kind: 'test_runner', ref: `sealed-inputs#${fp}` },
+    };
+  }
+  if (spec.requiredEvidenceLevel === 'trusted_acceptance') {
+    const fp = fingerprint({ kind: 'test_runner', reason: 'trusted_acceptance_runner_unavailable' });
+    return {
+      kind: 'test_runner',
+      status: 'failed',
+      harnessVerified: true,
+      evidenceLevel: 'project_tests',
+      trustedAcceptance: false,
+      fingerprint: fp,
+      summary: { exitCode: null, reason: 'trusted_acceptance_runner_unavailable' },
+      provenance: { kind: 'test_runner', ref: `cooperative-runner#${fp}` },
+    };
+  }
   const hasPackage = fs.existsSync(path.join(cwd, 'package.json'));
   const executable = spec.executable || (!spec.command && hasPackage ? 'npm' : undefined);
   const args = spec.args || (!spec.command && hasPackage ? ['test'] : undefined);
@@ -167,6 +247,8 @@ function verifierTestRunner(spec = {}, context = {}) {
     kind: 'test_runner',
     status: run.status,
     harnessVerified: true,
+    evidenceLevel: 'project_tests',
+    trustedAcceptance: false,
     fingerprint: fp,
     summary: { exitCode: run.exitCode, reason: run.reason },
     provenance: { kind: 'test_runner', ref: `${invocation.executable || 'missing'}#${fp}` },
@@ -208,6 +290,13 @@ function verifierGitDiffBounded(spec = {}, context = {}) {
   const cwd = spec.cwd || context.cwd || process.cwd();
   const allowed = spec.allowedPaths || context.allowedPaths || [];
   const forbidden = spec.forbiddenPaths || context.forbiddenPaths || [];
+  const scopePrefix = spec.baseline?.version === 3 ? String(spec.baseline.scopePrefix || '').replace(/\/+$/, '') : '';
+  const scoped = patterns => patterns.map(pattern => {
+    const normalized = String(pattern).replace(/\\/g, '/').replace(/^\.\//, '');
+    return scopePrefix ? `${scopePrefix}/${normalized}` : normalized;
+  });
+  const repositoryAllowed = scoped(allowed);
+  const repositoryForbidden = scoped(forbidden);
   const listed = spec.baseline
     ? changedPathsSinceBaseline(cwd, spec.baseline)
     : { ok: false, paths: [], error: 'git_baseline_required' };
@@ -223,16 +312,20 @@ function verifierGitDiffBounded(spec = {}, context = {}) {
   }
   const violations = [];
   for (const filePath of listed.paths) {
-    if (forbidden.length && pathMatchesAny(filePath, forbidden)) {
+    if (scopePrefix && filePath !== scopePrefix && !filePath.startsWith(`${scopePrefix}/`)) {
+      violations.push({ path: filePath, reason: 'outside_scope_root' });
+      continue;
+    }
+    if (repositoryForbidden.length && pathMatchesAny(filePath, repositoryForbidden)) {
       violations.push({ path: filePath, reason: 'forbidden' });
       continue;
     }
-    if (allowed.length && !pathMatchesAny(filePath, allowed)) {
+    if (repositoryAllowed.length && !pathMatchesAny(filePath, repositoryAllowed)) {
       violations.push({ path: filePath, reason: 'outside_allowed' });
     }
   }
   const ok = violations.length === 0;
-  const fp = fingerprint({ kind: 'git_diff_bounded', paths: listed.paths, allowed, forbidden });
+  const fp = fingerprint({ kind: 'git_diff_bounded', paths: listed.paths, allowed: repositoryAllowed, forbidden: repositoryForbidden, scopePrefix });
   return {
     kind: 'git_diff_bounded',
     status: ok ? 'passed' : 'failed',
@@ -311,6 +404,7 @@ function runVerifier(criterion = {}, spec = {}, context = {}) {
 
 module.exports = {
   REGISTRY,
+  captureVerifierBaseline,
   fingerprint,
   parseCommand,
   pathMatchesAny,
@@ -318,6 +412,7 @@ module.exports = {
   runCommand,
   runVerifier,
   sanitizedEnvironment,
+  verifyVerifierBaseline,
   verifierCommandExit0,
   verifierTestRunner,
   verifierGitDiffBounded,

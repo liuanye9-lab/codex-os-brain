@@ -9,7 +9,9 @@ The semantic lifecycle and deployment lifecycle are independent:
 - semantic: `candidate → confirmed cognition → method_candidate → runnable_playbook → verified_capability`
 - deployment: `candidate → shadow → replay → canary → promoted/revoked`
 
-`runnable_playbook` means structurally executable. It does not mean effective. `verified_capability` requires at least ten semantically distinct production-path cases, three boundary or adversarial cases, at least 80% success, zero critical safety failures, and different executor and verifier identities.
+`runnable_playbook` means the manifest passed structural gates. The bundled provider is a manifest catalog and run-request preparation layer, not an executor: it does not dispatch steps, manage a worker lifecycle, or claim that a run completed. `verified_capability` requires at least ten semantically distinct production-path cases, three boundary or adversarial cases, at least 80% success, and zero critical safety failures.
+
+Only externally verified signed reuse receipts count. Each receipt binds a unique nonce, task and playbook version, executor and verifier principals in different trust domains, input/output/artifact/runner/policy digests, timestamps, outcome, and production-path flag. The provider requires an external `reuseReceiptVerifier`; without it, reuse recording and automatic promotion fail closed. Plain identity strings and caller-supplied hashes no longer count.
 
 ## Source and evidence rules
 
@@ -22,17 +24,19 @@ Evidence assertions separate four checks:
 - entailment: the evidence supports the claim
 - external fact: a source fact has independent verification
 
-A precise quote is not sufficient evidence by itself. Sensitive inferences such as personality, emotion, health, relationships, and values remain isolated and cannot compile into playbooks.
+A precise quote is not sufficient evidence by itself. The public SQLite provider is not encrypted at rest. It rejects source content explicitly marked sensitive and cognition declared as sensitive or personal scope, plus normalized sensitive type aliases such as personality, emotion, medical/health, relationship, and values, with `sensitive_store_unavailable`. This is a policy classification gate, not automatic content recognition.
+
+Source retention accepts either an absolute `expiresAt` or a bounded `retentionDays`. `retentionStatus()` reports expired sources without mutating them. `enforceRetention({confirm:true})` removes recall and embedding entries, tombstones source URI/content/subjects and evidence anchors, retires direct cognition dependencies, stale-blocks dependent playbooks, revokes their projections, and records a sanitized audit event. Its receipt explicitly says `logicalTombstone:true` and `forensicErasure:false`; content hashes, SQLite free pages/WAL, and old external backups remain reported residues. The CLI equivalent requires `brain cognition retention-enforce --enable-cognitive-assets --confirm-labs --confirm-retention`.
 
 ## Provider contract
 
-`createCognitiveAssetProvider()` exposes the stable protocol methods:
+`createCognitiveAssetProvider()` is an opt-in lab provider. It exposes:
 
 - `ingestSource`
 - `proposeCognition`
 - `approveCognition`
 - `compilePlaybook`
-- `requestRun`
+- `prepareRun` (`requestRun` remains a compatibility alias)
 - `verifyRun`
 - `revoke`
 - `createProjection`
@@ -54,8 +58,8 @@ Withdrawal revokes dependent grants, removes normal recall and embedding referen
 ## CLI and MCP
 
 ```bash
-brain cognition status --json
-brain cognition digest --limit 5 --json
+brain cognition status --enable-cognitive-assets --confirm-labs --json
+brain cognition digest --enable-cognitive-assets --confirm-labs --limit 5 --json
 ```
 
 The MCP tools are:
@@ -64,7 +68,7 @@ The MCP tools are:
 - `brain_get_cognitive_review_digest`
 - `brain_read_cognitive_projection`
 
-The default runtime uses `operator_guardrail_only`. That mode can inspect status but cannot mint protected approvals or export cross-Agent assets.
+The default runtime does not register these tools because `cognitiveAssets.enabled=false`. When explicitly enabled, it uses `operator_guardrail_only`. That mode can inspect status but cannot mint protected approvals, verify reuse receipts, promote verified capability, or export cross-Agent assets.
 
 ## Deliberate v1 boundaries
 

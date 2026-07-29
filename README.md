@@ -1,4 +1,4 @@
-# Codex Brain V10：可复利的个人认知资产 Harness（研究预览）
+# Codex Brain V10：Coding Agent 可靠性 Harness（研究预览）
 
 [![Version](https://img.shields.io/badge/version-0.16.0-5b5bd6)](package.json)
 [![Runtime](https://img.shields.io/badge/runtime-local--first-1f883d)](docs/v9/privacy-and-threat-model.md)
@@ -10,16 +10,29 @@
 
 > Unofficial community project. Codex and related marks belong to OpenAI; this generated illustration does not imply affiliation or endorsement. Visual provenance is recorded in [`assets/visual-provenance.json`](assets/visual-provenance.json).
 
-V10 的定位不再只是给 Agent 增加可靠性护栏，而是把真实任务和自然语言中可验证的 know-how，沉淀为可追溯、可执行、可复用、可撤回、可按用途授权给其他 Agent 的数字认知资产。
+V10 的稳定主线只有一件事：在宿主真实触发、且已经过 canary 验证的 Hook 路径上阻止 Coding Agent 越界修改，并阻止它在没有通过验收时宣布完成。认知资产、长期记忆和跨 Agent 投影属于可选实验层，默认不构成安装成功、任务完成或能力已验证的证明。
 
 底层任务合同、Hooks、CLI、MCP、SQLite 和 verifier 继续使用已经稳定的 V9 runtime contract，避免为了改产品代号破坏现有安装与数据兼容。因此 npm 包名、`scripts/v9` 路径和部分 schema 名称在 V10 中仍保留；它们表示兼容层，不表示产品仍停留在 V9。
 
-## 最快部署：把一句话交给 Agent
+## 最快部署：优先使用 Codex 原生 Plugin
+
+仓库根目录现在提供 `.codex-plugin/plugin.json`、`.mcp.json` 和 `hooks/hooks.json`。通过 Codex 的 Plugin 管理器安装本仓库，是默认分发路径：Plugin 负责声明 Hook 与零依赖、只读、未绑定项目的状态 MCP，项目门禁仍默认关闭，不会因为“装上了”就修改某个项目或初始化认知数据库。需要任务创建、验证或其他受控本地状态写入时，CLI 和 full MCP 都必须显式传入 `--project`。只有用户对具体项目显式确认后，才执行 `brain hooks enable --project "$PWD" --confirm`。
+
+从公开仓 checkout 安装原生 Plugin：
+
+```bash
+codex plugin marketplace add "$PWD" --json
+codex plugin add codex-brain-v9@codex-brain --json
+```
+
+仓库自带 `.agents/plugins/marketplace.json`；`npm run test:plugin-canary` 会在临时 `CODEX_HOME` 里真实走完 marketplace add、plugin add、零依赖 MCP initialize 和默认不建库，并核对真实用户配置未变化。
+
+npm 全局安装继续作为兼容 CLI 路径，不再是产品身份或默认架构：
 
 先让 Agent 进入你要保护的项目目录，然后把下面整段发给它：
 
 ```text
-请在当前项目部署 Codex Brain V9 Harness。先确认 Node.js >= 22.5，再执行：
+请在当前项目部署 Codex Brain V10 Harness 的兼容 CLI。先确认 Node.js >= 22.5，再执行：
 npm install --global codex-brain-v9@0.16.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
 
 只允许把 Codex Brain 增量合并进当前用户的 Codex Hook loader，不要改 Claude Code Hooks，不要修改项目业务文件。保留用户已有 Hooks；项目 task、事件和记忆仍按 projectRoot 隔离。如果任一步失败就停止并报告原始错误。完成后只在 doctor 同时满足 ok=true、eventsComplete=true、fingerprintMatch=true、packageVersionMatch=true、runtimeDigestMatch=true、runtimeHealthy=true、runtimeStorageWritable=true，且 evidence-signing-loop=passed 时告诉我“安装完整”；只有真实 host canary 记录到事件后才能告诉我“宿主门禁已生效”。
@@ -31,7 +44,7 @@ npm install --global codex-brain-v9@0.16.0 && codex-brain hooks enable --project
 npm install --global codex-brain-v9@0.16.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
 ```
 
-这条命令把运行时安装到 npm 全局目录，并把通用 loader 增量合并进当前用户的 `$CODEX_HOME/hooks.json`（默认 `~/.codex/hooks.json`）。loader 在没有活动项目合同的时候静默返回，task、事件、证据和记忆仍按 projectRoot 隔离。安装器会保留已有 Hooks，并自动保存可恢复的原配置。不要使用 `sudo npm install`；如果全局 npm 目录不可写，先改用用户级 Node 版本管理器。
+这条兼容命令把运行时安装到 npm 全局目录，并把通用 loader 增量合并进当前用户的 `$CODEX_HOME/hooks.json`（默认 `~/.codex/hooks.json`）。loader 在没有活动项目合同的时候静默返回，task、事件和证据仍按 projectRoot 隔离；Memory 与 Cognitive Labs 默认关闭。安装器会保留已有 Hooks，并自动保存可恢复的原配置。不要使用 `sudo npm install`；如果全局 npm 目录不可写，先改用用户级 Node 版本管理器。
 
 部署成功后可直接使用：
 
@@ -51,8 +64,9 @@ Codex Brain 像坐在副驾的人：**平时不唠叨、不抢方向盘**；只�
 
 > 它**不是**另一个 Agent，不是 OS 沙箱，也不承诺让模型永远正确。
 > 它是一套本地可靠性实验框架：把「目标、边界、证据、失败、交接」变成可回归检查的规则。Hooks 只覆盖宿主实际触发的事件，不能代替操作系统权限、容器隔离、代码审查或发布审批。
+> 内置 `test_runner` 仍在当前用户权限和项目代码上执行，只能产生 `project_tests` 级证据。创建任务时会封印 package scripts、lockfile 与 test/tests 输入；这些输入变化后拒绝执行。要求 `trusted_acceptance` 的合同在独立 runner 尚未接入时会 fail closed。
 
-### Start here：先跑通，再决定开哪些增强
+### Start here：先验稳定 Core，再决定开哪些 Labs
 
 ```bash
 git clone https://github.com/liuanye9-lab/codex-os-brain.git
@@ -217,6 +231,8 @@ flowchart LR
 | Agent 说「测试过了 / 做完了」 | 只记为 **claim（自述）**，状态仍是 `unverified` |
 | 你凭感觉相信 | `brain verify` **重新跑** command / test / scope 等 verifier |
 | 过关靠自觉 | 只有 verifier 重跑产生、且本机 HMAC 封印有效的 `harnessVerified: true` 证据才能把 criterion 标成 `passed` |
+
+这里的 `harnessVerified` 表示“当前 Harness 确实重跑并封印了结果”，不等于“测试在独立安全域中运行”。`test_runner` 会先核对任务创建时封印的 `package.json`、lockfile、`test/` 和 `tests/`；评分输入发生变化就返回 `verifier_inputs_changed`，不会执行被改写的测试脚本。只有后续接入独立账户、容器或受保护 CI，并能验证 runner/policy/artifact digest 的执行器，才应产出 `trusted_acceptance`。
 
 类比：**学生自己在卷子上打勾不算分，老师重批才算分。**
 
@@ -978,7 +994,7 @@ flowchart TB
 
 ## 认知资产协议
 
-0.16 增加了一个默认隔离、候选优先的 Cognitive Asset Protocol。它把来源、证据判断、认知单元、可执行 Playbook、真实复用回执和只读授权投影连成同一条可审计链，但不会把日常聊天直接升级成人格结论，也不保存隐藏推理或完整工具输出。
+0.16 增加了一个默认关闭、候选优先的 Cognitive Asset Protocol Lab。它把来源、证据判断、认知单元、Playbook manifest、真实复用回执和只读授权投影连成同一条可审计链，但不会把日常聊天直接升级成人格结论，也不保存隐藏推理或完整工具输出。
 
 ```mermaid
 flowchart LR
@@ -991,14 +1007,15 @@ flowchart LR
   V --> G["只读 Projection Grant"]
 ```
 
-语义成熟度与部署状态分开；`runnable_playbook` 只代表结构可执行。晋升 `verified_capability` 至少需要 10 个语义不同案例、3 个边界或对抗案例、80% 成功率、零关键安全失败，并要求 executor 与 verifier 独立。每次运行、晋升和投影读取前都会重算依赖；证据或认知版本漂移会持久化为 `stale_blocked`。
+语义成熟度与部署状态分开；`runnable_playbook` 只代表 manifest 已通过结构门。内置 provider 的 `prepareRun` 只准备外部执行请求，不 dispatch、不执行步骤、不宣称运行完成。晋升 `verified_capability` 至少需要 10 个语义不同案例、3 个边界或对抗案例、80% 成功率、零关键安全失败。计数样本必须是外部 verifier 验签通过、带唯一 nonce、绑定 task/playbook version、executor/verifier principal 与不同 trust domain，以及 input/output/artifact/runner/policy digest 的生产路径收据。没有配置外部 `reuseReceiptVerifier` 时，复用记录和自动晋升均 fail closed。
 
 ```bash
-brain cognition status --json
-brain cognition digest --limit 5 --json
+# Labs 每次启动都必须显式确认；Cognitive Assets 会同时启用 Memory
+brain cognition status --enable-cognitive-assets --confirm-labs --json
+brain cognition digest --enable-cognitive-assets --confirm-labs --limit 5 --json
 ```
 
-默认 `operator_guardrail_only` 模式只允许检查，不具备跨 Agent 导出授权能力。完整协议、安全边界和 MCP 投影说明见 [Cognitive Asset Protocol v1](docs/v9/cognitive-assets.md)。
+默认关闭；显式启用后，`operator_guardrail_only` 模式也只允许检查，不具备跨 Agent 导出授权能力。未加密的 live SQLite 会拒绝调用方声明为敏感、personal scope，或被类型规则分类为 personality、emotion、health、relationship、values 等敏感推断；它不是自动内容识别器。完整协议、安全边界和 MCP 投影说明见 [Cognitive Asset Protocol v1](docs/v9/cognitive-assets.md)。
 
 ---
 
@@ -1097,9 +1114,9 @@ flowchart LR
 
 V0.13 起，验收题目与验收结果分开保护：任务创建时会规范化并签署整份合同规范，覆盖 objective、scope、`required`、verifier 类型和完整 `verifierSpec`；每条证据再绑定合同指纹与标准指纹。运行时参数不能把已钉死的命令替换成 `echo ok`，空 criteria、未签名 waiver 和 `requireHarness:false` 都不能完成任务。macOS 使用 Keychain，Windows 使用当前用户 DPAPI，Linux 优先使用 libsecret；没有 Secret Service 时会降级为权限为 `0600` 的本地文件，并在 threat model 中明确标为较弱模式。
 
-这不是对同一操作系统用户的恶意进程建立强隔离。同 UID 且能改 npm 安装目录、运行时脚本、进程环境或凭据存储的攻击者仍在可信计算基之外。doctor 会核对 Hook 所有权、11 个声明事件、manifest 指纹、包版本、实际运行时 digest，并跑一次临时合同→verifier→证据签名→完成判定闭环；这能发现常见漂移和直接改 JSON，不能代替容器、独立账户或硬件隔离。
+这不是对同一操作系统用户的恶意进程建立强隔离。同 UID 且能改 npm 安装目录、运行时脚本、进程环境或凭据存储的攻击者仍在可信计算基之外。doctor 会核对 Hook 所有权、11 个声明事件、manifest 指纹、包版本、实际运行时 digest，并跑一次临时合同→verifier→证据签名→完成判定闭环；这能发现常见漂移和直接改 JSON，不能代替容器、独立账户或硬件隔离。路径预检查会解析不存在目标的最近已存在父目录，阻止父级 symlink 逃逸；它仍不能消除检查与执行之间的 TOCTOU，因此 shell 正则和 PreToolUse 都只是协作式 guardrail，最终还需 PostToolUse、Git diff 与 OS sandbox。
 
-`projectScoped: true` 现在会实际消费：task、event、failure、embedding 和 SQLite memory 都按规范化 project root 的哈希分区。一个项目的 active task 与记忆不会注入另一个项目。`active.json` 旁还有独立 guard；只删除合同文件会让 Stop fail closed，而不是静默放行。
+`projectScoped: true` 现在会实际消费：task、event、failure、embedding 和 SQLite memory 都按规范化 project root 的哈希分区。一个项目的 active task 与记忆不会注入另一个项目。任务实例使用随机 UUID，另存稳定 `taskFingerprint` 做分析；重复 objective 不再碰撞。SQLite 中存在 active task 但 Guard 缺失、签名无效或 hash 不一致时会 fail closed。创建顺序先写 SQLite、再写 Guard；Guard 写入失败只回滚本次 spec hash 对应的新任务，不会删除同 ID 的既有 Guard。
 
 ```mermaid
 flowchart LR
@@ -1120,21 +1137,21 @@ Hook 覆盖、阻断能力和已知缺口见 [Hook Coverage Matrix](docs/v9/hook
 ### MCP
 
 ```bash
-brain mcp serve
+brain mcp serve --project /absolute/path/to/project
 ```
 
 ```json
 {
   "mcpServers": {
-    "codex-brain-v9": {
+    "codex-brain": {
       "command": "brain",
-      "args": ["mcp", "serve"]
+      "args": ["mcp", "serve", "--project", "/absolute/path/to/project"]
     }
   }
 }
 ```
 
-MCP 可读状态/任务/失败/事件/验收/交接/技能/记忆；可受控建任务、checkpoint、**claim** 证据、激活技能、验证后关闭任务。  
+原生 Plugin 会从 `.mcp.json` 发现零依赖、未绑定项目的只读状态服务；上面的配置是显式绑定项目的 full MCP。full MCP 可读状态/任务/失败/事件/验收/交接/技能；Memory 与 Cognitive Labs 工具只在对应 feature 显式启用时注册。它可受控建任务、checkpoint、**claim** 证据、激活技能、验证后关闭任务。
 **不能**自证 passed、下载模型、改嵌入配置、批准迁移、绕过策略。
 
 ### 可选：本地资料柜（Ollama）

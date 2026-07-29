@@ -9,6 +9,7 @@
     "schemaVersion": { "const": 9 },
     "revision": { "type": "integer", "minimum": 1 },
     "taskId": { "type": "string", "minLength": 1 },
+    "taskFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "objective": { "type": "string" },
     "lifecycle": { "enum": ["active", "blocked", "complete", "abandoned"] },
     "constraints": {

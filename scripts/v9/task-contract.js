@@ -4,13 +4,29 @@ const crypto = require('node:crypto');
 
 function taskId(input) {
   if (input.taskId) return String(input.taskId);
-  return `task_${crypto.createHash('sha256').update(String(input.objective || '')).digest('hex').slice(0, 16)}`;
+  return `task_${crypto.randomUUID()}`;
+}
+
+function taskFingerprint(input = {}) {
+  const value = {
+    objective: String(input.objective || ''),
+    constraints: input.constraints || [],
+    scope: input.scope || {},
+    criteria: (input.criteria || []).map(item => ({
+      id: item.id || null,
+      required: item.required !== false,
+      verifier: item.verifier || null,
+      verifierSpec: item.verifierSpec || null,
+    })),
+  };
+  return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
 function canonicalContractSpec(contract = {}) {
   return JSON.stringify({
     schemaVersion: Number(contract.schemaVersion || 9),
     taskId: contract.taskId || null,
+    taskFingerprint: contract.taskFingerprint || null,
     objective: String(contract.objective || ''),
     lifecycle: contract.lifecycle || 'active',
     constraints: (contract.constraints || []).map(item => ({
@@ -59,6 +75,7 @@ function createTaskContract(input = {}) {
     schemaVersion: 9,
     revision: Number(input.revision || 1),
     taskId: taskId(input),
+    taskFingerprint: input.taskFingerprint || taskFingerprint(input),
     objective: String(input.objective || ''),
     lifecycle: input.lifecycle || 'active',
     constraints: (input.constraints || []).map(item => ({ ...item })),
@@ -113,4 +130,5 @@ module.exports = {
   contractSpecHash,
   createTaskContract,
   sealTaskContract,
+  taskFingerprint,
 };

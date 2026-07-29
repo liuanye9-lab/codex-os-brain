@@ -1,6 +1,10 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { performance } = require('node:perf_hooks');
 const { normalizeHookInput } = require('../scripts/v9/hooks/input');
 const { dispatchHook } = require('../scripts/v9/hook-dispatch');
@@ -11,6 +15,23 @@ const { handleStop } = require('../scripts/v9/hooks/stop');
 
 test('unknown or disabled hooks produce an empty object', async () => {
   assert.deepEqual(await dispatchHook({ hook_event_name: 'Unknown' }, { enabled: false, handlers: {}, failClosedEvents: new Set(), auditInternalError() {} }), {});
+});
+
+test('disabled hook process returns an empty object without initializing state', () => {
+  const isolated = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-disabled-hook-'));
+  const brainHome = path.join(isolated, 'brain-home');
+  const projectRoot = path.join(isolated, 'project');
+  fs.mkdirSync(projectRoot);
+  const result = spawnSync(process.execPath, [path.resolve(__dirname, '..', 'bin', 'brain-hook.js')], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    input: JSON.stringify({ hook_event_name: 'SessionStart', project_root: projectRoot }),
+    env: { ...process.env, CODEX_BRAIN_HOME: brainHome, BRAIN_V9_HOOKS: '0' },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {});
+  assert.equal(fs.existsSync(brainHome), false);
+  assert.deepEqual(fs.readdirSync(projectRoot), []);
 });
 
 test('non-policy hook failures are visible and fail-closed events block', async () => {

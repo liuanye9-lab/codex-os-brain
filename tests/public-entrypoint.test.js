@@ -15,6 +15,13 @@ test('exports stable public control-plane modules', async () => {
   assert.equal(typeof api.behavioralMemory.createCandidate, 'function');
 });
 
+test('stable core and cognitive lab have separate package entrypoints', async () => {
+  const core = await import('../core.js');
+  const labs = await import('../labs/cognitive-assets.js');
+  assert.equal(typeof core.v9Core.createV9Core, 'function');
+  assert.equal(typeof labs.createCognitiveAssetProvider, 'function');
+});
+
 test('self-check exposes safe defaults without starting a model or hook', () => {
   const result = spawnSync(process.execPath, ['bin/brain-lite.js', 'self-check'], {
     cwd: root,

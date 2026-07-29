@@ -13,6 +13,7 @@ const { claimEvidence, evaluateCompletion, verifyActive, verifyCriterion } = req
 const { createEvidenceSealer } = require('./evidence-seal');
 const { advanceCircuit, classifyFailure, resetCircuitForOperation } = require('./failure-controller');
 const { evaluateAction } = require('./policy');
+const { captureVerifierBaseline } = require('./verifiers');
 const migration = require('./migration');
 const { createEmbeddingService } = require('./embeddings');
 const handoff = require('./handoff');
@@ -37,8 +38,26 @@ const {
   rotateRecoveryKey,
 } = require('./memory-recovery');
 const { getHostAdapter, listHosts } = require('./hosts');
+const { IDENTITY } = require('./identity');
 
 const EVENT_FIELDS = ['eventId', 'kind', 'taskId', 'turnId', 'status', 'reasonCode', 'signature', 'evidenceId', 'durationMs', 'createdAt'];
+
+function disabledFeature(name, extraStatus = {}) {
+  return new Proxy({
+    status: () => ({ enabled: false, reason: 'feature_disabled', feature: name, ...extraStatus }),
+  }, {
+    get(target, property) {
+      if (property in target) return target[property];
+      if (property === 'then') return undefined;
+      return () => {
+        const error = new Error(`feature_disabled:${name}`);
+        error.code = 'feature_disabled';
+        error.feature = name;
+        throw error;
+      };
+    },
+  });
+}
 
 function readV9Config(configPath) {
   const file = configPath || path.resolve(__dirname, '..', '..', 'config', 'brain-lite-v9.json');
@@ -56,6 +75,8 @@ function createV9Core({
 } = {}) {
   const basePaths = paths;
   const enabled = config.enabled === true;
+  const memoryEnabled = enabled && config.memory?.enabled === true;
+  const cognitiveAssetsEnabled = enabled && config.cognitiveAssets?.enabled === true;
   const projectRoot = () => path.resolve(configuredProjectRoot || process.env.BRAIN_PROJECT_ROOT || process.cwd());
   const rawSessionId = String(configuredSessionId || process.env.BRAIN_SESSION_ID || process.env.CODEX_THREAD_ID || 'default');
   const runtimePaths = config.hooks?.projectScoped === false ? paths : scopeV9Paths(paths, projectRoot());
@@ -69,13 +90,22 @@ function createV9Core({
   });
   const embeddings = createEmbeddingService({ paths });
   const skills = createSkillsService({ paths });
-  const memory = createMemoryService({ paths });
-  const memoryHarness = createMemoryHarness({ paths });
-  const cognitiveAssets = createCognitiveAssetProvider({
-    paths,
-    authorityMode: cognitiveAssetAuthorityMode,
-    approvalVerifier: cognitiveAssetApprovalVerifier,
-  });
+  const memory = memoryEnabled
+    ? createMemoryService({ paths })
+    : disabledFeature('memory', { liveDatabaseEncrypted: false });
+  const memoryHarness = memoryEnabled ? createMemoryHarness({ paths }) : disabledFeature('memory_harness');
+  const cognitiveAssets = cognitiveAssetsEnabled
+    ? createCognitiveAssetProvider({
+      paths,
+      authorityMode: cognitiveAssetAuthorityMode,
+      approvalVerifier: cognitiveAssetApprovalVerifier,
+    })
+    : disabledFeature('cognitive_assets', {
+      lab: true,
+      playbookExecution: false,
+      liveDatabaseEncrypted: false,
+      sensitivePersistenceAllowed: false,
+    });
   const memoryBackupKeyStore = createMacKeychainStore();
   const evidenceSealer = createEvidenceSealer({ paths });
   const controlGuard = createControlGuard({ guardPath: paths.controlGuardPath, evidenceSealer });
@@ -111,7 +141,7 @@ function createV9Core({
         : { ...state, guard };
     }
     const guarded = guard.tasks[state.contract.taskId];
-    if (guarded && guarded.specHash !== state.contract.trust?.specHash) {
+    if (!guard.present || !guarded || guarded.specHash !== state.contract.trust?.specHash) {
       return { expected: true, contract: null, missing: false, corrupt: true, guard };
     }
     return { ...state, guard };
@@ -140,6 +170,19 @@ function createV9Core({
     create(input) {
       const criteria = (input.criteria || []).map(criterion => {
         const verifier = criterion.verifier || (criterion.id === 'scope' ? 'git_diff_bounded' : null);
+        if (verifier === 'test_runner' || (!criterion.verifier && criterion.id === 'tests')) {
+          return {
+            ...criterion,
+            verifier: 'test_runner',
+            verifierSpec: {
+              ...(criterion.verifierSpec || {}),
+              baseline: criterion.verifierSpec?.baseline || captureVerifierBaseline(
+                projectRoot(),
+                criterion.verifierSpec?.baselinePaths,
+              ),
+            },
+          };
+        }
         if (verifier !== 'git_diff_bounded' && criterion.id !== 'scope') return criterion;
         return {
           ...criterion,
@@ -153,11 +196,11 @@ function createV9Core({
         };
       });
       const contract = sealTaskContract(createTaskContract({ ...input, criteria }), evidenceSealer);
-      controlGuard.add(contract);
+      controlStore.createTask(contract);
       try {
-        controlStore.createTask(contract);
+        controlGuard.add(contract);
       } catch (error) {
-        controlGuard.remove(contract.taskId);
+        controlStore.rollbackCreate(contract.taskId, contract.trust?.specHash);
         throw error;
       }
       try {
@@ -265,7 +308,7 @@ function createV9Core({
         taskId: outcome.contract.taskId,
         status: outcome.evaluation.status,
       });
-      if (outcome.evaluation.status === 'complete') {
+      if (memoryEnabled && outcome.evaluation.status === 'complete') {
         try {
           memory.createMemory({
             content: `Task ${outcome.contract.taskId} verified complete: ${outcome.contract.objective}`,
@@ -312,12 +355,19 @@ function createV9Core({
 
   return {
     status: () => ({
-      version: 9,
+      version: IDENTITY.runtimeContract,
+      identity: IDENTITY,
       enabled,
+      features: {
+        stableCore: enabled,
+        memory: memoryEnabled,
+        cognitiveAssets: cognitiveAssetsEnabled,
+        playbookExecution: false,
+      },
       runtimeRoot: paths.runtimeRoot,
       controlStore: enabled ? { kind: 'sqlite', sessionId: controlStore.sessionId, integrity: controlStore.integrity() } : { enabled: false },
-      memory: enabled ? memory.status() : { enabled: false },
-      cognitiveAssets: enabled ? cognitiveAssets.status() : { enabled: false },
+      memory: memory.status(),
+      cognitiveAssets: cognitiveAssets.status(),
     }),
     contracts,
     events,
@@ -348,6 +398,12 @@ function createV9Core({
     paths,
     sessionId: controlStore.sessionId,
     config,
+    features: {
+      stableCore: enabled,
+      memory: memoryEnabled,
+      cognitiveAssets: cognitiveAssetsEnabled,
+      playbookExecution: false,
+    },
     projectRoot,
     forTask: taskId => createV9Core({
       paths: basePaths,

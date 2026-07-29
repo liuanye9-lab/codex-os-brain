@@ -37,8 +37,14 @@ test('README relative links resolve', () => {
 
 test('package policy rejects runtime and requires CLI, MCP, and installed-package self-tests', () => {
   const report = verifyPackageContents({ files: [
+    { path: '.agents/plugins/marketplace.json' },
+    { path: '.codex-plugin/plugin.json' },
+    { path: '.mcp.json' },
+    { path: 'bin/brain-lite.js' },
     { path: 'bin/brain.js' },
     { path: 'mcp/server.mjs' },
+    { path: 'mcp/standalone.mjs' },
+    { path: 'scripts/plugin-canary.js' },
     { path: 'scripts/package-selftest.js' },
     { path: 'scripts/test-contract.js' },
     { path: 'scripts/check-contract.js' },
@@ -65,4 +71,27 @@ test('README visual assets are declared and hash-pinned', () => {
 
 test('latency reporting uses a real percentile rather than the arithmetic mean', () => {
   assert.equal(percentile([1, 2, 3, 100], 0.5), 2.5);
+});
+
+test('product, release, runtime contract, and compatibility identity are consistent', () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const publicPackage = JSON.parse(fs.readFileSync(path.join(root, 'config', 'public-package.json'), 'utf8'));
+  const plugin = JSON.parse(fs.readFileSync(path.join(root, '.codex-plugin', 'plugin.json'), 'utf8'));
+  assert.deepEqual(packageJson.codexBrain, publicPackage.codexBrain);
+  assert.equal(packageJson.codexBrain.productMajor, 10);
+  assert.equal(packageJson.codexBrain.runtimeContract, 9);
+  assert.equal(packageJson.codexBrain.releaseVersion, packageJson.version);
+  assert.equal(packageJson.codexBrain.compatibilityName, packageJson.name);
+  assert.equal(plugin.codexBrain.productMajor, 10);
+  assert.equal(plugin.codexBrain.runtimeContract, 9);
+});
+
+test('GitHub Actions are immutable SHA pinned', () => {
+  const workflows = fs.readdirSync(path.join(root, '.github', 'workflows')).filter(file => file.endsWith('.yml'));
+  for (const file of workflows) {
+    const text = fs.readFileSync(path.join(root, '.github', 'workflows', file), 'utf8');
+    for (const match of text.matchAll(/uses:\s*[^@\s]+@([^\s#]+)/g)) {
+      assert.match(match[1], /^[a-f0-9]{40}$/, `${file}:${match[0]}`);
+    }
+  }
 });

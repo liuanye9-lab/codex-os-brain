@@ -1,6 +1,25 @@
 {
   "name": "codex-brain-v9",
   "version": "0.16.0",
-  "description": "Codex Brain V10 cognitive asset and evidence-gated reliability harness",
-  "hooks": "./hooks/hooks.json"
+  "description": "Codex Brain V10 evidence-gated reliability harness with an opt-in Cognitive Labs layer",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Codex Brain",
+    "shortDescription": "Evidence-gated reliability controls for Codex",
+    "longDescription": "Codex Brain V10 provides a stable reliability core using the V9 runtime contract. Cognitive assets are an opt-in research lab and are disabled by default.",
+    "developerName": "liuanye9-lab",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "defaultPrompt": ["Inspect this project with Codex Brain reliability controls before changing it."],
+    "brandColor": "#2F6B5F",
+    "screenshots": []
+  },
+  "codexBrain": {
+    "productMajor": 10,
+    "releaseVersion": "0.16.0",
+    "runtimeContract": 9,
+    "cognitiveAssetProtocol": 1,
+    "releaseChannel": "research-preview"
+  }
 }

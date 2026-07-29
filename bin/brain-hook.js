@@ -17,6 +17,11 @@ async function main() {
   catch { process.stderr.write('invalid hook JSON\n'); process.exitCode = 2; return; }
 
   const config = readV9Config(process.env.BRAIN_V9_CONFIG);
+  const enabled = process.env.BRAIN_V9_HOOKS === '1' || config.hooks?.enabled === true;
+  if (!enabled) {
+    process.stdout.write('{}\n');
+    return;
+  }
   const projectRoot = input.project_root || input.projectRoot || input.cwd || process.cwd();
   const core = createV9Core({
     config,
@@ -42,7 +47,6 @@ async function main() {
     UserPromptSubmit: async () => ({}),
   };
 
-  const enabled = process.env.BRAIN_V9_HOOKS === '1' || config.hooks?.enabled === true;
   const output = await adapter.handle(input, async normalized => dispatchHook(normalized, {
     enabled,
     handlers,

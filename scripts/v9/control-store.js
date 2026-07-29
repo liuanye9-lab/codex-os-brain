@@ -309,6 +309,17 @@ function createControlStore({ dbPath, sessionId = 'default', taskId } = {}) {
         db.prepare('SELECT contract_json FROM task_contracts WHERE task_id=?').get(String(requestedTaskId)),
       ).contract);
     },
+    rollbackCreate(requestedTaskId, expectedSpecHash) {
+      if (!requestedTaskId) return false;
+      return withDb(db => transaction(db, () => {
+        const row = db.prepare('SELECT spec_hash FROM task_contracts WHERE task_id=?').get(String(requestedTaskId));
+        if (!row || row.spec_hash !== expectedSpecHash) return false;
+        db.prepare('DELETE FROM task_contracts WHERE task_id=?').run(String(requestedTaskId));
+        db.prepare('UPDATE harness_sessions SET active_task_id=NULL, updated_at=? WHERE active_task_id=?')
+          .run(new Date().toISOString(), String(requestedTaskId));
+        return true;
+      }));
+    },
     activeState() {
       return withDb(db => transaction(db, () => {
         if (selectedTaskId) {

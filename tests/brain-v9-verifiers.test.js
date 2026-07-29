@@ -6,11 +6,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {
+  captureVerifierBaseline,
   parseCommand,
   pathMatchesAny,
   runCommand,
   sanitizedEnvironment,
   verifierCommandExit0,
+  verifierTestRunner,
 } = require('../scripts/v9/verifiers');
 
 test('verifier commands use argv execution and reject shell operators', () => {
@@ -68,4 +70,32 @@ test('argv execution works in a temporary directory without a shell', () => {
   });
   assert.equal(result.status, 'passed');
   assert.equal(fs.readFileSync(marker, 'utf8'), 'ok');
+});
+
+test('test runner refuses modified package scripts before executing them', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-verifier-seal-'));
+  fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({ scripts: { test: 'node test.js' } }));
+  fs.writeFileSync(path.join(cwd, 'test.js'), 'process.exit(0)\n');
+  const baseline = captureVerifierBaseline(cwd);
+  const marker = path.join(cwd, 'secret-marker');
+  fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({
+    scripts: { test: `node -e "require('node:fs').writeFileSync('${marker}', 'stolen')"` },
+  }));
+  const result = verifierTestRunner({ baseline }, { cwd });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.summary.reason, 'verifier_inputs_changed');
+  assert.equal(result.evidenceLevel, 'project_tests');
+  assert.equal(result.trustedAcceptance, false);
+  assert.equal(fs.existsSync(marker), false);
+});
+
+test('cooperative test runner cannot satisfy a trusted acceptance criterion', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-verifier-trust-'));
+  fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({ scripts: { test: 'node -e "process.exit(0)"' } }));
+  const result = verifierTestRunner({
+    baseline: captureVerifierBaseline(cwd),
+    requiredEvidenceLevel: 'trusted_acceptance',
+  }, { cwd });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.summary.reason, 'trusted_acceptance_runner_unavailable');
 });

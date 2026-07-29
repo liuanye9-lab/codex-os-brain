@@ -20,7 +20,7 @@
     "agentClaimsAreUnverified": true
   },
   "cognitiveAssets": {
-    "enabled": true,
+    "enabled": false,
     "captureDefault": "explicit_project_opt_in",
     "hotPath": "metadata_only",
     "authorityMode": "operator_guardrail_only",
@@ -37,6 +37,7 @@
     "outputsAreEvidenceCandidates": true
   },
   "memory": {
+    "enabled": false,
     "injectionBanner": "UNVERIFIED MEMORY",
     "promoteOnlyFromVerifiedOutcomes": true
   },
