@@ -21,7 +21,10 @@ function runGit(cwd, args) {
 }
 
 function canonicalFsPath(target) {
-  const resolved = fs.realpathSync(path.resolve(target));
+  const absolute = path.resolve(target);
+  const resolved = fs.realpathSync.native
+    ? fs.realpathSync.native(absolute)
+    : fs.realpathSync(absolute);
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 

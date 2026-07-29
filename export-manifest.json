@@ -213,8 +213,8 @@
     },
     {
       "path": ".github/workflows/supply-chain.yml",
-      "sha256Base64Url": "1dHRyvSvK8mf3Qzn5W7ngvAlAKjfeWHlS1XNX5fvPrs",
-      "bytes": 1260
+      "sha256Base64Url": "0vW7sij4t3PJ0Ck_eusxX2k4DIN3VYV7I8iy3CscEXg",
+      "bytes": 1362
     },
     {
       "path": ".gitignore",
@@ -728,8 +728,8 @@
     },
     {
       "path": "scripts/v9/git-baseline.js",
-      "sha256Base64Url": "JwfVPpz5zHn9LmKnTOGDKV3ofUSAb6CyHM7AHyvZ0fE",
-      "bytes": 14661
+      "sha256Base64Url": "r8NfsqyZ1cDlpwdYp1jGPkCI_hVC7IVwyua1XS5zFdw",
+      "bytes": 14758
     },
     {
       "path": "scripts/v9/handoff.js",
@@ -998,8 +998,8 @@
     },
     {
       "path": "tests/brain-v9-p0-p6.test.js",
-      "sha256Base64Url": "U2PO1rEMG9JFNv7XVh8tRDjgdQJumIrGF-HZ6X78tdc",
-      "bytes": 11818
+      "sha256Base64Url": "bKLzyXjlZcTcbGXMetpSLWqM-lhIZEn5M5XsYkqLcbw",
+      "bytes": 11831
     },
     {
       "path": "tests/brain-v9-public-export.test.js",

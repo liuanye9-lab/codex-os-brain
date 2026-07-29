@@ -9,7 +9,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { performance } = require('node:perf_hooks');
 const { createV9Core, readV9Config } = require('../scripts/v9/core');
 const { resolveV9Paths } = require('../scripts/v9/paths');
-const { evaluateAction } = require('../scripts/v9/policy');
+const { evaluateAction, normalizePath } = require('../scripts/v9/policy');
 const { getHostAdapter, listHosts } = require('../scripts/v9/hosts');
 const { handleStop } = require('../scripts/v9/hooks/stop');
 const { handleSession } = require('../scripts/v9/hooks/session');
@@ -172,7 +172,7 @@ test('P0: a new file below a symlinked parent is resolved outside the allowed sc
   });
   assert.equal(decision.level, 4);
   assert.equal(decision.reasonCode, 'scope_outside_allowed');
-  assert.equal(decision.path, path.join(fs.realpathSync(outside), 'new-file.js'));
+  assert.equal(decision.path, normalizePath(path.join(outside, 'new-file.js')));
 });
 
 test('P3: unresolved shell paths require confirmation when the contract has an allowlist', () => {
