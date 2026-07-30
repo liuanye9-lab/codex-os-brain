@@ -10,6 +10,7 @@ const { normalizeHookInput } = require('../scripts/v9/hooks/input');
 const { dispatchHook } = require('../scripts/v9/hook-dispatch');
 const { handleSession } = require('../scripts/v9/hooks/session');
 const { handleRisk } = require('../scripts/v9/hooks/risk');
+const { handleLifecycle } = require('../scripts/v9/hooks/lifecycle');
 const { handleObservation } = require('../scripts/v9/hooks/observer');
 const { handleStop } = require('../scripts/v9/hooks/stop');
 
@@ -32,6 +33,33 @@ test('disabled hook process returns an empty object without initializing state',
   assert.deepEqual(JSON.parse(result.stdout), {});
   assert.equal(fs.existsSync(brainHome), false);
   assert.deepEqual(fs.readdirSync(projectRoot), []);
+});
+
+test('UserPromptSubmit exits before core initialization and oversized input is rejected', () => {
+  const isolated = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-fast-hook-'));
+  const brainHome = path.join(isolated, 'brain-home');
+  const projectRoot = path.join(isolated, 'project');
+  fs.mkdirSync(projectRoot);
+  const command = [path.resolve(__dirname, '..', 'bin', 'brain-hook.js')];
+  const fast = spawnSync(process.execPath, command, {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'x'.repeat(1000) }),
+    env: { ...process.env, CODEX_BRAIN_HOME: brainHome, BRAIN_V9_HOOKS: '1' },
+  });
+  assert.equal(fast.status, 0, fast.stderr);
+  assert.deepEqual(JSON.parse(fast.stdout), {});
+  assert.equal(fs.existsSync(brainHome), false);
+
+  const oversized = spawnSync(process.execPath, command, {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    input: JSON.stringify({ hook_event_name: 'PreToolUse', payload: 'x'.repeat(70_000) }),
+    env: { ...process.env, CODEX_BRAIN_HOME: brainHome, BRAIN_V9_HOOKS: '1' },
+  });
+  assert.equal(oversized.status, 2);
+  assert.match(oversized.stderr, /exceeds 65536 bytes/);
+  assert.equal(fs.existsSync(brainHome), false);
 });
 
 test('non-policy hook failures are visible and fail-closed events block', async () => {
@@ -60,6 +88,8 @@ test('normalization keeps bounded identifiers and drops transcript path', () => 
   assert.equal(value.sessionId, 's1');
   assert.equal(value.transcriptPath, undefined);
   assert.deepEqual(value.toolInput, { command: 'npm test' });
+  const bounded = normalizeHookInput({ hook_event_name: 'PostToolUse', session_id: `safe${String.fromCharCode(0)}\nvalue` });
+  assert.equal(bounded.sessionId, 'safevalue');
 });
 
 test('normalized Stop events force a live verifier rerun', () => {
@@ -96,6 +126,28 @@ test('PreToolUse blocks forbidden scope and stays within latency budget', async 
   assert.ok(performance.now() - started < 100);
 });
 
+test('PermissionRequest uses the Codex event-specific decision contract', async () => {
+  const core = { contracts: { evaluateAction: () => ({ level: 4, reasonCode: 'scope_forbidden', message: 'Forbidden.' }) } };
+  const output = await handleRisk({ event: 'PermissionRequest', toolName: 'Bash', toolInput: { command: 'rm -rf /' } }, core);
+  assert.deepEqual(output, {
+    hookSpecificOutput: {
+      hookEventName: 'PermissionRequest',
+      decision: { behavior: 'deny', message: 'Forbidden.' },
+    },
+  });
+});
+
+test('PermissionRequest failures also fail closed with the event-specific contract', async () => {
+  const output = await dispatchHook({ hook_event_name: 'PermissionRequest' }, {
+    enabled: true,
+    handlers: { PermissionRequest: () => { throw new Error('policy unavailable'); } },
+    failClosedEvents: new Set(['PermissionRequest']),
+    auditInternalError() {},
+  });
+  assert.equal(output.hookSpecificOutput.hookEventName, 'PermissionRequest');
+  assert.equal(output.hookSpecificOutput.decision.behavior, 'deny');
+});
+
 test('third identical failure opens the circuit', async () => {
   let count = 0;
   const core = { failures: { record: () => ({ state: { status: ++count >= 3 ? 'open' : 'warning' } }) }, events: { append() {} } };
@@ -115,6 +167,17 @@ test('successful observation resets an existing circuit', async () => {
   };
   assert.deepEqual(await handleObservation({ event: 'PostToolUse', toolName: 'Bash', toolResult: { ok: true } }, core), {});
   assert.equal(reset, true);
+});
+
+test('lifecycle events are recorded without pretending a tool passed', async () => {
+  const events = [];
+  const core = { events: { append: event => events.push(event) } };
+  await handleLifecycle({ event: 'SessionEnd', taskId: 't1' }, core);
+  await handleLifecycle({ event: 'SubagentStart', taskId: 't1' }, core);
+  assert.deepEqual(events.map(event => [event.kind, event.status, event.reasonCode]), [
+    ['session', 'observed', 'session_end'],
+    ['subagent', 'observed', 'subagent_start'],
+  ]);
 });
 
 test('SessionStart searches SQLite memory and makes retrieval failure visible', async () => {

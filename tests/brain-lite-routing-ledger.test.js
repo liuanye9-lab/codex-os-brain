@@ -54,7 +54,7 @@ function event(overrides = {}) {
 
 test('appendEvent keeps an allowlisted, redacted, path-minimized JSONL record', () => {
   const file = tempLedger();
-  const githubToken = ['ghp', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_');
+  const githubToken = ['ghp', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('_'); // pragma: allowlist secret
   const syntheticEmail = ['owner', 'example.com'].join('@');
   const homePath = ['', 'Users', 'example', 'secret', 'project', 'app.js'].join('/');
   const envKey = ['API', 'KEY'].join('_');
@@ -136,7 +136,7 @@ test('ledger cannot bypass MAC verification by downgrading records to an unsigne
 test('sanitizeEvent drops unknown nested content rather than recursively storing it', () => {
   const saved = sanitizeEvent(event({
     privateMemory: { raw: 'private' },
-    featureSummary: { clarity: 'clear', verifiable: true, secret: 'nope' },
+    featureSummary: { clarity: 'clear', verifiable: true, secret: 'nope' }, // pragma: allowlist secret
   }));
 
   assert.equal('privateMemory' in saved, false);

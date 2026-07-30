@@ -24,5 +24,9 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run check
-      - run: npm run eval:mechanism
+      - run: npm run eval:replay-contract
       - run: npm run smoke:production
+      - if: matrix.node == 24
+        run: npm run sbom -- --output sbom.cdx.json
+      - if: matrix.node == 24
+        run: npm run test:pack-install

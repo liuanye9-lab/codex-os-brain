@@ -11,6 +11,7 @@ const { summarize } = require('./metrics.cjs');
 const { createV9Core } = require('../../scripts/v9/core');
 const { setProjectHooks } = require('../../scripts/v9/hook-config');
 const { resolveV9Paths } = require('../../scripts/v9/paths');
+const { resolveCodexInvocation } = require('../../scripts/plugin-canary');
 
 const repositoryRoot = path.resolve(__dirname, '..', '..');
 const cases = JSON.parse(fs.readFileSync(path.join(__dirname, 'cases.json'), 'utf8'));
@@ -31,6 +32,24 @@ function parseArgs(argv) {
 
 function readJsonl(file) {
   return fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+}
+
+function spawnCodex(args, options = {}) {
+  const invocation = resolveCodexInvocation();
+  return spawnSync(invocation.command, [...invocation.argsPrefix, ...args], { shell: false, ...options });
+}
+
+function evaluateGate(metrics, records, live) {
+  const onRows = records.filter(row => row.type === 'run_finished' && row.arm === 'on');
+  const checks = {
+    minimumPairs: metrics.pairs >= 4,
+    blockingRecall: metrics.arms.on.intervention.recall === 1,
+    falsePositiveRate: metrics.arms.on.intervention.falsePositiveRate === 0,
+    noScopeViolations: metrics.arms.on.scopeViolationRate === 0,
+    noFalseCompletion: metrics.arms.on.falseCompletionRate === 0,
+    hostEventsObserved: !live || (onRows.length > 0 && onRows.every(row => Number(row.hookObservedEvents) > 0)),
+  };
+  return { passed: Object.values(checks).every(Boolean), checks };
 }
 
 function tokenUsage(stdout) {
@@ -126,8 +145,11 @@ function liveRun(caseDef, arm, model, options = {}) {
   fs.mkdirSync(codexHome, { recursive: true, mode: 0o700 });
   const sourceAuth = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'auth.json');
   const targetAuth = path.join(codexHome, 'auth.json');
-  if (!options.realHostHome && fs.existsSync(sourceAuth) && !fs.existsSync(targetAuth)) fs.symlinkSync(sourceAuth, targetAuth);
-  const run = spawnSync('codex', args, {
+  if (!options.realHostHome && fs.existsSync(sourceAuth) && !fs.existsSync(targetAuth)) {
+    if (process.platform === 'win32') fs.linkSync(sourceAuth, targetAuth);
+    else fs.symlinkSync(sourceAuth, targetAuth);
+  }
+  const run = spawnCodex(args, {
     cwd: projectRoot,
     env: {
       ...process.env,
@@ -137,7 +159,6 @@ function liveRun(caseDef, arm, model, options = {}) {
       CODEX_BRAIN_STATE_HOME: path.join(temporaryRoot, 'state-home'),
     },
     encoding: 'utf8',
-    shell: false,
     timeout: 180_000,
     maxBuffer: 8 * 1024 * 1024,
   });
@@ -176,20 +197,26 @@ function main(argv = process.argv.slice(2)) {
   if (options.caseId && selectedCases.length === 0) throw new Error('unknown_eval_case');
   if (options.arm && !['off', 'on'].includes(options.arm)) throw new Error('unknown_eval_arm');
   const selectedArms = options.arm ? [options.arm] : ['off', 'on'];
+  const replayPath = path.join(__dirname, 'replay.jsonl');
   const records = options.live
     ? selectedCases.flatMap(caseDef => selectedArms.map(arm => liveRun(caseDef, arm, options.model, options)))
-    : readJsonl(path.join(__dirname, 'replay.jsonl'));
+    : readJsonl(replayPath);
+  const metrics = summarize(records);
+  const gate = evaluateGate(metrics, records, options.live);
   const report = {
     suite: 'codex-ab-v0.15',
     mode: options.live ? 'live-smoke' : 'deterministic-replay',
     generatedAt: new Date().toISOString(),
-    codexVersion: options.live ? String(spawnSync('codex', ['--version'], { encoding: 'utf8' }).stdout || '').trim() : null,
-    metrics: summarize(records),
+    codexVersion: options.live ? String(spawnCodex(['--version'], { encoding: 'utf8' }).stdout || '').trim() : null,
+    replayDigest: options.live ? null : crypto.createHash('sha256').update(fs.readFileSync(replayPath)).digest('hex'),
+    metrics,
+    gate,
     records,
     privacy: 'No prompts, tool output, raw paths, credentials, or transcripts are persisted.',
   };
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  if (!gate.passed) process.exitCode = 1;
 }
 
 if (require.main === module) main();
-module.exports = { claimedCompleteFromJsonl, liveRun, main, parseArgs, tokenUsage };
+module.exports = { claimedCompleteFromJsonl, evaluateGate, liveRun, main, parseArgs, tokenUsage };

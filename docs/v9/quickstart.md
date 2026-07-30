@@ -143,5 +143,5 @@ See [local embeddings](local-embeddings.md).
 - `brain hooks disable --confirm`
 - `brain memory recover --confirm` clears a proven-stale restore lock and crash journal without requiring another restore
 - Set V9 `enabled` to false for read-only runtime
-- `fallbackVersion: 8` keeps V8 selectable
+- `fallbackVersion: 8` is compatibility metadata only. V8 is not bundled or runtime-selectable; use a separately retained V8 installation for rollback.
 - Migration / publish never exposed as MCP mutations

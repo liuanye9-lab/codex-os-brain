@@ -8,6 +8,7 @@ async function handleStop(input, core) {
     return blockDecision(
       'active_contract_missing',
       'Completion paused because an active task guard exists but its signed contract is missing or corrupt.',
+      'Stop',
     );
   }
   if (core.contracts?.active && !core.contracts.active()) return {};
@@ -48,6 +49,7 @@ async function handleStop(input, core) {
   return blockDecision(
     'completion_unverified',
     `Required criteria remain unverified by harness re-run: ${remaining.join(', ') || 'unknown'}. Agent self-claims do not count.`,
+    'Stop',
   );
 }
 

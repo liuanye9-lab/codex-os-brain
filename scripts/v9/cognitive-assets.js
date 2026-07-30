@@ -12,7 +12,7 @@ const SENSITIVE_TYPES = new Set([
   'religion', 'political_affiliation',
 ]);
 const EPISTEMIC_TYPES = new Set(['source_fact','speaker_claim','user_experience','synthesis_inference','project_application']);
-const ALLOWED_USES = new Set(['evidence_extraction','recall','playbook_compile','projection']);
+const ALLOWED_USES = new Set(['evidence_extraction','recall','playbook_compile','knowledge_compile','projection']);
 
 function id(prefix) { return `${prefix}_${crypto.randomBytes(12).toString('hex')}`; }
 function now() { return new Date().toISOString(); }
@@ -73,6 +73,13 @@ function recordAssetVersion(db, assetType, asset, action, payload = {}) {
     VALUES(?,?,?,?,?)`).run(assetType, assetId, asset.version, stableJson(asset), now());
   db.prepare(`INSERT INTO cognitive_asset_events(event_id,asset_type,asset_id,asset_version,action,payload_json,created_at)
     VALUES(?,?,?,?,?,?,?)`).run(id('asset_event'), assetType, assetId, asset.version, action, stableJson(payload), now());
+  return asset;
+}
+
+function recordProductVersion(db, assetType, asset, action, observedAt) {
+  const assetId = assetType === 'knowledge_base' ? asset.knowledgeBaseId : asset.agentId;
+  db.prepare(`INSERT INTO cognitive_product_versions(asset_type,asset_id,version,snapshot_json,action,created_at)
+    VALUES(?,?,?,?,?,?)`).run(assetType, assetId, asset.version, stableJson(asset), action, observedAt);
   return asset;
 }
 
@@ -166,6 +173,47 @@ function mapPlaybook(row) {
   };
 }
 
+function mapKnowledgeBase(row) {
+  if (!row) return null;
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    knowledgeBaseId: row.knowledge_base_id,
+    name: row.name,
+    domain: row.domain,
+    description: row.description,
+    cognitionUnitIds: json(row.cognition_unit_ids_json, []),
+    playbookIds: json(row.playbook_ids_json, []),
+    retrievalPolicy: json(row.retrieval_policy_json, {}),
+    dependencyDigest: row.dependency_digest,
+    status: row.status,
+    privacyLevel: row.privacy_level,
+    version: row.version,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapAgentProfile(row) {
+  if (!row) return null;
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    agentId: row.agent_id,
+    name: row.name,
+    purpose: row.purpose,
+    knowledgeBaseIds: json(row.knowledge_base_ids_json, []),
+    playbookIds: json(row.playbook_ids_json, []),
+    toolRefs: json(row.tool_refs_json, []),
+    dependencyRefs: json(row.dependency_refs_json, []),
+    contextBudgetTokens: row.context_budget_tokens,
+    dependencyDigest: row.dependency_digest,
+    readinessStatus: row.readiness_status,
+    deploymentState: row.deployment_state,
+    version: row.version,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function createCognitiveAssetProvider({
   paths = resolveV9Paths(),
   dbPath = paths.memoryDbPath,
@@ -176,6 +224,7 @@ function createCognitiveAssetProvider({
   clock = () => new Date(),
 } = {}) {
   const memory = createMemoryService({ paths, dbPath });
+  const now = () => clock().toISOString();
   function using(fn) {
     const db = openMemoryDatabase({ paths, dbPath });
     try { return fn(db); } finally { db.close(); }
@@ -575,9 +624,19 @@ function createCognitiveAssetProvider({
     try {
       return transaction(db, fn);
     } catch (error) {
-      if (error.code === 'playbook_stale_blocked' && error.details?.playbookId) {
+      if (error.details?.playbookId) {
         db.prepare("UPDATE cognitive_playbooks SET validation_status='stale_blocked',updated_at=? WHERE playbook_id=?")
           .run(now(), error.details.playbookId);
+      }
+      if (['knowledge_base_stale_blocked','agent_profile_stale_blocked'].includes(error.code)) {
+        if (error.details?.knowledgeBaseId) {
+          db.prepare("UPDATE cognitive_knowledge_bases SET status='stale_blocked',updated_at=? WHERE knowledge_base_id=?")
+            .run(now(), error.details.knowledgeBaseId);
+        }
+        if (error.details?.agentId) {
+          db.prepare("UPDATE cognitive_agent_profiles SET readiness_status='stale_blocked',updated_at=? WHERE agent_id=?")
+            .run(now(), error.details.agentId);
+        }
       }
       throw error;
     }
@@ -700,6 +759,388 @@ function createCognitiveAssetProvider({
     }));
   }
 
+  function strictestPrivacy(rows) {
+    const order = new Map([['public',0],['private',1],['restricted',2],['local_only',3]]);
+    return rows.reduce((value, row) => (order.get(row.privacy_level) ?? 3) > (order.get(value) ?? 3)
+      ? row.privacy_level : value, 'public');
+  }
+
+  function knowledgeBaseDependencyState(db, unitIds, playbookIds) {
+    const units = unitIds.map(unitId => db.prepare('SELECT * FROM cognition_units WHERE unit_id=?').get(unitId));
+    if (units.some(unit => !unit || unit.status !== 'confirmed' || unit.sensitive_inference === 1)) {
+      throw coded('confirmed_non_sensitive_cognition_required');
+    }
+    const evidence = [];
+    const sources = [];
+    for (const unit of units) {
+      for (const evidenceId of json(unit.evidence_dependencies_json, [])) {
+        const item = db.prepare('SELECT * FROM cognitive_evidence_assertions WHERE evidence_id=?').get(evidenceId);
+        const source = item ? db.prepare('SELECT * FROM source_documents WHERE document_id=?').get(item.document_id) : null;
+        const allowedUses = source ? json(source.allowed_uses_json, []) : [];
+        const evidenceCurrent = item && item.anchor_status === 'verified' && item.entailment_status === 'verified'
+          && ['verified','not_applicable'].includes(item.attribution_status)
+          && (item.epistemic_type !== 'source_fact' || item.external_fact_status === 'verified');
+        if (!source || source.version !== Number(item?.source_version) || source.trust_status !== 'trusted'
+          || !allowedUses.includes('knowledge_compile') || !evidenceCurrent) {
+          throw coded('knowledge_source_dependency_stale', { sourceId: item?.document_id || null });
+        }
+        evidence.push([item.evidence_id, item.updated_at, item.entailment_status, item.external_fact_status]);
+        sources.push([source.document_id, source.version, source.content_hash, source.trust_status, allowedUses.sort()]);
+      }
+    }
+    const playbooks = playbookIds.map(playbookId => db.prepare('SELECT * FROM cognitive_playbooks WHERE playbook_id=?').get(playbookId));
+    if (playbooks.some(playbook => !playbook || playbook.validation_status !== 'current'
+      || !['runnable_playbook','verified_capability'].includes(playbook.semantic_maturity))) {
+      throw coded('runnable_current_playbook_required');
+    }
+    for (const playbook of playbooks) validatePlaybookDependencies(db, playbook);
+    const state = {
+      units: units.map(unit => [unit.unit_id, unit.version, unit.status]),
+      evidence: evidence.sort((left, right) => left[0].localeCompare(right[0])),
+      sources: sources.sort((left, right) => left[0].localeCompare(right[0])),
+      playbooks: playbooks.map(playbook => [playbook.playbook_id, playbook.version, playbook.semantic_maturity,
+        playbook.validation_status, playbook.dependency_digest]),
+    };
+    return { units, playbooks, digest: hash(stableJson(state)), privacyLevel: strictestPrivacy([...units, ...playbooks]) };
+  }
+
+  function compileKnowledgeBase(input = {}) {
+    return using(db => withPersistedStaleBlock(db, () => {
+      const knowledgeBaseId = clean(input.knowledgeBaseId || id('kb'), 160);
+      const name = clean(input.name, 240);
+      const domain = clean(input.domain, 240);
+      const description = clean(input.description, 1000);
+      const unitIds = uniqueStrings(input.cognitionUnitIds, 100, 160);
+      const playbookIds = uniqueStrings(input.playbookIds, 50, 160);
+      if (!knowledgeBaseId || !name || !domain || !unitIds.length || !playbookIds.length) {
+        throw coded('knowledge_base_contract_required');
+      }
+      const dependency = knowledgeBaseDependencyState(db, unitIds, playbookIds);
+      const modes = uniqueStrings(input.retrievalPolicy?.modes, 4, 40)
+        .filter(mode => ['lexical','semantic','graph','temporal'].includes(mode));
+      const retrievalPolicy = {
+        modes: modes.length ? modes : ['lexical'],
+        maxClaims: Math.max(1, Math.min(50, Number(input.retrievalPolicy?.maxClaims || 12))),
+        maxPlaybooks: Math.max(1, Math.min(20, Number(input.retrievalPolicy?.maxPlaybooks || 5))),
+        requireCitations: input.retrievalPolicy?.requireCitations !== false,
+      };
+      const at = now();
+      db.prepare(`INSERT INTO cognitive_knowledge_bases(
+        knowledge_base_id,name,domain,description,cognition_unit_ids_json,playbook_ids_json,
+        retrieval_policy_json,dependency_digest,status,privacy_level,version,created_at,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,'draft',?,1,?,?)`).run(
+        knowledgeBaseId, name, domain, description, stableJson(unitIds), stableJson(playbookIds),
+        stableJson(retrievalPolicy), dependency.digest, dependency.privacyLevel, at, at,
+      );
+      return recordProductVersion(db, 'knowledge_base',
+        mapKnowledgeBase(db.prepare('SELECT * FROM cognitive_knowledge_bases WHERE knowledge_base_id=?').get(knowledgeBaseId)),
+        'compile', at);
+    }));
+  }
+
+  function validateKnowledgeBaseDependencies(db, row) {
+    let dependency;
+    try {
+      dependency = knowledgeBaseDependencyState(db, json(row.cognition_unit_ids_json, []), json(row.playbook_ids_json, []));
+    } catch (error) {
+      throw coded('knowledge_base_stale_blocked', {
+        knowledgeBaseId: row.knowledge_base_id,
+        playbookId: error.details?.playbookId,
+        cause: error.code || error.message,
+      });
+    }
+    if (dependency.digest !== row.dependency_digest) {
+      throw coded('knowledge_base_stale_blocked', { knowledgeBaseId: row.knowledge_base_id, cause: 'dependency_digest_changed' });
+    }
+    return dependency;
+  }
+
+  function publishKnowledgeBase(knowledgeBaseId, input = {}) {
+    return using(db => withPersistedStaleBlock(db, () => {
+      const row = db.prepare('SELECT * FROM cognitive_knowledge_bases WHERE knowledge_base_id=?').get(knowledgeBaseId);
+      if (!row) throw coded('knowledge_base_not_found');
+      if (row.status !== 'draft' || Number(input.expectedVersion) !== row.version) throw coded('knowledge_base_version_conflict');
+      validateKnowledgeBaseDependencies(db, row);
+      const scope = { from: 'draft', to: 'published', dependencyDigest: row.dependency_digest };
+      consumeApproval(db, input.approvalReceipt, {
+        objectId: knowledgeBaseId,
+        objectVersion: row.version,
+        action: 'publish_knowledge_base',
+        scope,
+      });
+      const at = now();
+      db.prepare("UPDATE cognitive_knowledge_bases SET status='published',version=version+1,updated_at=? WHERE knowledge_base_id=? AND version=?")
+        .run(at, knowledgeBaseId, row.version);
+      return recordProductVersion(db, 'knowledge_base',
+        mapKnowledgeBase(db.prepare('SELECT * FROM cognitive_knowledge_bases WHERE knowledge_base_id=?').get(knowledgeBaseId)),
+        'publish', at);
+    }));
+  }
+
+  function normalizeDependencyRefs(value) {
+    return (Array.isArray(value) ? value : []).map(ref => ({
+      dependencyType: clean(ref?.dependencyType, 80),
+      dependencyId: clean(ref?.dependencyId, 200),
+      version: Number(ref?.version),
+      digest: clean(ref?.digest, 64),
+    }));
+  }
+
+  function agentDependencyState(db, knowledgeBaseIds, directPlaybookIds, dependencyRefs, toolRefs) {
+    const knowledgeBases = knowledgeBaseIds.map(knowledgeBaseId =>
+      db.prepare('SELECT * FROM cognitive_knowledge_bases WHERE knowledge_base_id=?').get(knowledgeBaseId));
+    if (knowledgeBases.some(item => !item || item.status !== 'published')) throw coded('published_knowledge_base_required');
+    for (const item of knowledgeBases) validateKnowledgeBaseDependencies(db, item);
+    const allPlaybookIds = [...new Set([
+      ...directPlaybookIds,
+      ...knowledgeBases.flatMap(item => json(item.playbook_ids_json, [])),
+    ])].sort();
+    const playbooks = allPlaybookIds.map(playbookId => db.prepare('SELECT * FROM cognitive_playbooks WHERE playbook_id=?').get(playbookId));
+    if (playbooks.some(playbook => !playbook || playbook.validation_status !== 'current'
+      || !['runnable_playbook','verified_capability'].includes(playbook.semantic_maturity))) {
+      throw coded('runnable_current_playbook_required');
+    }
+    for (const playbook of playbooks) validatePlaybookDependencies(db, playbook);
+    const external = dependencyRegistryState(db, dependencyRefs);
+    if (toolRefs.some(toolRef => !external.some(ref => ref.dependencyType === 'tool_contract' && ref.dependencyId === toolRef))) {
+      throw coded('tool_contract_dependency_required');
+    }
+    const state = {
+      knowledgeBases: knowledgeBases.map(item => [item.knowledge_base_id, item.version, item.status, item.dependency_digest]),
+      playbooks: playbooks.map(item => [item.playbook_id, item.version, item.semantic_maturity, item.dependency_digest]),
+      external,
+      toolRefs,
+    };
+    return { knowledgeBases, playbooks, external, digest: hash(stableJson(state)) };
+  }
+
+  function compileAgentProfile(input = {}) {
+    return using(db => withPersistedStaleBlock(db, () => {
+      const agentId = clean(input.agentId || id('agent'), 160);
+      const name = clean(input.name, 240);
+      const purpose = clean(input.purpose, 1000);
+      const knowledgeBaseIds = uniqueStrings(input.knowledgeBaseIds, 20, 160);
+      const playbookIds = uniqueStrings(input.playbookIds, 30, 160);
+      const toolRefs = uniqueStrings(input.toolRefs, 50, 200);
+      const dependencyRefs = normalizeDependencyRefs(input.dependencyRefs);
+      const contextBudgetTokens = Number(input.contextBudgetTokens || 2000);
+      if (!agentId || !name || !purpose || !knowledgeBaseIds.length || !Number.isInteger(contextBudgetTokens)
+        || contextBudgetTokens < 100 || contextBudgetTokens > 100_000) throw coded('agent_profile_contract_required');
+      const dependency = agentDependencyState(db, knowledgeBaseIds, playbookIds, dependencyRefs, toolRefs);
+      const at = now();
+      db.prepare(`INSERT INTO cognitive_agent_profiles(
+        agent_id,name,purpose,knowledge_base_ids_json,playbook_ids_json,tool_refs_json,dependency_refs_json,
+        context_budget_tokens,dependency_digest,readiness_status,deployment_state,version,created_at,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,'draft','draft',1,?,?)`).run(
+        agentId, name, purpose, stableJson(knowledgeBaseIds), stableJson(playbookIds), stableJson(toolRefs),
+        stableJson(dependencyRefs), contextBudgetTokens, dependency.digest, at, at,
+      );
+      return recordProductVersion(db, 'agent',
+        mapAgentProfile(db.prepare('SELECT * FROM cognitive_agent_profiles WHERE agent_id=?').get(agentId)),
+        'compile', at);
+    }));
+  }
+
+  function assessAgentRow(db, row, targetState = 'shadow') {
+    let dependency;
+    try {
+      dependency = agentDependencyState(db, json(row.knowledge_base_ids_json, []), json(row.playbook_ids_json, []),
+        json(row.dependency_refs_json, []), json(row.tool_refs_json, []));
+    } catch (error) {
+      throw coded('agent_profile_stale_blocked', {
+        agentId: row.agent_id,
+        knowledgeBaseId: error.details?.knowledgeBaseId,
+        playbookId: error.details?.playbookId,
+        cause: error.code || error.message,
+      });
+    }
+    if (dependency.digest !== row.dependency_digest) {
+      throw coded('agent_profile_stale_blocked', { agentId: row.agent_id, cause: 'dependency_digest_changed' });
+    }
+    const blockers = [];
+    if (targetState === 'canary') {
+      for (const playbook of dependency.playbooks) {
+        const metrics = promotionMetrics(db, playbook);
+        if (metrics.realCases < 1 || metrics.successRate < 1 || metrics.criticalSafetyFailures > 0) {
+          blockers.push(`playbook:${playbook.playbook_id}:canary_evidence_required`);
+        }
+      }
+    }
+    if (targetState === 'active') {
+      for (const playbook of dependency.playbooks) {
+        if (playbook.semantic_maturity !== 'verified_capability') blockers.push(`playbook:${playbook.playbook_id}:verified_capability_required`);
+      }
+    }
+    return {
+      protocolVersion: PROTOCOL_VERSION,
+      agentId: row.agent_id,
+      targetState,
+      ready: blockers.length === 0,
+      blockers,
+      dependencyDigest: dependency.digest,
+      counts: { knowledgeBases: dependency.knowledgeBases.length, playbooks: dependency.playbooks.length, toolContracts: json(row.tool_refs_json, []).length },
+    };
+  }
+
+  function assessAgent(agentId, input = {}) {
+    return using(db => withPersistedStaleBlock(db, () => {
+      const row = db.prepare('SELECT * FROM cognitive_agent_profiles WHERE agent_id=?').get(agentId);
+      if (!row) throw coded('agent_profile_not_found');
+      const targetState = input.targetState || (row.deployment_state === 'draft' ? 'shadow' : row.deployment_state);
+      if (!['shadow','canary','active'].includes(targetState)) throw coded('invalid_agent_target_state');
+      return assessAgentRow(db, row, targetState);
+    }));
+  }
+
+  function deployAgent(agentId, input = {}) {
+    return using(db => withPersistedStaleBlock(db, () => {
+      const row = db.prepare('SELECT * FROM cognitive_agent_profiles WHERE agent_id=?').get(agentId);
+      if (!row) throw coded('agent_profile_not_found');
+      if (Number(input.expectedVersion) !== row.version) throw coded('agent_profile_version_conflict');
+      const targetState = clean(input.targetState, 40);
+      const allowed = { draft: ['shadow'], shadow: ['canary'], canary: ['active'] };
+      if (!allowed[row.deployment_state]?.includes(targetState)) throw coded('invalid_agent_deployment_transition');
+      const assessment = assessAgentRow(db, row, targetState);
+      if (!assessment.ready) throw coded('agent_readiness_gate_failed', assessment);
+      const scope = { from: row.deployment_state, to: targetState, dependencyDigest: assessment.dependencyDigest };
+      consumeApproval(db, input.approvalReceipt, {
+        objectId: agentId,
+        objectVersion: row.version,
+        action: 'deploy_agent',
+        scope,
+      });
+      const at = now();
+      db.prepare("UPDATE cognitive_agent_profiles SET readiness_status='ready',deployment_state=?,version=version+1,updated_at=? WHERE agent_id=? AND version=?")
+        .run(targetState, at, agentId, row.version);
+      return recordProductVersion(db, 'agent',
+        mapAgentProfile(db.prepare('SELECT * FROM cognitive_agent_profiles WHERE agent_id=?').get(agentId)),
+        'deploy', at);
+    }));
+  }
+
+  function prepareAgentContext(agentId, input = {}) {
+    return using(db => withPersistedStaleBlock(db, () => {
+      const row = db.prepare('SELECT * FROM cognitive_agent_profiles WHERE agent_id=?').get(agentId);
+      if (!row) throw coded('agent_profile_not_found');
+      if (!['shadow','canary','active'].includes(row.deployment_state) || row.readiness_status !== 'ready') {
+        throw coded('deployed_ready_agent_required');
+      }
+      const purpose = clean(input.purpose || row.purpose, 1000);
+      if (purpose !== row.purpose) throw coded('agent_purpose_mismatch');
+      const assessment = assessAgentRow(db, row, row.deployment_state);
+      if (!assessment.ready) throw coded('agent_readiness_gate_failed', assessment);
+      const requestedBudget = Number(input.tokenBudget || row.context_budget_tokens);
+      const tokenBudget = Math.max(100, Math.min(row.context_budget_tokens, Number.isFinite(requestedBudget) ? requestedBudget : row.context_budget_tokens));
+      const knowledgeBases = json(row.knowledge_base_ids_json, []).map(knowledgeBaseId =>
+        db.prepare('SELECT * FROM cognitive_knowledge_bases WHERE knowledge_base_id=?').get(knowledgeBaseId));
+      const claimIds = [...new Set(knowledgeBases.flatMap(item => json(item.cognition_unit_ids_json, [])))].sort();
+      const playbookIds = [...new Set([
+        ...json(row.playbook_ids_json, []),
+        ...knowledgeBases.flatMap(item => json(item.playbook_ids_json, [])),
+      ])].sort();
+      const claims = claimIds.map(unitId => mapUnit(db.prepare('SELECT * FROM cognition_units WHERE unit_id=?').get(unitId)))
+        .filter(Boolean).map(unit => ({ unitId: unit.unitId, version: unit.version, claim: unit.claim,
+          cognitionType: unit.cognitionType, boundary: unit.boundary, falsifier: unit.falsifier,
+          evidenceDependencies: unit.evidenceDependencies }));
+      const playbooks = playbookIds.map(playbookId => mapPlaybook(db.prepare('SELECT * FROM cognitive_playbooks WHERE playbook_id=?').get(playbookId)))
+        .filter(Boolean).map(playbook => ({ playbookId: playbook.playbookId, version: playbook.version, name: playbook.name,
+          targetProblem: playbook.targetProblem, manifest: playbook.manifest, semanticMaturity: playbook.semanticMaturity }));
+      const retrievalPolicies = knowledgeBases.map(item => json(item.retrieval_policy_json, {}));
+      const maxClaims = Math.max(1, retrievalPolicies.reduce((total, policy) => total + Number(policy.maxClaims || 12), 0));
+      const maxPlaybooks = Math.max(1, retrievalPolicies.reduce((total, policy) => total + Number(policy.maxPlaybooks || 5), 0));
+      const eligibleClaims = claims.slice(0, maxClaims);
+      const eligiblePlaybooks = playbooks.slice(0, maxPlaybooks);
+      const selected = { playbooks: [], knowledge: [] };
+      const buildContext = estimatedTokens => ({
+        protocolVersion: PROTOCOL_VERSION,
+        label: 'GOVERNED COGNITIVE CONTEXT',
+        agentId,
+        purpose,
+        deploymentState: row.deployment_state,
+        tokenBudget,
+        estimatedTokens,
+        omitted: { playbooks: playbooks.length - selected.playbooks.length, knowledge: claims.length - selected.knowledge.length },
+        knowledge: selected.knowledge,
+        playbooks: selected.playbooks,
+        dependencyDigest: row.dependency_digest,
+        citationsRequired: retrievalPolicies.some(policy => policy.requireCitations !== false),
+        sourceContentIncluded: false,
+        executionPerformed: false,
+      });
+      const estimateCompletePackage = () => Math.ceil(stableJson({
+        ...buildContext(100000),
+        contextDigest: 'f'.repeat(64),
+      }).length / 4);
+      let estimatedTokens = estimateCompletePackage();
+      if (estimatedTokens > tokenBudget) {
+        throw coded('agent_context_budget_too_small', { tokenBudget, minimumTokens: estimatedTokens });
+      }
+      const include = (bucket, item) => {
+        selected[bucket].push(item);
+        const nextEstimate = estimateCompletePackage();
+        if (nextEstimate > tokenBudget) {
+          selected[bucket].pop();
+          return false;
+        }
+        estimatedTokens = nextEstimate;
+        return true;
+      };
+      for (const playbook of eligiblePlaybooks) include('playbooks', playbook);
+      for (const claim of eligibleClaims) include('knowledge', claim);
+      const context = buildContext(estimatedTokens);
+      return { ...context, contextDigest: hash(stableJson(context)) };
+    }));
+  }
+
+  function revokeProduct(assetType, assetId, input = {}) {
+    return using(db => transaction(db, () => {
+      if (!['knowledge_base','agent'].includes(assetType)) throw coded('invalid_product_asset_type');
+      const table = assetType === 'knowledge_base' ? 'cognitive_knowledge_bases' : 'cognitive_agent_profiles';
+      const key = assetType === 'knowledge_base' ? 'knowledge_base_id' : 'agent_id';
+      const row = db.prepare(`SELECT * FROM ${table} WHERE ${key}=?`).get(assetId);
+      if (!row) throw coded('cognitive_product_not_found');
+      const scope = { assetType, assetId, cascade: true };
+      consumeApproval(db, input.approvalReceipt, { objectId: assetId, objectVersion: row.version, action: 'revoke_product', scope });
+      const at = now();
+      if (assetType === 'knowledge_base') {
+        db.prepare("UPDATE cognitive_knowledge_bases SET status='revoked',version=version+1,updated_at=? WHERE knowledge_base_id=?").run(at, assetId);
+        for (const agent of db.prepare('SELECT * FROM cognitive_agent_profiles').all()) {
+          if (json(agent.knowledge_base_ids_json, []).includes(assetId)) {
+            db.prepare("UPDATE cognitive_agent_profiles SET readiness_status='stale_blocked',updated_at=? WHERE agent_id=?").run(at, agent.agent_id);
+          }
+        }
+      } else {
+        db.prepare("UPDATE cognitive_agent_profiles SET readiness_status='revoked',deployment_state='revoked',version=version+1,updated_at=? WHERE agent_id=?").run(at, assetId);
+      }
+      const mapped = assetType === 'knowledge_base'
+        ? mapKnowledgeBase(db.prepare('SELECT * FROM cognitive_knowledge_bases WHERE knowledge_base_id=?').get(assetId))
+        : mapAgentProfile(db.prepare('SELECT * FROM cognitive_agent_profiles WHERE agent_id=?').get(assetId));
+      return recordProductVersion(db, assetType, mapped, 'revoke', at);
+    }));
+  }
+
+  function productMap() {
+    return using(db => ({
+      protocolVersion: PROTOCOL_VERSION,
+      model: 'Evidence -> Cognition -> Playbook -> Knowledge Base -> Agent',
+      stages: [
+        { id: 'evidence', total: Number(db.prepare('SELECT COUNT(*) AS count FROM cognitive_evidence_assertions').get().count) },
+        { id: 'cognition', total: Number(db.prepare('SELECT COUNT(*) AS count FROM cognition_units').get().count),
+          ready: Number(db.prepare("SELECT COUNT(*) AS count FROM cognition_units WHERE status='confirmed'").get().count) },
+        { id: 'playbook', total: Number(db.prepare('SELECT COUNT(*) AS count FROM cognitive_playbooks').get().count),
+          ready: Number(db.prepare("SELECT COUNT(*) AS count FROM cognitive_playbooks WHERE validation_status='current' AND semantic_maturity IN ('runnable_playbook','verified_capability')").get().count) },
+        { id: 'knowledge_base', total: Number(db.prepare('SELECT COUNT(*) AS count FROM cognitive_knowledge_bases').get().count),
+          ready: Number(db.prepare("SELECT COUNT(*) AS count FROM cognitive_knowledge_bases WHERE status='published'").get().count),
+          stale: Number(db.prepare("SELECT COUNT(*) AS count FROM cognitive_knowledge_bases WHERE status='stale_blocked'").get().count) },
+        { id: 'agent', total: Number(db.prepare('SELECT COUNT(*) AS count FROM cognitive_agent_profiles').get().count),
+          ready: Number(db.prepare("SELECT COUNT(*) AS count FROM cognitive_agent_profiles WHERE readiness_status='ready'").get().count),
+          active: Number(db.prepare("SELECT COUNT(*) AS count FROM cognitive_agent_profiles WHERE deployment_state='active'").get().count),
+          stale: Number(db.prepare("SELECT COUNT(*) AS count FROM cognitive_agent_profiles WHERE readiness_status='stale_blocked'").get().count) },
+      ],
+      defaults: { automaticPromotion: false, automaticExecution: false, protectedPublication: true, protectedDeployment: true },
+    }));
+  }
+
   function createProjection(input = {}) {
     return using(db => transaction(db, () => {
       const recipientAgent = clean(input.recipientAgent, 200);
@@ -815,11 +1256,15 @@ function createCognitiveAssetProvider({
         liveDatabaseEncrypted: false,
         sensitivePersistenceAllowed: false,
         counts: {
-        sources: Number(db.prepare('SELECT COUNT(*) AS count FROM source_documents').get().count),
-        quarantinedSources: Number(db.prepare("SELECT COUNT(*) AS count FROM source_documents WHERE trust_status='quarantined'").get().count),
-        cognitionCandidates: Number(db.prepare("SELECT COUNT(*) AS count FROM cognition_units WHERE status='candidate'").get().count),
-        confirmedCognition: Number(db.prepare("SELECT COUNT(*) AS count FROM cognition_units WHERE status='confirmed'").get().count),
-        playbooks: Number(db.prepare('SELECT COUNT(*) AS count FROM cognitive_playbooks').get().count),
+          sources: Number(db.prepare('SELECT COUNT(*) AS count FROM source_documents').get().count),
+          quarantinedSources: Number(db.prepare("SELECT COUNT(*) AS count FROM source_documents WHERE trust_status='quarantined'").get().count),
+          cognitionCandidates: Number(db.prepare("SELECT COUNT(*) AS count FROM cognition_units WHERE status='candidate'").get().count),
+          confirmedCognition: Number(db.prepare("SELECT COUNT(*) AS count FROM cognition_units WHERE status='confirmed'").get().count),
+          playbooks: Number(db.prepare('SELECT COUNT(*) AS count FROM cognitive_playbooks').get().count),
+          knowledgeBases: Number(db.prepare('SELECT COUNT(*) AS count FROM cognitive_knowledge_bases').get().count),
+          publishedKnowledgeBases: Number(db.prepare("SELECT COUNT(*) AS count FROM cognitive_knowledge_bases WHERE status='published'").get().count),
+          agentProfiles: Number(db.prepare('SELECT COUNT(*) AS count FROM cognitive_agent_profiles').get().count),
+          readyAgents: Number(db.prepare("SELECT COUNT(*) AS count FROM cognitive_agent_profiles WHERE readiness_status='ready'").get().count),
           activeProjections: Number(db.prepare("SELECT COUNT(*) AS count FROM cognitive_projection_grants WHERE status='active' AND expires_at>?").get(now()).count),
           retentionDue,
         },
@@ -837,6 +1282,14 @@ function createCognitiveAssetProvider({
     approveCognition,
     registerDependency,
     compilePlaybook,
+    compileKnowledgeBase,
+    publishKnowledgeBase,
+    compileAgentProfile,
+    assessAgent,
+    deployAgent,
+    prepareAgentContext,
+    revokeProduct,
+    productMap,
     prepareRun: requestRun,
     requestRun,
     verifyRun,

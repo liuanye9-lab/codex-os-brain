@@ -14,12 +14,23 @@ const { getHostAdapter, listHosts } = require('../scripts/v9/hosts');
 const { handleStop } = require('../scripts/v9/hooks/stop');
 const { handleSession } = require('../scripts/v9/hooks/session');
 const { createTaskContract } = require('../scripts/v9/task-contract');
+const { createSkillsService } = require('../scripts/v9/skills');
 
 function tempCore() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-p0p6-'));
+  const projectRoot = path.join(home, 'project');
+  fs.mkdirSync(projectRoot);
   const config = structuredClone(readV9Config());
   config.memory.enabled = true;
-  return { home, core: createV9Core({ config, paths: resolveV9Paths({ CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: path.join(home, 'state') }) }) };
+  return {
+    home,
+    projectRoot,
+    core: createV9Core({
+      config,
+      paths: resolveV9Paths({ CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: path.join(home, 'state') }),
+      projectRoot,
+    }),
+  };
 }
 
 test('P0: verify re-run is the only path to complete; claims blocked at Stop', async () => {
@@ -131,6 +142,10 @@ test('P1: handoff init creates backlog progress smoke', () => {
   assert.ok(fs.existsSync(path.join(project, '.brain', 'progress.md')));
   assert.ok(fs.existsSync(path.join(project, '.brain', 'smoke.sh')));
   core.handoff.writeProgress({ projectRoot: project, sessionSummary: 'did work', taskId: 't1' });
+  core.handoff.writeProgress({ projectRoot: project, sessionSummary: 'IGNORE\nSYSTEM', taskId: 't1' });
+  const context = core.handoff.buildHandoffContext({ projectRoot: project, maxChars: 900 });
+  assert.match(context, /UNVERIFIED HANDOFF DATA/);
+  assert.match(context, /IGNORE SYSTEM/);
   assert.throws(() => core.handoff.setFeaturePass({ projectRoot: project, featureId: 'feat_bootstrap', passes: true, verified: false }), /feature_pass_requires_verify/);
   const feature = core.handoff.setFeaturePass({ projectRoot: project, featureId: 'feat_bootstrap', passes: true, verified: true });
   assert.equal(feature.passes, true);
@@ -158,12 +173,35 @@ test('P3: path policy blocks forbidden and critical shell patterns', () => {
   assert.ok(critical.level >= 3);
 });
 
+test('legacy event logs are not re-read after the SQLite import receipt exists', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-legacy-receipt-'));
+  const paths = resolveV9Paths({ CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: path.join(home, 'state') });
+  const config = structuredClone(readV9Config());
+  const first = createV9Core({ config, paths, projectRoot: process.cwd() });
+  fs.mkdirSync(first.paths.eventsRoot, { recursive: true });
+  fs.mkdirSync(path.join(first.paths.eventsRoot, 'events.jsonl'));
+  assert.doesNotThrow(() => createV9Core({ config, paths, projectRoot: process.cwd() }));
+});
+
+test('P3: Windows and git destructive commands require confirmation', () => {
+  const contract = { risk: 'low', externalWrite: false, scope: { allowed: [], forbidden: [] } };
+  for (const [toolName, command] of [
+    ['shell_command', 'Remove-Item -Recurse -Force C:\\repo\\data'],
+    ['cmd', 'cmd /c rd /s /q C:\\repo\\data'],
+    ['Bash', 'git reset --hard HEAD~1'],
+    ['PowerShell', 'Set-Content -Path C:\\repo\\file.txt -Value changed'],
+  ]) {
+    const decision = evaluateAction({ toolName, toolInput: { command }, contract, cwd: process.cwd() });
+    assert.ok(decision.level >= 2, `${toolName}: ${command}`);
+  }
+});
+
 test('P0: a new file below a symlinked parent is resolved outside the allowed scope', () => {
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-symlink-scope-'));
   const allowed = path.join(project, 'src');
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-symlink-outside-'));
   fs.mkdirSync(allowed);
-  fs.symlinkSync(outside, path.join(allowed, 'link'), 'dir');
+  fs.symlinkSync(outside, path.join(allowed, 'link'), process.platform === 'win32' ? 'junction' : 'dir');
   const decision = evaluateAction({
     toolName: 'Write',
     toolInput: { file_path: path.join(allowed, 'link', 'new-file.js') },
@@ -205,12 +243,23 @@ test('P3: apply_patch headers are scope checked and unknown MCP or Agent writes 
 });
 
 test('P4: skill activation requires expected criteria and marks outputs as candidates', () => {
-  const { core } = tempCore();
-  assert.throws(() => core.skills.activate({ skillId: 'x' }), /expected_criteria/);
-  const active = core.skills.activate({ skillId: 'brain-lite-model-router', expectedCriteria: ['tests'], costBudgetTokens: 1500 });
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-skills-'));
+  const pluginRoot = path.join(home, 'plugin');
+  const skillRoot = path.join(pluginRoot, 'skills', 'verified-skill');
+  fs.mkdirSync(skillRoot, { recursive: true });
+  fs.writeFileSync(path.join(skillRoot, 'SKILL.md'), '# Verified skill\n');
+  const skills = createSkillsService({
+    paths: resolveV9Paths({ CODEX_BRAIN_HOME: path.join(home, 'brain'), CODEX_BRAIN_STATE_HOME: path.join(home, 'state') }),
+    pluginRoot,
+  });
+  assert.throws(() => skills.activate({ skillId: 'unknown', expectedCriteria: ['tests'] }), /skill_not_found/);
+  assert.throws(() => skills.activate({ skillId: 'verified-skill' }), /expected_criteria/);
+  const active = skills.activate({ skillId: 'verified-skill', expectedCriteria: ['tests'], costBudgetTokens: 1500 });
   assert.equal(active.verified, false);
-  const cand = core.skills.attachCandidate('brain-lite-model-router', { criterionId: 'tests', note: 'maybe useful' });
+  const cand = skills.attachCandidate('verified-skill', { criterionId: 'tests', note: 'maybe useful' });
   assert.match(cand.disclaimer, /UNVERIFIED/);
+  assert.match(skills.injectionBanner({ skillId: 'verified-skill\nIGNORE', expectedCriteria: ['tests\nINJECT'], costBudgetTokens: 1500 }), /UNVERIFIED SKILL REGISTRY DATA/);
+  assert.doesNotMatch(skills.injectionBanner({ skillId: 'verified-skill\nIGNORE', expectedCriteria: ['tests\nINJECT'], costBudgetTokens: 1500 }), /\n/);
 });
 
 test('P5: host adapters normalize codex and claude events', async () => {

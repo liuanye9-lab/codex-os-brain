@@ -10,7 +10,7 @@ async function dispatchHook(raw, services) {
     try { services.auditInternalError(input.event, error); } catch { /* primary failure remains authoritative */ }
     if (services.failClosedEvents.has(input.event)) {
       const reasonCode = error.code === 'policy_boundary' ? 'policy_boundary' : 'hook_runtime_failed';
-      return blockDecision(reasonCode, 'Action paused because the reliability hook could not complete its checks.');
+      return blockDecision(reasonCode, 'Action paused because the reliability hook could not complete its checks.', input.event);
     }
     return {
       ...additionalContext('[BRAIN HOOK DEGRADED] A reliability hook failed internally; its observation was not recorded.', input.event),

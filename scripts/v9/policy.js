@@ -13,6 +13,10 @@ const DEFAULT_RISK_TABLE = Object.freeze({
     Bash: 'medium',
     Shell: 'medium',
     shell: 'medium',
+    shell_command: 'medium',
+    PowerShell: 'medium',
+    powershell: 'medium',
+    cmd: 'medium',
     Write: 'medium',
     Edit: 'medium',
     MultiEdit: 'medium',
@@ -28,11 +32,19 @@ const DEFAULT_RISK_TABLE = Object.freeze({
   commandPatterns: [
     { pattern: /\brm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+)?\//i, risk: 'critical', reasonCode: 'destructive_delete' },
     { pattern: /\brm\s+-rf\b/i, risk: 'critical', reasonCode: 'destructive_delete' },
+    { pattern: /\bRemove-Item\b[^\r\n]*(?:-(?:Recurse|Force)\b)/i, risk: 'critical', reasonCode: 'destructive_delete' },
+    { pattern: /\b(?:rm|del|erase|rd|rmdir)\b[^\r\n]*(?:\/s\b|\/q\b|-r\b|-recurse\b|-force\b)/i, risk: 'critical', reasonCode: 'destructive_delete' },
+    { pattern: /\bgit\s+reset\b[^\r\n]*--hard\b/i, risk: 'critical', reasonCode: 'destructive_git_reset' },
+    { pattern: /\bgit\s+clean\b[^\r\n]*-[a-z]*f[a-z]*\b/i, risk: 'critical', reasonCode: 'destructive_git_clean' },
     { pattern: /\bgit\s+push\b.*--force\b/i, risk: 'critical', reasonCode: 'force_push' },
     { pattern: /\bgit\s+push\b/i, risk: 'high', reasonCode: 'remote_write' },
     { pattern: /\b(curl|wget)\b.*\|\s*(ba)?sh\b/i, risk: 'critical', reasonCode: 'remote_code_exec' },
     { pattern: /\b(deploy|publish|npm\s+publish)\b/i, risk: 'high', reasonCode: 'publish' },
     { pattern: /\b(drop\s+table|truncate\s+table)\b/i, risk: 'critical', reasonCode: 'data_destruction' },
+    { pattern: /\b(?:Set-Content|Add-Content|Out-File|Copy-Item|Move-Item|New-Item|Rename-Item)\b/i, risk: 'high', reasonCode: 'shell_mutation' },
+    { pattern: /\b(?:cp|mv|mkdir|touch|install)\b/i, risk: 'high', reasonCode: 'shell_mutation' },
+    { pattern: /\b(?:npm|pnpm|yarn)\s+(?:install|add|remove|uninstall|publish)\b/i, risk: 'high', reasonCode: 'shell_mutation' },
+    { pattern: /\bgit\s+(?:commit|merge|rebase|checkout|switch|restore|tag)\b/i, risk: 'high', reasonCode: 'git_mutation' },
   ],
 });
 
@@ -84,6 +96,9 @@ function extractPathsFromToolInput(toolInput = {}) {
     const tokens = [...toolInput.command.matchAll(/(?:^|\s)((?:\/|\.\/|\.\.\/)[^\s;'"]+)/g)]
       .map(match => match[1]);
     found.push(...tokens);
+    const windowsTokens = [...toolInput.command.matchAll(/(?:^|\s|["'])((?:[A-Za-z]:[\\/]|\\\\)[^\s;'"|>]+)/g)]
+      .map(match => match[1].replace(/[),]+$/, ''));
+    found.push(...windowsTokens);
     const patchPaths = [...toolInput.command.matchAll(/^\*\*\* (?:Add|Update|Delete) File:\s*(.+)$/gm)]
       .map(match => match[1].trim())
       .filter(Boolean);
@@ -157,7 +172,7 @@ function evaluateAction({ toolName, toolInput = {}, contract = null, cwd = proce
       path: scopeDecision.path,
     };
   }
-  const commandLike = /^(?:Bash|Shell|shell)$/i.test(String(toolName))
+  const commandLike = /^(?:Bash|Shell|shell|shell_command|PowerShell|cmd)$/i.test(String(toolName))
     || typeof toolInput.command === 'string'
     || typeof toolInput.cmd === 'string';
   const potentiallyMutating = commandLike

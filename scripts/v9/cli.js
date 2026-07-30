@@ -4,7 +4,7 @@ const path = require('node:path');
 const { createV9Core, readV9Config } = require('./core');
 const { resolveV9Paths } = require('./paths');
 const { doctorHooks, setProjectHooks } = require('./hook-config');
-const { inventoryLegacy, planMigration, applyMigration } = require('./migration');
+const { applyMigration, createMigrationBackup, inventoryLegacy, planMigration } = require('./migration');
 const { runEvidenceSigningLoop } = require('./doctor');
 const { inspectTrustBoundary } = require('./trust-boundary');
 
@@ -28,7 +28,7 @@ function commandGuide() {
       evidence: 'claim | attach',
       handoff: 'init | status | progress',
       memory: 'status | create | get | update | transition | delete | query | aggregate | entity | link | traverse | recover',
-      cognition: 'status | digest | retention-status | retention-enforce',
+      cognition: 'status | digest | product-map | agent-readiness | agent-context | retention-status | retention-enforce',
       embeddings: 'status | recommend | configure | doctor | probe | pull | prompt',
       hooks: 'doctor | enable | disable',
       mcp: 'serve',
@@ -62,9 +62,41 @@ function readTaskContractFile(inputPath, projectRoot) {
   if (stat.size > 1024 * 1024) throw new Error('task_contract_file_too_large');
   const value = JSON.parse(fs.readFileSync(target, 'utf8'));
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('task_contract_file_invalid');
-  if (!String(value.objective || '').trim()) throw new Error('task_contract_objective_required');
-  if (value.criteria !== undefined && !Array.isArray(value.criteria)) throw new Error('task_contract_criteria_invalid');
-  return value;
+  const objective = String(value.objective || '').trim();
+  if (!objective) throw new Error('task_contract_objective_required');
+  if (objective.length > 4000) throw new Error('task_contract_objective_too_long');
+  if (value.taskId !== undefined && (!String(value.taskId).trim() || String(value.taskId).length > 160)) throw new Error('task_contract_id_invalid');
+  if (value.criteria !== undefined && (!Array.isArray(value.criteria) || value.criteria.length > 50)) throw new Error('task_contract_criteria_invalid');
+  const allowedVerifiers = new Set(['command_exit_0', 'command', 'test_runner', 'tests', 'git_diff_bounded', 'scope', 'human_attestation', 'human', 'file_exists']);
+  const criteria = (value.criteria || []).map(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('task_contract_criterion_invalid');
+    const id = String(item.id || '').trim();
+    const verifier = String(item.verifier || (id === 'tests' ? 'test_runner' : id === 'scope' ? 'git_diff_bounded' : 'command_exit_0'));
+    if (!id || id.length > 160 || !allowedVerifiers.has(verifier)) throw new Error('task_contract_criterion_invalid');
+    if (item.verifierSpec !== undefined && (!item.verifierSpec || typeof item.verifierSpec !== 'object' || Array.isArray(item.verifierSpec))) {
+      throw new Error('task_contract_verifier_spec_invalid');
+    }
+    const verifierSpec = item.verifierSpec ? structuredClone(item.verifierSpec) : undefined;
+    if (verifierSpec) delete verifierSpec.humanApproved;
+    return { id, required: item.required !== false, verifier, verifierSpec };
+  });
+  const scope = value.scope && typeof value.scope === 'object' && !Array.isArray(value.scope) ? value.scope : {};
+  for (const key of ['allowed', 'forbidden']) {
+    if (scope[key] !== undefined && (!Array.isArray(scope[key]) || scope[key].length > 100 || scope[key].some(item => typeof item !== 'string' || item.length > 4096))) {
+      throw new Error('task_contract_scope_invalid');
+    }
+  }
+  return {
+    taskId: value.taskId === undefined ? undefined : String(value.taskId),
+    objective,
+    criteria,
+    constraints: Array.isArray(value.constraints) ? value.constraints.slice(0, 50) : [],
+    unresolved: Array.isArray(value.unresolved) ? value.unresolved.map(String).slice(0, 50) : [],
+    scope: { allowed: scope.allowed || [], forbidden: scope.forbidden || [] },
+    risk: value.risk,
+    executionMode: value.executionMode,
+    externalWrite: value.externalWrite === true,
+  };
 }
 
 async function runCli(argv, io = defaultIo(), services = {}) {
@@ -72,7 +104,8 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   const [group, action] = args._;
   const paths = services.paths || resolveV9Paths();
   const projectRoot = args.project || process.cwd();
-  const config = structuredClone(readV9Config());
+  const configuredPath = args.config || (paths.configPath && fs.existsSync(paths.configPath) ? paths.configPath : undefined);
+  const config = structuredClone(readV9Config(configuredPath));
   const labsRequested = args['enable-memory'] === true || args['enable-cognitive-assets'] === true;
   if (labsRequested && args['confirm-labs'] !== true) {
     return io.error('enabling Memory or Cognitive Labs requires --confirm-labs', EXIT.blocked);
@@ -92,6 +125,18 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   if (group === 'status') return io.json(core.status());
   if (group === 'cognition' && (!action || action === 'status')) return io.json(core.cognitiveAssets.status());
   if (group === 'cognition' && action === 'digest') return io.json(core.cognitiveAssets.dailyDigest({ limit: args.limit }));
+  if (group === 'cognition' && action === 'product-map') return io.json(core.cognitiveAssets.productMap());
+  if (group === 'cognition' && action === 'agent-readiness') {
+    if (!args.id) return io.error('id is required', EXIT.usage);
+    return io.json(core.cognitiveAssets.assessAgent(args.id, { targetState: args.target }));
+  }
+  if (group === 'cognition' && action === 'agent-context') {
+    if (!args.id) return io.error('id is required', EXIT.usage);
+    return io.json(core.cognitiveAssets.prepareAgentContext(args.id, {
+      purpose: args.purpose,
+      tokenBudget: args['token-budget'] ? Number(args['token-budget']) : undefined,
+    }));
+  }
   if (group === 'cognition' && action === 'retention-status') return io.json(core.cognitiveAssets.retentionStatus());
   if (group === 'cognition' && action === 'retention-enforce') {
     if (args['confirm-retention'] !== true) return io.error('retention enforcement requires --confirm-retention', EXIT.blocked);
@@ -117,7 +162,11 @@ async function runCli(argv, io = defaultIo(), services = {}) {
     return io.json({
       ok: checks.every(check => !['blocked','failed'].includes(check.status)),
       checks,
-      v8: { selectable: core.config.fallbackVersion === 8 },
+      v8: {
+        selectable: false,
+        configuredFallback: core.config.fallbackVersion === 8,
+        reason: 'v8_runtime_not_bundled',
+      },
       v9,
       hooks,
       trustBoundary,
@@ -132,6 +181,12 @@ async function runCli(argv, io = defaultIo(), services = {}) {
     if (args.from) {
       try { input = readTaskContractFile(String(args.from), projectRoot); }
       catch (error) { return io.error(error.code || error.message, EXIT.usage); }
+      input.criteria = input.criteria.map(criterion => ({
+        ...criterion,
+        verifierSpec: ['command_exit_0', 'command'].includes(criterion.verifier)
+          ? { ...(criterion.verifierSpec || {}), humanApproved: args['approve-custom-verifier'] === true }
+          : criterion.verifierSpec,
+      }));
     } else {
       if (!args.objective) return io.error('objective is required', EXIT.usage);
       const criterionIds = args.criterion ? String(args.criterion).split(',') : [];
@@ -368,9 +423,25 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   }
   if (group === 'migrate' && action === 'apply') {
     if (!args['confirm-migration']) return io.error('confirm-migration is required', EXIT.blocked);
-    if (!args.manifest || !args['backup-root']) return io.error('manifest and backup-root are required', EXIT.usage);
+    if (!args.manifest || !args['backup-root'] || !args['brain-root']) return io.error('manifest, backup-root, and brain-root are required', EXIT.usage);
     const manifest = JSON.parse(fs.readFileSync(args.manifest, 'utf8'));
-    return io.json(applyMigration(planMigration(manifest), { confirm: true, backupRoot: args['backup-root'] }));
+    const plan = planMigration(manifest, {
+      sourceRoot: args['brain-root'],
+      outputRoot: args['output-root'] || paths.migrationRoot,
+      rebuild: true,
+    });
+    return io.json(applyMigration(plan, { confirm: true, backupRoot: args['backup-root'] }));
+  }
+  if (group === 'migrate' && action === 'backup') {
+    if (!args['confirm-backup']) return io.error('confirm-backup is required', EXIT.blocked);
+    if (!args.manifest || !args['backup-root'] || !args['brain-root']) return io.error('manifest, backup-root, and brain-root are required', EXIT.usage);
+    const manifest = JSON.parse(fs.readFileSync(args.manifest, 'utf8'));
+    const plan = planMigration(manifest, {
+      sourceRoot: args['brain-root'],
+      outputRoot: args['output-root'] || paths.migrationRoot,
+      rebuild: true,
+    });
+    return io.json(createMigrationBackup(plan, args['backup-root'], { confirm: true }));
   }
   if (group === 'config' && (!action || action === 'show')) return io.json(core.config);
   if (group === 'mcp' && action === 'serve') {

@@ -9,6 +9,12 @@ The semantic lifecycle and deployment lifecycle are independent:
 - semantic: `candidate → confirmed cognition → method_candidate → runnable_playbook → verified_capability`
 - deployment: `candidate → shadow → replay → canary → promoted/revoked`
 
+The product lifecycle extends this protocol without merging the state machines:
+
+`Evidence → Cognition → Playbook → Knowledge Base → Agent Profile → Context/Run Receipt → new candidate`
+
+A Knowledge Base is a published, versioned bundle of confirmed cognition and runnable or verified Playbooks. An Agent Profile is a purpose-bound configuration that pins published Knowledge Bases, Playbooks, declared policy/tool contracts, and a context token budget. Neither object grants execution authority.
+
 `runnable_playbook` means the manifest passed structural gates. The bundled provider is a manifest catalog and run-request preparation layer, not an executor: it does not dispatch steps, manage a worker lifecycle, or claim that a run completed. `verified_capability` requires at least ten semantically distinct production-path cases, three boundary or adversarial cases, at least 80% success, and zero critical safety failures.
 
 Only externally verified signed reuse receipts count. Each receipt binds a unique nonce, task and playbook version, executor and verifier principals in different trust domains, input/output/artifact/runner/policy digests, timestamps, outcome, and production-path flag. The provider requires an external `reuseReceiptVerifier`; without it, reuse recording and automatic promotion fail closed. Plain identity strings and caller-supplied hashes no longer count.
@@ -36,6 +42,14 @@ Source retention accepts either an absolute `expiresAt` or a bounded `retentionD
 - `proposeCognition`
 - `approveCognition`
 - `compilePlaybook`
+- `compileKnowledgeBase`
+- `publishKnowledgeBase`
+- `compileAgentProfile`
+- `assessAgent`
+- `deployAgent`
+- `prepareAgentContext`
+- `revokeProduct`
+- `productMap`
 - `prepareRun` (`requestRun` remains a compatibility alias)
 - `verifyRun`
 - `revoke`
@@ -53,6 +67,10 @@ Projection grants bind recipient agent, purpose, asset versions, policy digest, 
 
 Every run, promotion, and projection read recomputes the playbook dependency digest. A changed or invalid cognition/evidence dependency immediately persists `stale_blocked`.
 
+Knowledge Base publication and every Agent readiness/context check also recompute the full dependency digest. Drift cascades from evidence or cognition to Playbook, Knowledge Base, and Agent. Agent deployment is sequential (`draft → shadow → canary → active`): canary requires successful signed production-path evidence, while active requires all bound Playbooks to be `verified_capability`.
+
+Prepared Agent context is purpose-bound and estimated against the complete response envelope. Knowledge Base retrieval limits cap eligible claims and Playbooks, evidence IDs remain as citation handles, raw source content is excluded, and a budget below the minimum envelope fails explicitly.
+
 Withdrawal revokes dependent grants, removes normal recall and embedding references, blocks execution, and writes a residue receipt. Append-only audit data, external backups, and previously exported Git history are reported as possible residues rather than falsely claimed as erased.
 
 ## CLI and MCP
@@ -60,12 +78,18 @@ Withdrawal revokes dependent grants, removes normal recall and embedding referen
 ```bash
 brain cognition status --enable-cognitive-assets --confirm-labs --json
 brain cognition digest --enable-cognitive-assets --confirm-labs --limit 5 --json
+brain cognition product-map --enable-cognitive-assets --confirm-labs --json
+brain cognition agent-readiness --id AGENT_ID --target shadow --enable-cognitive-assets --confirm-labs --json
+brain cognition agent-context --id AGENT_ID --token-budget 1200 --enable-cognitive-assets --confirm-labs --json
 ```
 
 The MCP tools are:
 
 - `brain_get_cognitive_asset_status`
 - `brain_get_cognitive_review_digest`
+- `brain_get_cognitive_product_map`
+- `brain_assess_cognitive_agent`
+- `brain_prepare_cognitive_agent_context`
 - `brain_read_cognitive_projection`
 
 The default runtime does not register these tools because `cognitiveAssets.enabled=false`. When explicitly enabled, it uses `operator_guardrail_only`. That mode can inspect status but cannot mint protected approvals, verify reuse receipts, promote verified capability, or export cross-Agent assets.
@@ -73,3 +97,5 @@ The default runtime does not register these tools because `cognitiveAssets.enabl
 ## Deliberate v1 boundaries
 
 The protocol does not store hidden reasoning, raw tool output, or unbounded terminal logs. It does not automatically convert daily conversation into stable personality claims. Public markets, subscription kits, A2A networks, and autonomous self-rewriting are out of scope.
+
+The product rationale, open-source comparison, current paper signals, and P2 evaluation priorities are documented in [Cognitive Product Framework](cognitive-product-framework.md).

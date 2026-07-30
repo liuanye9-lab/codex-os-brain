@@ -20,8 +20,14 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run check
-      - run: npm run sbom -- --output sbom.cdx.json
-      - run: npm pack
+      - run: node scripts/verify-v9-release.js
+      - run: node scripts/build-public-export.js --output .release-public
+      - run: npm ci --ignore-scripts
+        working-directory: .release-public
+      - run: npm run sbom -- --output ../sbom.cdx.json
+        working-directory: .release-public
+      - run: npm pack --pack-destination ..
+        working-directory: .release-public
       - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: |

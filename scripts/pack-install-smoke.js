@@ -6,10 +6,17 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { buildPublicExport } = require('./build-public-export');
+const { spawnNpmSync } = require('./npm-runtime');
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: 'utf8', shell: false, ...options });
   if (result.status !== 0) throw new Error(result.stderr || result.stdout || `${command}_failed`);
+  return result.stdout;
+}
+
+function runNpm(args, options = {}) {
+  const result = spawnNpmSync(args, options);
+  if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'npm_failed');
   return result.stdout;
 }
 
@@ -31,17 +38,16 @@ function main() {
       outputRoot: exportRoot,
       allowlistPath: path.join(sourceRoot, 'config', 'public-export-allowlist.json'),
     });
-    const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    run(npm, ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: exportRoot, env: npmEnv });
-    run(npm, ['run', 'check'], { cwd: exportRoot, env: npmEnv });
-    const packed = JSON.parse(run(npm, ['pack', '--json'], { cwd: exportRoot, env: npmEnv }))[0];
+    runNpm(['ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: exportRoot, env: npmEnv });
+    runNpm(['run', 'check'], { cwd: exportRoot, env: npmEnv });
+    const packed = JSON.parse(runNpm(['pack', '--json'], { cwd: exportRoot, env: npmEnv }))[0];
     const tarball = path.join(exportRoot, packed.filename);
-    run(npm, ['init', '-y'], { cwd: consumer, env: npmEnv });
-    run(npm, ['install', tarball, '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: consumer, env: npmEnv });
+    runNpm(['init', '-y'], { cwd: consumer, env: npmEnv });
+    runNpm(['install', tarball, '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: consumer, env: npmEnv });
     run(process.execPath, ['--input-type=module', '--eval',
       "import('codex-brain-v9').then(async root => { const core = await import('codex-brain-v9/core'); const labs = await import('codex-brain-v9/labs/cognitive-assets'); if (!root.default || typeof core.default?.core?.createV9Core !== 'function' || typeof labs.createCognitiveAssetProvider !== 'function') process.exit(1); })"],
     { cwd: consumer });
-    run(process.execPath, [path.join(consumer, 'node_modules', '.bin', 'brain'), '--help', '--json'], { cwd: consumer });
+    run(process.execPath, [path.join(consumer, 'node_modules', 'codex-brain-v9', 'bin', 'brain.js'), '--help', '--json'], { cwd: consumer });
     process.stdout.write(`${JSON.stringify({ passed: true, package: packed.filename })}\n`);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });

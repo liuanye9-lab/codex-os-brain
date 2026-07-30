@@ -403,6 +403,12 @@ function createControlStore({ dbPath, sessionId = 'default', taskId } = {}) {
           .map(row => JSON.parse(row.state_json));
       });
     },
+    legacyImportStatus() {
+      return withDb(db => {
+        const row = db.prepare('SELECT value_json FROM control_meta WHERE key=?').get('legacy-import-v1');
+        return row ? JSON.parse(row.value_json) : null;
+      });
+    },
     importLegacy({ contract, guardExpected = false, events = [] } = {}) {
       return withDb(db => transaction(db, () => {
         const existing = db.prepare('SELECT value_json FROM control_meta WHERE key=?').get('legacy-import-v1');

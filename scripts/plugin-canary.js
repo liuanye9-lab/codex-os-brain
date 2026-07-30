@@ -15,6 +15,41 @@ function run(command, args, options = {}) {
   return result.stdout;
 }
 
+function resolveCodexInvocation() {
+  const explicit = process.env.CODEX_BIN;
+  if (process.platform !== 'win32') {
+    const command = explicit
+      || (fs.existsSync('/Applications/ChatGPT.app/Contents/Resources/codex')
+        ? '/Applications/ChatGPT.app/Contents/Resources/codex'
+        : 'codex');
+    return { command, argsPrefix: [] };
+  }
+
+  const shimCandidates = [];
+  if (explicit && explicit.toLowerCase().endsWith('.cmd')) shimCandidates.push(path.resolve(explicit));
+  for (const directory of String(process.env.PATH || '').split(path.delimiter).filter(Boolean)) {
+    shimCandidates.push(path.join(directory, 'codex.cmd'));
+  }
+  for (const shim of shimCandidates) {
+    if (!fs.existsSync(shim)) continue;
+    const cli = path.join(path.dirname(shim), 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+    if (fs.existsSync(cli)) return { command: process.execPath, argsPrefix: [cli] };
+  }
+
+  const candidates = [];
+  if (explicit) candidates.push(path.resolve(explicit));
+  for (const directory of String(process.env.PATH || '').split(path.delimiter).filter(Boolean)) {
+    candidates.push(path.join(directory, 'codex.exe'));
+  }
+  const executable = candidates.find(candidate => candidate.toLowerCase().endsWith('.exe') && fs.existsSync(candidate));
+  if (executable) return { command: executable, argsPrefix: [] };
+  throw new Error('codex_executable_not_found');
+}
+
+function runCodex(invocation, args, options = {}) {
+  return run(invocation.command, [...invocation.argsPrefix, ...args], options);
+}
+
 function digestFile(file) {
   if (!fs.existsSync(file)) return 'missing';
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -48,10 +83,7 @@ async function main() {
     config: digestFile(path.join(liveCodexHome, 'config.toml')),
     hooks: digestFile(path.join(liveCodexHome, 'hooks.json')),
   };
-  const codex = process.env.CODEX_BIN
-    || (fs.existsSync('/Applications/ChatGPT.app/Contents/Resources/codex')
-      ? '/Applications/ChatGPT.app/Contents/Resources/codex'
-      : 'codex');
+  const codex = resolveCodexInvocation();
   fs.mkdirSync(tempCodexHome, { recursive: true });
   try {
     buildPublicExport({
@@ -66,11 +98,11 @@ async function main() {
       CODEX_BRAIN_HOME: path.join(temp, 'brain-home'),
       CODEX_BRAIN_STATE_HOME: path.join(temp, 'state-home'),
     };
-    const addedMarketplace = JSON.parse(run(codex, ['plugin', 'marketplace', 'add', marketplaceRoot, '--json'], { env }));
+    const addedMarketplace = JSON.parse(runCodex(codex, ['plugin', 'marketplace', 'add', marketplaceRoot, '--json'], { env }));
     if (!JSON.stringify(addedMarketplace).includes('codex-brain')) throw new Error('marketplace_add_contract_failed');
-    const available = JSON.parse(run(codex, ['plugin', 'list', '--available', '--json'], { env }));
+    const available = JSON.parse(runCodex(codex, ['plugin', 'list', '--available', '--json'], { env }));
     if (!JSON.stringify(available).includes('codex-brain-v9')) throw new Error('plugin_not_discoverable');
-    const installed = JSON.parse(run(codex, ['plugin', 'add', 'codex-brain-v9@codex-brain', '--json'], { env }));
+    const installed = JSON.parse(runCodex(codex, ['plugin', 'add', 'codex-brain-v9@codex-brain', '--json'], { env }));
     if (!JSON.stringify(installed).includes('codex-brain-v9')) throw new Error('plugin_install_contract_failed');
     const installedManifest = findFile(tempCodexHome, '/.codex-plugin/plugin.json');
     if (!installedManifest) throw new Error('installed_plugin_manifest_missing');
@@ -133,4 +165,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main };
+module.exports = { main, resolveCodexInvocation };
