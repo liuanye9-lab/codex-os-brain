@@ -15,6 +15,10 @@ function resolveHandoffRoot(projectRoot = process.cwd()) {
   return path.resolve(projectRoot, '.brain');
 }
 
+function cleanHandoffText(value, maxChars) {
+  return String(value || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxChars);
+}
+
 function ensureHandoffDir(projectRoot) {
   const root = resolveHandoffRoot(projectRoot);
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -40,7 +44,7 @@ echo "[brain-smoke] ok"
 function defaultBacklog(objective = '') {
   return {
     schemaVersion: 1,
-    objective: String(objective || ''),
+    objective: cleanHandoffText(objective, 1000),
     updatedAt: new Date().toISOString(),
     features: [
       {
@@ -93,9 +97,9 @@ function writeProgress({ projectRoot = process.cwd(), sessionSummary, taskId, ob
   const stamp = new Date().toISOString();
   const block = [
     ``,
-    `### ${stamp}${taskId ? ` — ${taskId}` : ''}`,
-    objective ? `Objective: ${objective}` : '',
-    sessionSummary || '(no summary)',
+    `### ${stamp}${taskId ? ` — ${cleanHandoffText(taskId, 160)}` : ''}`,
+    objective ? `Objective: ${cleanHandoffText(objective, 1000)}` : '',
+    cleanHandoffText(sessionSummary, 1000) || '(no summary)',
     '',
   ].filter(Boolean).join('\n');
   fs.appendFileSync(progressPath, `${block}\n`, { encoding: 'utf8' });
@@ -148,7 +152,7 @@ function buildHandoffContext({ projectRoot = process.cwd(), contract = null, max
   let recent = '';
   if (fs.existsSync(progressPath)) {
     const text = fs.readFileSync(progressPath, 'utf8');
-    recent = text.slice(Math.max(0, text.length - 400));
+    recent = cleanHandoffText(text.slice(Math.max(0, text.length - 400)), 400);
   }
   const lines = [
     'V9 handoff — like a shift change note for the next engineer:',
@@ -156,7 +160,7 @@ function buildHandoffContext({ projectRoot = process.cwd(), contract = null, max
     next ? `Next unfinished feature: ${next.id} — ${next.description}` : 'All backlog features marked passing (re-verify before trusting).',
     `Remaining features: ${status.remaining.join(', ') || 'none'}`,
     'Before new work: run .brain/smoke.sh, read .brain/progress.md and git log.',
-    recent ? `Recent progress tail:\n${recent}` : '',
+    recent ? `[UNVERIFIED HANDOFF DATA] Recent progress tail:\n${recent}` : '',
   ].filter(Boolean);
   return lines.join('\n').slice(0, maxChars);
 }

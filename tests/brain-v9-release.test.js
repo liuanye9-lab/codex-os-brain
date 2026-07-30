@@ -9,6 +9,16 @@ const { verifyReadmeLinks, verifyPackageContents, verifyVisualProvenance } = req
 
 const root = path.resolve(__dirname, '..');
 
+test('event schema accepts every status and lifecycle kind emitted by the runtime', () => {
+  const schema = JSON.parse(fs.readFileSync(path.join(root, 'schemas', 'brain-v9-event.schema.json'), 'utf8'));
+  for (const status of ['observed', 'passed', 'failed', 'blocked', 'unverified', 'partial', 'complete']) {
+    assert.ok(schema.properties.status.enum.includes(status), status);
+  }
+  for (const kind of ['session', 'subagent', 'tool', 'failure', 'checkpoint', 'verify']) {
+    assert.ok(schema.properties.kind.enum.includes(kind), kind);
+  }
+});
+
 test('README documents V9 external surfaces and adaptive lifecycle', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   for (const required of ['Codex Brain V9', '```mermaid', 'brain status', 'brain mcp serve', 'PreToolUse', 'Stop', 'V1–V8', 'Ollama', 'brain embeddings doctor']) assert.ok(readme.includes(required), required);
@@ -54,7 +64,7 @@ test('package policy rejects runtime and requires CLI, MCP, and installed-packag
   assert.deepEqual(report.forbidden, ['runtime/private.json']);
 });
 
-test('README visual assets are declared and hash-pinned', () => {
+test('README visual assets have declared provenance and local assets are hash-pinned', () => {
   assert.deepEqual(verifyVisualProvenance(root), {
     passed: true,
     missingManifest: false,
@@ -94,4 +104,13 @@ test('GitHub Actions are immutable SHA pinned', () => {
       assert.match(match[1], /^[a-f0-9]{40}$/, `${file}:${match[0]}`);
     }
   }
+});
+
+test('plugin canary runs on every supported CI platform', () => {
+  const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'supply-chain.yml'), 'utf8');
+  const job = workflow.split(/\n  plugin-canary:\s*\n/)[1];
+  assert.ok(job, 'plugin-canary job');
+  assert.match(job, /os:\s*\[ubuntu-latest, macos-latest, windows-latest\]/);
+  assert.match(job, /npm install --global --ignore-scripts @openai\/codex@0\.146\.0/);
+  assert.match(job, /npm run test:plugin-canary/);
 });

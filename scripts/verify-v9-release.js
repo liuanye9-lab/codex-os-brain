@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { buildPublicExport } = require('./build-public-export');
+const { spawnNpmSync } = require('./npm-runtime');
 
 function verifyReadmeLinks(root) {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
@@ -39,12 +40,7 @@ function verifyPackageContents(pack) {
 }
 
 function npmPackDryRun(cwd) {
-  const siblingCli = path.resolve(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-  const npmCli = [process.env.npm_execpath, siblingCli].find(candidate => candidate && fs.existsSync(candidate));
-  if (npmCli) {
-    return spawnSync(process.execPath, [npmCli, 'pack', '--dry-run', '--json'], { cwd, encoding: 'utf8' });
-  }
-  return spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['pack', '--dry-run', '--json'], { cwd, encoding: 'utf8' });
+  return spawnNpmSync(['pack', '--dry-run', '--json'], { cwd });
 }
 
 function markdownFiles(root) {

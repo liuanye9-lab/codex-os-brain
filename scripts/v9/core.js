@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { resolveV9Paths, scopeV9Paths } = require('./paths');
+const { readV9Config, validateV9Config } = require('./config');
 const { atomicWriteJson, readJsonSafe } = require('./store');
 const { createControlStore } = require('./control-store');
 const { createControlGuard } = require('./control-guard');
@@ -18,25 +19,6 @@ const migration = require('./migration');
 const { createEmbeddingService } = require('./embeddings');
 const handoff = require('./handoff');
 const { createSkillsService } = require('./skills');
-const { createMemoryService } = require('./memory-service');
-const { createMemoryHarness } = require('./memory-harness');
-const { backupMemoryDatabase } = require('./memory-db');
-const { createCognitiveAssetProvider } = require('./cognitive-assets');
-const {
-  compareEncryptedMemoryBackup,
-  createEncryptedMemoryBackup,
-  createMacKeychainStore,
-  inspectEncryptedMemoryBackup,
-  verifyEncryptedMemoryBackup,
-} = require('./memory-encrypted-backup');
-const {
-  drillRecoveryKey,
-  exportRecoveryKey,
-  importRecoveryKey,
-  recoverMemoryRuntime,
-  restoreEncryptedMemoryBackup,
-  rotateRecoveryKey,
-} = require('./memory-recovery');
 const { getHostAdapter, listHosts } = require('./hosts');
 const { IDENTITY } = require('./identity');
 
@@ -57,11 +39,6 @@ function disabledFeature(name, extraStatus = {}) {
       };
     },
   });
-}
-
-function readV9Config(configPath) {
-  const file = configPath || path.resolve(__dirname, '..', '..', 'config', 'brain-lite-v9.json');
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
 function createV9Core({
@@ -90,12 +67,19 @@ function createV9Core({
   });
   const embeddings = createEmbeddingService({ paths });
   const skills = createSkillsService({ paths });
+  const memoryModules = memoryEnabled ? {
+    ...require('./memory-service'),
+    ...require('./memory-harness'),
+    ...require('./memory-db'),
+    ...require('./memory-encrypted-backup'),
+    ...require('./memory-recovery'),
+  } : null;
   const memory = memoryEnabled
-    ? createMemoryService({ paths })
+    ? memoryModules.createMemoryService({ paths })
     : disabledFeature('memory', { liveDatabaseEncrypted: false });
-  const memoryHarness = memoryEnabled ? createMemoryHarness({ paths }) : disabledFeature('memory_harness');
+  const memoryHarness = memoryEnabled ? memoryModules.createMemoryHarness({ paths }) : disabledFeature('memory_harness');
   const cognitiveAssets = cognitiveAssetsEnabled
-    ? createCognitiveAssetProvider({
+    ? require('./cognitive-assets').createCognitiveAssetProvider({
       paths,
       authorityMode: cognitiveAssetAuthorityMode,
       approvalVerifier: cognitiveAssetApprovalVerifier,
@@ -106,23 +90,25 @@ function createV9Core({
       liveDatabaseEncrypted: false,
       sensitivePersistenceAllowed: false,
     });
-  const memoryBackupKeyStore = createMacKeychainStore();
+  const memoryBackupKeyStore = memoryEnabled ? memoryModules.createMacKeychainStore() : null;
   const evidenceSealer = createEvidenceSealer({ paths });
   const controlGuard = createControlGuard({ guardPath: paths.controlGuardPath, evidenceSealer });
   if (enabled) {
-    const legacy = readJsonSafe(legacyActiveTaskFile, null);
-    const legacyGuard = readJsonSafe(path.join(paths.tasksRoot, 'active.guard.json'), null);
-    const legacyEvents = [];
-    if (fs.existsSync(legacyEventsFile)) {
-      for (const line of fs.readFileSync(legacyEventsFile, 'utf8').split(/\r?\n/).filter(Boolean)) {
-        try { legacyEvents.push(JSON.parse(line)); } catch {}
+    if (!controlStore.legacyImportStatus()) {
+      const legacy = readJsonSafe(legacyActiveTaskFile, null);
+      const legacyGuard = readJsonSafe(path.join(paths.tasksRoot, 'active.guard.json'), null);
+      const legacyEvents = [];
+      if (fs.existsSync(legacyEventsFile)) {
+        for (const line of fs.readFileSync(legacyEventsFile, 'utf8').split(/\r?\n/).filter(Boolean)) {
+          try { legacyEvents.push(JSON.parse(line)); } catch {}
+        }
       }
+      controlStore.importLegacy({
+        contract: legacy.value,
+        guardExpected: legacyGuard.missing === false,
+        events: legacyEvents,
+      });
     }
-    controlStore.importLegacy({
-      contract: legacy.value,
-      guardExpected: legacyGuard.missing === false,
-      events: legacyEvents,
-    });
   }
   function activeTask() {
     if (!enabled) return null;
@@ -353,6 +339,20 @@ function createV9Core({
     status(operation) { return enabled ? controlStore.circuitStatus(operation) : []; },
   };
 
+  const encryptedMemoryBackup = memoryEnabled ? {
+    initKey: options => memoryBackupKeyStore.init(options),
+    create: () => memoryModules.createEncryptedMemoryBackup({ paths, keyStore: memoryBackupKeyStore }),
+    inspect: input => memoryModules.inspectEncryptedMemoryBackup(input),
+    verify: input => memoryModules.verifyEncryptedMemoryBackup({ input, paths, keyStore: memoryBackupKeyStore }),
+    compare: input => memoryModules.compareEncryptedMemoryBackup({ input, paths, keyStore: memoryBackupKeyStore }),
+    restore: options => memoryModules.restoreEncryptedMemoryBackup({ ...options, paths, keyStore: memoryBackupKeyStore }),
+    recoveryExport: options => memoryModules.exportRecoveryKey({ ...options, paths, keyStore: memoryBackupKeyStore }),
+    recoveryDrill: options => memoryModules.drillRecoveryKey({ ...options, paths }),
+    recoveryImport: options => memoryModules.importRecoveryKey({ ...options, keyStore: memoryBackupKeyStore }),
+    recoveryRotate: options => memoryModules.rotateRecoveryKey({ ...options, paths, keyStore: memoryBackupKeyStore }),
+    recover: options => memoryModules.recoverMemoryRuntime({ ...options, paths }),
+  } : disabledFeature('memory_backup');
+
   return {
     status: () => ({
       version: IDENTITY.runtimeContract,
@@ -380,20 +380,8 @@ function createV9Core({
     memory,
     memoryHarness,
     cognitiveAssets,
-    backupMemory: () => backupMemoryDatabase({ paths }),
-    encryptedMemoryBackup: {
-      initKey: options => memoryBackupKeyStore.init(options),
-      create: () => createEncryptedMemoryBackup({ paths, keyStore: memoryBackupKeyStore }),
-      inspect: input => inspectEncryptedMemoryBackup(input),
-      verify: input => verifyEncryptedMemoryBackup({ input, paths, keyStore: memoryBackupKeyStore }),
-      compare: input => compareEncryptedMemoryBackup({ input, paths, keyStore: memoryBackupKeyStore }),
-      restore: options => restoreEncryptedMemoryBackup({ ...options, paths, keyStore: memoryBackupKeyStore }),
-      recoveryExport: options => exportRecoveryKey({ ...options, paths, keyStore: memoryBackupKeyStore }),
-      recoveryDrill: options => drillRecoveryKey({ ...options, paths }),
-      recoveryImport: options => importRecoveryKey({ ...options, keyStore: memoryBackupKeyStore }),
-      recoveryRotate: options => rotateRecoveryKey({ ...options, paths, keyStore: memoryBackupKeyStore }),
-      recover: options => recoverMemoryRuntime({ ...options, paths }),
-    },
+    backupMemory: memoryEnabled ? () => memoryModules.backupMemoryDatabase({ paths }) : disabledFeature('memory_backup').create,
+    encryptedMemoryBackup,
     hosts: { get: getHostAdapter, list: listHosts },
     paths,
     sessionId: controlStore.sessionId,
@@ -415,4 +403,4 @@ function createV9Core({
   };
 }
 
-module.exports = { createV9Core, readV9Config };
+module.exports = { createV9Core, readV9Config, validateV9Config };

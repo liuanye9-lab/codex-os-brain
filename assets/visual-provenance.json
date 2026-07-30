@@ -2,8 +2,7 @@
   "schemaVersion": 1,
   "assets": [
     {
-      "src": "assets/codex-brain-ip-hero.png",
-      "sha256": "1336b913a29770a10c26c450df7830f7f2e5dc29398e487c2ad8136ef146a7a8",
+      "src": "https://raw.githubusercontent.com/liuanye9-lab/codex-os-brain/main/assets/codex-brain-ip-hero.png",
       "created": "2026-07-25",
       "generator": "OpenAI image generation tool",
       "input": "User-provided Codex character reference",

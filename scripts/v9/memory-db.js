@@ -5,7 +5,7 @@ const path = require('node:path');
 const { DatabaseSync, backup } = require('node:sqlite');
 const { resolveV9Paths } = require('./paths');
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 function openMemoryDatabase({ paths = resolveV9Paths(), dbPath = paths.memoryDbPath, readonly = false, ignoreRestoreLock = false } = {}) {
   if (!ignoreRestoreLock && fs.existsSync(paths.memoryRestoreLockPath)) {
@@ -413,6 +413,65 @@ function migrate(db) {
       db.prepare('INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)').run(3, new Date().toISOString());
       db.exec('COMMIT');
       current = 3;
+    } catch (error) {
+      try { db.exec('ROLLBACK'); } catch { /* preserve the original transaction error */ }
+      throw error;
+    }
+  }
+  if (current < 4) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec(`
+        CREATE TABLE cognitive_knowledge_bases(
+          knowledge_base_id TEXT PRIMARY KEY,
+          name TEXT NOT NULL CHECK(length(trim(name))>0),
+          domain TEXT NOT NULL CHECK(length(trim(domain))>0),
+          description TEXT NOT NULL DEFAULT '',
+          cognition_unit_ids_json TEXT NOT NULL,
+          playbook_ids_json TEXT NOT NULL,
+          retrieval_policy_json TEXT NOT NULL DEFAULT '{}',
+          dependency_digest TEXT NOT NULL CHECK(length(dependency_digest)=64),
+          status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','published','stale_blocked','revoked')),
+          privacy_level TEXT NOT NULL DEFAULT 'local_only' CHECK(privacy_level IN ('local_only','private','restricted','public')),
+          version INTEGER NOT NULL DEFAULT 1 CHECK(version>0),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX cognitive_knowledge_bases_status
+          ON cognitive_knowledge_bases(status,domain,updated_at DESC);
+
+        CREATE TABLE cognitive_agent_profiles(
+          agent_id TEXT PRIMARY KEY,
+          name TEXT NOT NULL CHECK(length(trim(name))>0),
+          purpose TEXT NOT NULL CHECK(length(trim(purpose))>0),
+          knowledge_base_ids_json TEXT NOT NULL,
+          playbook_ids_json TEXT NOT NULL,
+          tool_refs_json TEXT NOT NULL DEFAULT '[]',
+          dependency_refs_json TEXT NOT NULL DEFAULT '[]',
+          context_budget_tokens INTEGER NOT NULL CHECK(context_budget_tokens>=100 AND context_budget_tokens<=100000),
+          dependency_digest TEXT NOT NULL CHECK(length(dependency_digest)=64),
+          readiness_status TEXT NOT NULL DEFAULT 'draft' CHECK(readiness_status IN ('draft','ready','stale_blocked','revoked')),
+          deployment_state TEXT NOT NULL DEFAULT 'draft' CHECK(deployment_state IN ('draft','shadow','canary','active','revoked')),
+          version INTEGER NOT NULL DEFAULT 1 CHECK(version>0),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX cognitive_agent_profiles_state
+          ON cognitive_agent_profiles(readiness_status,deployment_state,updated_at DESC);
+
+        CREATE TABLE cognitive_product_versions(
+          asset_type TEXT NOT NULL CHECK(asset_type IN ('knowledge_base','agent')),
+          asset_id TEXT NOT NULL,
+          version INTEGER NOT NULL CHECK(version>0),
+          snapshot_json TEXT NOT NULL,
+          action TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY(asset_type,asset_id,version)
+        );
+      `);
+      db.prepare('INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)').run(4, new Date().toISOString());
+      db.exec('COMMIT');
+      current = 4;
     } catch (error) {
       try { db.exec('ROLLBACK'); } catch { /* preserve the original transaction error */ }
       throw error;

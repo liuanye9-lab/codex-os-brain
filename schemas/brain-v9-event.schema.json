@@ -8,10 +8,10 @@
   "properties": {
     "schemaVersion": { "const": 9 },
     "eventId": { "type": "string", "minLength": 1 },
-    "kind": { "enum": ["session", "prompt", "tool", "failure", "compact", "completion", "checkpoint", "migration", "verify", "internal_error"] },
+    "kind": { "enum": ["session", "subagent", "prompt", "tool", "failure", "compact", "completion", "checkpoint", "migration", "verify", "internal_error"] },
     "taskId": { "type": "string" },
     "turnId": { "type": "string" },
-    "status": { "enum": ["observed", "passed", "failed", "blocked", "unverified"] },
+    "status": { "enum": ["observed", "passed", "failed", "blocked", "unverified", "partial", "complete"] },
     "reasonCode": { "type": "string" },
     "signature": { "type": "string", "pattern": "^sig_[a-f0-9]{24}$" },
     "evidenceId": { "type": "string" },

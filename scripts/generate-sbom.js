@@ -3,13 +3,12 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawnNpmSync } = require('./npm-runtime');
 
 function main(argv = process.argv.slice(2)) {
   const outputIndex = argv.indexOf('--output');
   const output = path.resolve(outputIndex >= 0 ? argv[outputIndex + 1] : 'sbom.cdx.json');
-  const result = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm',
-    ['sbom', '--sbom-format', 'cyclonedx'], { encoding: 'utf8', shell: false });
+  const result = spawnNpmSync(['sbom', '--sbom-format', 'cyclonedx']);
   if (result.status !== 0) throw new Error(result.stderr || 'npm_sbom_failed');
   const sbom = JSON.parse(result.stdout);
   if (sbom.bomFormat !== 'CycloneDX' || !Array.isArray(sbom.components) || !sbom.components.length) {

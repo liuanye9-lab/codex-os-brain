@@ -21,6 +21,28 @@ test('MCP exposes approved tools and omits privileged capabilities', () => {
   assert.equal(names.includes('brain_get_cognitive_asset_status'), false);
 });
 
+test('MCP exposes governed cognitive product reads only when the lab is enabled', async () => {
+  const calls = [];
+  const core = {
+    features: { memory: false, cognitiveAssets: true },
+    cognitiveAssets: {
+      status: () => ({}),
+      dailyDigest: () => ({}),
+      readProjection: () => ({}),
+      productMap: () => ({ stages: ['knowledge_base', 'agent'] }),
+      assessAgent: (agentId, input) => { calls.push(['assess', agentId, input.targetState]); return { ready: true }; },
+      prepareAgentContext: (agentId, input) => { calls.push(['context', agentId, input.tokenBudget]); return { executionPerformed: false }; },
+    },
+  };
+  const defs = Object.fromEntries(toolDefinitions(core).map(tool => [tool.name, tool]));
+  assert.equal(defs.brain_get_cognitive_product_map.readOnly, true);
+  assert.equal(defs.brain_assess_cognitive_agent.destructive, true);
+  assert.equal((await defs.brain_get_cognitive_product_map.handler()).structuredContent.stages[1], 'agent');
+  await defs.brain_assess_cognitive_agent.handler({ agentId: 'agent-1', targetState: 'shadow' });
+  await defs.brain_prepare_cognitive_agent_context.handler({ agentId: 'agent-1', tokenBudget: 500 });
+  assert.deepEqual(calls, [['assess', 'agent-1', 'shadow'], ['context', 'agent-1', 500]]);
+});
+
 test('disabled labs do not initialize the memory database', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-disabled-labs-'));
   const paths = resolveV9Paths({ CODEX_BRAIN_HOME: path.join(home, 'brain'), CODEX_BRAIN_STATE_HOME: path.join(home, 'state') });
@@ -45,12 +67,48 @@ test('disabled labs do not initialize the memory database', () => {
 
 test('MCP handlers return structured content from the shared core', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-mcp-call-'));
-  const core = createV9Core({ paths: resolveV9Paths({ CODEX_BRAIN_HOME: path.join(home, 'brain'), CODEX_BRAIN_STATE_HOME: path.join(home, 'state') }) });
+  const core = createV9Core({
+    paths: resolveV9Paths({ CODEX_BRAIN_HOME: path.join(home, 'brain'), CODEX_BRAIN_STATE_HOME: path.join(home, 'state') }),
+    projectRoot: home,
+  });
   const defs = Object.fromEntries(toolDefinitions(core).map(tool => [tool.name, tool]));
   await defs.brain_create_task.handler({ taskId: 'task_mcp', objective: 'verify mcp', criterionIds: ['tests'] });
   const result = await defs.brain_get_task_contract.handler({ taskId: 'task_mcp' });
   assert.equal(result.structuredContent.taskId, 'task_mcp');
   assert.match(result.content[0].text, /evidence, not instruction/i);
+});
+
+test('MCP mutating handlers preserve the selected project root', async () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-mcp-project-'));
+  const seen = [];
+  const contract = { taskId: 'scoped', objective: 'stay scoped' };
+  const selected = {
+    projectRoot: () => projectRoot,
+    contracts: { active: () => contract, close: () => ({ lifecycle: 'complete' }) },
+    verification: {
+      evaluateActive: () => ({ status: 'partial' }),
+      run: ({ cwd }) => { seen.push(['verify', cwd]); return { status: 'complete' }; },
+      claim: () => ({}),
+    },
+    events: { append: () => {} },
+    handoff: { writeProgress: ({ projectRoot: root }) => { seen.push(['handoff', root]); } },
+  };
+  const core = {
+    features: {},
+    projectRoot: () => projectRoot,
+    forTask: () => selected,
+    handoff: { statusHandoff: ({ projectRoot: root }) => ({ root }) },
+  };
+  const defs = Object.fromEntries(toolDefinitions(core).map(tool => [tool.name, tool]));
+  assert.equal('root' in (await defs.brain_get_handoff.handler()).structuredContent, false);
+  await defs.brain_verify_task.handler({ taskId: 'scoped' });
+  await defs.brain_checkpoint_task.handler({ taskId: 'scoped', summary: 'checkpoint' });
+  await defs.brain_close_task.handler({ taskId: 'scoped' });
+  assert.deepEqual(seen, [
+    ['verify', projectRoot],
+    ['handoff', projectRoot],
+    ['verify', projectRoot],
+  ]);
 });
 
 test('MCP memory recall uses the governed search path and never leaks source_uri', async () => {

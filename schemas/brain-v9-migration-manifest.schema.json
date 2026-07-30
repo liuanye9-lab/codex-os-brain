@@ -7,17 +7,18 @@
   "required": ["schemaVersion", "sourceRoot", "outputRoot", "createdAt", "records"],
   "properties": {
     "schemaVersion": { "const": 9 },
-    "sourceRoot": { "type": "string" },
-    "outputRoot": { "type": "string" },
+    "sourceRoot": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "outputRoot": { "type": "string", "minLength": 1, "maxLength": 4096 },
     "createdAt": { "type": "string", "format": "date-time" },
     "records": {
       "type": "array",
+      "maxItems": 100000,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["relativePath", "detectedVersion", "sensitivity", "disposition"],
         "properties": {
-          "relativePath": { "type": "string" },
+          "relativePath": { "type": "string", "minLength": 1, "maxLength": 4096 },
           "detectedVersion": { "type": "integer", "minimum": 1, "maximum": 8 },
           "bytes": { "type": "integer", "minimum": 0 },
           "sourceHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },

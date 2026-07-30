@@ -16,10 +16,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 test('core, CLI, and MCP report the same contract revision and lifecycle', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-cross-'));
   const stateHome = path.join(home, 'state');
-  const core = createV9Core({ paths: resolveV9Paths({ CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: stateHome }) });
+  const projectRoot = path.join(home, 'project');
+  fs.mkdirSync(projectRoot);
+  const core = createV9Core({ paths: resolveV9Paths({ CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: stateHome }), projectRoot });
   const direct = core.contracts.create({ taskId: 'task_1', objective: 'conform', criteria: [] });
   assert.equal(direct.revision, 1);
-  const cliRun = spawnSync(process.execPath, [path.join(root, 'bin', 'brain.js'), 'task', 'show', '--json'], { cwd: root, encoding: 'utf8', env: { ...process.env, CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: stateHome } });
+  const cliRun = spawnSync(process.execPath, [path.join(root, 'bin', 'brain.js'), 'task', 'show', '--project', projectRoot, '--json'], { cwd: root, encoding: 'utf8', env: { ...process.env, CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: stateHome } });
   assert.equal(cliRun.status, 0, cliRun.stderr);
   const cli = JSON.parse(cliRun.stdout);
   const mcpTool = toolDefinitions(core).find(tool => tool.name === 'brain_get_task_contract');

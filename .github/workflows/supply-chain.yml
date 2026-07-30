@@ -9,6 +9,15 @@ permissions:
   contents: read
 
 jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 -m pip install --disable-pip-version-check detect-secrets==1.5.0
+      - name: Scan tracked source files for secrets
+        shell: bash
+        run: git ls-files -z | grep -zEv '^(package-lock\.json|export-manifest\.json|assets/)' | xargs -0 detect-secrets-hook
+
   dependency-review:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -41,3 +50,20 @@ jobs:
           name: codex-brain-sbom
           path: sbom.cdx.json
           if-no-files-found: error
+
+  plugin-canary:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm install --global --ignore-scripts @openai/codex@0.146.0
+      - run: codex --version
+      - run: npm run test:plugin-canary

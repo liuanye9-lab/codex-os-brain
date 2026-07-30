@@ -7,6 +7,8 @@
     { "$ref": "#/$defs/EvidenceAssertion" },
     { "$ref": "#/$defs/CognitionUnit" },
     { "$ref": "#/$defs/PlaybookAsset" },
+    { "$ref": "#/$defs/KnowledgeBaseAsset" },
+    { "$ref": "#/$defs/AgentProfileAsset" },
     { "$ref": "#/$defs/ReuseReceipt" },
     { "$ref": "#/$defs/AssetProjectionGrant" }
   ],
@@ -39,7 +41,7 @@
         "subjects": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
         "allowedUses": {
           "type": "array",
-          "items": { "enum": ["evidence_extraction", "recall", "playbook_compile", "projection"] },
+          "items": { "enum": ["evidence_extraction", "recall", "playbook_compile", "knowledge_compile", "projection"] },
           "uniqueItems": true
         },
         "retentionPolicy": { "type": "object" },
@@ -148,6 +150,55 @@
         "validationStatus": { "enum": ["current", "stale_blocked", "revoked"] },
         "privacyLevel": { "enum": ["local_only", "private", "restricted", "public"] },
         "version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "KnowledgeBaseAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion", "knowledgeBaseId", "name", "domain", "description", "cognitionUnitIds",
+        "playbookIds", "retrievalPolicy", "dependencyDigest", "status", "privacyLevel", "version"
+      ],
+      "properties": {
+        "protocolVersion": { "$ref": "#/$defs/ProtocolVersion" },
+        "knowledgeBaseId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "domain": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "cognitionUnitIds": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 100, "uniqueItems": true },
+        "playbookIds": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 50, "uniqueItems": true },
+        "retrievalPolicy": { "type": "object" },
+        "dependencyDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "status": { "enum": ["draft", "published", "stale_blocked", "revoked"] },
+        "privacyLevel": { "enum": ["local_only", "private", "restricted", "public"] },
+        "version": { "type": "integer", "minimum": 1 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "AgentProfileAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion", "agentId", "name", "purpose", "knowledgeBaseIds", "playbookIds", "toolRefs",
+        "dependencyRefs", "contextBudgetTokens", "dependencyDigest", "readinessStatus", "deploymentState", "version"
+      ],
+      "properties": {
+        "protocolVersion": { "$ref": "#/$defs/ProtocolVersion" },
+        "agentId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "purpose": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "knowledgeBaseIds": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 20, "uniqueItems": true },
+        "playbookIds": { "type": "array", "items": { "type": "string" }, "maxItems": 30, "uniqueItems": true },
+        "toolRefs": { "type": "array", "items": { "type": "string" }, "maxItems": 50, "uniqueItems": true },
+        "dependencyRefs": { "type": "array", "maxItems": 100 },
+        "contextBudgetTokens": { "type": "integer", "minimum": 100, "maximum": 100000 },
+        "dependencyDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "readinessStatus": { "enum": ["draft", "ready", "stale_blocked", "revoked"] },
+        "deploymentState": { "enum": ["draft", "shadow", "canary", "active", "revoked"] },
+        "version": { "type": "integer", "minimum": 1 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       }
     },
     "ReuseReceipt": {

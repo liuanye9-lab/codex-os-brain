@@ -6,7 +6,7 @@
 [![Eval](https://img.shields.io/badge/eval-reliability%20suites-orange)](evals/v9-reliability/runner.cjs)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-![Codex Brain reliability copilot](assets/codex-brain-ip-hero.png)
+![Codex Brain reliability copilot](https://raw.githubusercontent.com/liuanye9-lab/codex-os-brain/main/assets/codex-brain-ip-hero.png)
 
 > Unofficial community project. Codex and related marks belong to OpenAI; this generated illustration does not imply affiliation or endorsement. Visual provenance is recorded in [`assets/visual-provenance.json`](assets/visual-provenance.json).
 
@@ -994,17 +994,49 @@ flowchart TB
 
 ## 认知资产协议
 
-0.16 增加了一个默认关闭、候选优先的 Cognitive Asset Protocol Lab。它把来源、证据判断、认知单元、Playbook manifest、真实复用回执和只读授权投影连成同一条可审计链，但不会把日常聊天直接升级成人格结论，也不保存隐藏推理或完整工具输出。
+0.16 增加了一个默认关闭、候选优先的 Cognitive Asset Protocol Lab。它把来源、证据判断、认知单元、Playbook、Knowledge Base、Agent Profile、真实复用回执和只读授权投影连成同一条可审计链，但不会把日常聊天直接升级成人格结论，也不保存隐藏推理或完整工具输出。
+
+### 双平面产品架构
+
+```mermaid
+flowchart TB
+  subgraph Control["稳定主线：Reliability Control Plane"]
+    I["User / Host Event"] --> T["Task Contract"]
+    T --> H["Hooks + Scope / Risk Policy"]
+    H --> V["Independent Verifier"]
+    V --> O["Evidence + Signed Receipt"]
+  end
+
+  subgraph Cognitive["可选实验层：Cognitive Product Plane（默认关闭）"]
+    E["Trusted Evidence"] --> C["Confirmed Cognition"]
+    C --> P["Runnable / Verified Playbook"]
+    P --> K["Published Knowledge Base"]
+    K --> A["Agent Profile"]
+    A --> X["Budgeted Governed Context"]
+  end
+
+  O -. "仅外部验签的生产回执可计数" .-> P
+  X -. "进入真实任务仍重新过合同与 Harness" .-> T
+  D["Protected Approval"] --> K
+  D --> A
+  S["Dependency Drift"] -. "stale_blocked" .-> P
+  S -. "stale_blocked" .-> K
+  S -. "stale_blocked" .-> A
+```
+
+稳定主线决定“能不能做、是否真的完成”，认知产品层决定“哪些有证据的方法可以被受控复用”。安装或启用 Agent Profile 不会获得新权限，也不能绕过项目 `AGENTS.md`、Task Contract、Hooks、工具策略或 protected approval。
+
+### 认知产品生命周期
 
 ```mermaid
 flowchart LR
-  S["Source Envelope<br/>默认 quarantine"] --> C["Cognition Candidate"]
-  C --> H["人工确认 + 四级证据门"]
-  H --> U["Cognition Unit"]
-  U --> P["Playbook"]
-  P --> R["生产路径 Reuse Receipt"]
-  R --> V["Verified Capability"]
-  V --> G["只读 Projection Grant"]
+  S["Source / Evidence<br/>默认 quarantine"] --> C["Cognition<br/>可证伪认知单元"]
+  C --> P["Playbook<br/>可执行方法"]
+  P --> K["Knowledge Base<br/>受保护发布"]
+  K --> A["Agent Profile<br/>shadow / canary / active"]
+  A --> R["签名 Run / Context Receipt"]
+  R --> N["新 Candidate<br/>禁止自动晋升"]
+  N --> C
 ```
 
 语义成熟度与部署状态分开；`runnable_playbook` 只代表 manifest 已通过结构门。内置 provider 的 `prepareRun` 只准备外部执行请求，不 dispatch、不执行步骤、不宣称运行完成。晋升 `verified_capability` 至少需要 10 个语义不同案例、3 个边界或对抗案例、80% 成功率、零关键安全失败。计数样本必须是外部 verifier 验签通过、带唯一 nonce、绑定 task/playbook version、executor/verifier principal 与不同 trust domain，以及 input/output/artifact/runner/policy digest 的生产路径收据。没有配置外部 `reuseReceiptVerifier` 时，复用记录和自动晋升均 fail closed。
@@ -1013,9 +1045,14 @@ flowchart LR
 # Labs 每次启动都必须显式确认；Cognitive Assets 会同时启用 Memory
 brain cognition status --enable-cognitive-assets --confirm-labs --json
 brain cognition digest --enable-cognitive-assets --confirm-labs --limit 5 --json
+brain cognition product-map --enable-cognitive-assets --confirm-labs --json
+brain cognition agent-readiness --id AGENT_ID --target shadow --enable-cognitive-assets --confirm-labs --json
+brain cognition agent-context --id AGENT_ID --token-budget 1200 --enable-cognitive-assets --confirm-labs --json
 ```
 
-默认关闭；显式启用后，`operator_guardrail_only` 模式也只允许检查，不具备跨 Agent 导出授权能力。未加密的 live SQLite 会拒绝调用方声明为敏感、personal scope，或被类型规则分类为 personality、emotion、health、relationship、values 等敏感推断；它不是自动内容识别器。完整协议、安全边界和 MCP 投影说明见 [Cognitive Asset Protocol v1](docs/v9/cognitive-assets.md)。
+Knowledge Base 发布和 Agent 的 `draft → shadow → canary → active` 部署都要求依赖 digest 当前且有 protected approval。Agent context 绑定用途和 token 预算，不带原始 source，也不执行 Agent；上游证据、认知、Playbook 或工具合同漂移会把下游产品级联标记为 `stale_blocked`。
+
+默认关闭；显式启用后，`operator_guardrail_only` 模式也只允许检查，不具备跨 Agent 导出授权能力。未加密的 live SQLite 会拒绝调用方声明为敏感、personal scope，或被类型规则分类为 personality、emotion、health、relationship、values 等敏感推断；它不是自动内容识别器。协议细节见 [Cognitive Asset Protocol v1](docs/v9/cognitive-assets.md)，完整产品架构、开源对照和论文依据见 [认知产品框架](docs/v9/cognitive-product-framework.md)。
 
 ---
 
@@ -1239,6 +1276,7 @@ flowchart TB
 | [可选 Ollama 本地嵌入](docs/v9/local-embeddings.md) | 资料柜 |
 | [事务记忆基础设施](docs/v9/memory-infrastructure.md) | SQLite、检索、图与持续评测 |
 | [Cognitive Asset Protocol v1](docs/v9/cognitive-assets.md) | 来源隔离、证据门、Playbook、复用门槛与只读投影 |
+| [认知产品框架](docs/v9/cognitive-product-framework.md) | Playbook → Knowledge Base → Agent、研究依据与 P2 评测路线 |
 | [加密备份及冲突同步](docs/v9/encrypted-backup-and-sync.md) | `.cbmem`、Keychain 与血缘判定 |
 | [离线恢复密钥仪式](docs/v9/recovery-key-ceremony.md) | 2-of-2 分离保管、演练、导入与轮换 |
 | [V1–V8 迁移与回退](docs/v9/migration.md) | 搬家协议 |
