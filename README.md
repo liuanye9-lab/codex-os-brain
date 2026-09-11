@@ -1145,6 +1145,7 @@ flowchart TB
 | [CLI / hooks / MCP 快速开始](docs/v9/quickstart.md) | 命令与接入 |
 | [Hook Coverage Matrix](docs/v9/hook-coverage.md) | 3 个声明事件、阻断能力与已知宿主边界 |
 | [P0–P6 可靠性控制平面](docs/v9/p0-p6-reliability-plane.md) | 0.10 机制说明 |
+| [V10 → V11 升级说明](docs/v9/v10-to-v11.md) | 移除项、hook 收敛与升级步骤 |
 | [V1–V8 迁移与回退](docs/v9/migration.md) | 搬家协议 |
 | [隐私与威胁模型](docs/v9/privacy-and-threat-model.md) | 本地优先与导出 |
 | [研究与开源归属](docs/v9/research-and-attribution.md) | 论文与上游概念 |

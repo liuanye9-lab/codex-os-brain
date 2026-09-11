@@ -2,21 +2,24 @@
 
 This matrix describes the harness contract, not a claim that every Codex host version emits every event. Run `brain doctor --project "$PWD" --json` after installation and verify the host behavior in the target environment.
 
-| Event | Harness behavior | Can block when host honors output | Failure policy | Regression coverage |
-|---|---|---:|---|---|
-| `SessionStart` | bounded local session recall | no | fail open | handler + install smoke |
-| `SessionEnd` | sanitized observation | no | fail open | manifest + dispatch |
-| `UserPromptSubmit` | no-op reserved interface | no | fail open | runtime smoke |
-| `PreToolUse` | path and risk decision | yes | fail closed | policy + hook tests |
-| `PostToolUse` | sanitized outcome/failure observation | no | fail open | hook tests |
-| `PermissionRequest` | path and risk decision | yes | fail closed | manifest + dispatch |
-| `SubagentStart` | sanitized observation | no | fail open | manifest + dispatch |
-| `SubagentStop` | sanitized observation | no | fail open | manifest + dispatch |
-| `PreCompact` | bounded checkpoint | no | fail open | session tests |
-| `PostCompact` | bounded rehydration | no | fail open | session tests |
-| `Stop` | real-time verifier rerun and completion gate | yes | fail closed | completion tests |
+V11 registers three events. Every other lifecycle event is left to the host; a sensor with no distinct
+failure mode is cost, not coverage.
 
-`PreToolUse`, `PermissionRequest`, and `Stop` are the only declared blocking paths. A registered hook is not an operating-system security boundary: direct filesystem writes, processes that bypass the host hook protocol, a modified package runtime, and a malicious process running as the same OS user remain outside the guarantee.
+| Event | Harness behavior | Failure mode it catches | Can block when host honors output | Failure policy | Regression coverage |
+|---|---|---|---:|---|---|
+| `SessionStart` | bounded local session recall | lost contract context after a new or resumed session | no | fail open | handler + install smoke |
+| `PreToolUse` | path and risk decision | action outside the signed task boundary | yes | fail closed | policy + hook tests |
+| `Stop` | real-time verifier rerun and completion gate | completion claimed without passing acceptance | yes | fail closed | completion tests |
+
+`PreToolUse` and `Stop` are the only declared blocking paths.
+
+Removed in V11 (previously registered, now unregistered): `SessionEnd`, `UserPromptSubmit`,
+`PostToolUse`, `PermissionRequest`, `SubagentStart`, `SubagentStop`, `PreCompact`, `PostCompact`.
+These were observation-only or duplicated `PreToolUse`, and the installer no longer writes them.
+An entry for one of these events in a user's `hooks.json` therefore belongs to the user and is never
+modified or removed by this installer.
+
+A registered hook is not an operating-system security boundary: direct filesystem writes, processes that bypass the host hook protocol, a modified package runtime, and a malicious process running as the same OS user remain outside the guarantee.
 
 The manifest provides a POSIX command and a Windows command form. The CI matrix exercises source and production smoke tests on Linux, macOS, and Windows, but it does not prove that an arbitrary future host release will preserve identical event names or decision semantics.
 
