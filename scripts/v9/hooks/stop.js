@@ -1,5 +1,7 @@
 'use strict';
 const { blockDecision } = require('./input');
+const { clearStopGate, evaluateStopGate } = require('../stop-gate');
+const { projectScopeId } = require('../paths');
 
 async function handleStop(input, core) {
   if (!input.completionClaim) return {};
@@ -29,14 +31,27 @@ async function handleStop(input, core) {
     };
   }
 
+  const projectRoot = input.projectRoot || process.cwd();
+  const activeContract = (() => {
+    try { return core.contracts.active(); } catch { return null; }
+  })();
+  const gateScope = {
+    paths: core.paths,
+    projectScope: projectScopeId(projectRoot),
+    taskId: activeContract?.taskId,
+    blockCap: core.config?.stopGate?.blockCap,
+    stallLimit: core.config?.stopGate?.stallLimit,
+  };
+
   if (result.status === 'complete') {
+    // Genuine pass: return the full block budget to the next task.
+    try { clearStopGate(gateScope); } catch { /* optional */ }
     try {
-      const contract = core.contracts.active();
-      if (contract && core.handoff?.writeProgress) {
+      if (activeContract && core.handoff?.writeProgress) {
         core.handoff.writeProgress({
-          projectRoot: input.projectRoot || process.cwd(),
-          taskId: contract.taskId,
-          objective: contract.objective,
+          projectRoot,
+          taskId: activeContract.taskId,
+          objective: activeContract.objective,
           sessionSummary: 'Stop accepted: all required criteria harness-verified.',
         });
       }
@@ -45,9 +60,41 @@ async function handleStop(input, core) {
   }
 
   const remaining = [...(result.missing || []), ...(result.failed || []), ...(result.unverified || [])];
+
+  // The gate may hold a session only while it is still making a difference. The escape valve
+  // depends on a readable ledger; when the ledger itself is unavailable we cannot know whether the
+  // cap was reached, and Stop is a declared fail-closed event, so we keep blocking rather than
+  // let an unwritable state directory become a way to switch the gate off.
+  let gate = { allowBlock: true };
+  if (core.paths?.stopGateRoot) {
+    try {
+      gate = evaluateStopGate({ ...gateScope, remaining });
+    } catch {
+      gate = { allowBlock: true, ledgerUnavailable: true };
+    }
+  }
+
+  if (!gate.allowBlock) {
+    // Released, not passed. Say so plainly: the work is still unverified.
+    try {
+      if (activeContract && core.handoff?.writeProgress) {
+        core.handoff.writeProgress({
+          projectRoot,
+          taskId: activeContract.taskId,
+          objective: activeContract.objective,
+          sessionSummary: `Stop released WITHOUT verification (${gate.releaseReason}); unverified: ${remaining.join(', ') || 'unknown'}.`,
+        });
+      }
+    } catch { /* optional */ }
+    return {};
+  }
+
+  const budget = typeof gate.remainingBlocks === 'number'
+    ? ` Gate attempt ${gate.blocks}/${gate.blockCap}; it will stop blocking after ${gate.remainingBlocks} more.`
+    : '';
   return blockDecision(
     'completion_unverified',
-    `Required criteria remain unverified by harness re-run: ${remaining.join(', ') || 'unknown'}. Agent self-claims do not count.`,
+    `Required criteria remain unverified by harness re-run: ${remaining.join(', ') || 'unknown'}. Agent self-claims do not count.${budget}`,
   );
 }
 

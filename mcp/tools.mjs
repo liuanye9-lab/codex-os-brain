@@ -40,6 +40,38 @@ export function toolDefinitions(core) {
       handler: async () => result(core.handoff.statusHandoff({ projectRoot: process.cwd() })),
     },
     {
+      name: 'brain_assess_split',
+      description: 'Judge whether work should be split across sub-agents, by task shape only. Splitting is refused when units must talk to each other, need shared context, or cannot be checked individually.',
+      inputSchema: {
+        units: z.number().int().min(0).max(100000),
+        independentUnits: z.boolean().optional(),
+        isolatedContext: z.boolean().optional(),
+        exceedsSingleContext: z.boolean().optional(),
+        perUnitVerifiable: z.boolean().optional(),
+      },
+      readOnly: true,
+      handler: async ({ units, independentUnits, isolatedContext, exceedsSingleContext, perUnitVerifiable } = {}) => result(
+        core.fanout.assessSplit({
+          units,
+          crossUnitDependency: independentUnits !== true,
+          sharedContextRequired: isolatedContext !== true,
+          exceedsSingleContext: exceedsSingleContext === true,
+          perUnitVerifiable: perUnitVerifiable === true,
+        }),
+        'Advisory only; splitting still requires per-unit verification.',
+      ),
+    },
+    {
+      name: 'brain_get_fanout_status',
+      description: 'Read delegation ledger status for a plan, including how much delegated output was adopted with no harness check.',
+      inputSchema: { planId: z.string().optional() },
+      readOnly: true,
+      handler: async ({ planId = 'default' } = {}) => result(
+        core.fanout.status({ planId }),
+        'Ledger evidence only; a high zeroVerificationRate means unchecked work is being adopted.',
+      ),
+    },
+    {
       name: 'brain_list_skills', description: 'List bundled and active skills (evidence-gated activation).', inputSchema: {}, readOnly: true,
       handler: async () => result(core.skills.list()),
     },

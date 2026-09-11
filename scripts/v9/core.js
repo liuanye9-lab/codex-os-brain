@@ -3,7 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { resolveV9Paths, scopeV9Paths } = require('./paths');
+const { projectScopeId, resolveV9Paths, scopeV9Paths } = require('./paths');
 const { atomicWriteJson, readJsonSafe } = require('./store');
 const { createControlStore } = require('./control-store');
 const { createControlGuard } = require('./control-guard');
@@ -16,6 +16,7 @@ const { evaluateAction } = require('./policy');
 const { captureVerifierBaseline } = require('./verifiers');
 const migration = require('./migration');
 const handoff = require('./handoff');
+const fanout = require('./fanout');
 const { createSkillsService } = require('./skills');
 const { getHostAdapter, listHosts } = require('./hosts');
 const { IDENTITY } = require('./identity');
@@ -120,6 +121,7 @@ function createV9Core({
               baseline: criterion.verifierSpec?.baseline || captureVerifierBaseline(
                 projectRoot(),
                 criterion.verifierSpec?.baselinePaths,
+                criterion.verifierSpec?.baselineExcludePaths,
               ),
             },
           };
@@ -305,6 +307,14 @@ function createV9Core({
     failures,
     migration,
     handoff,
+    // Delegation state layer. Scoped to the project so two projects never share a work ledger.
+    fanout: {
+      assessSplit: fanout.assessSplit,
+      register: input => fanout.registerUnits({ paths, projectScope: projectScopeId(projectRoot()), ...input }),
+      claim: input => fanout.claimUnits({ paths, projectScope: projectScopeId(projectRoot()), ...input }),
+      complete: input => fanout.completeUnit({ paths, projectScope: projectScopeId(projectRoot()), ...input }),
+      status: input => fanout.fanoutStatus({ paths, projectScope: projectScopeId(projectRoot()), ...input }),
+    },
     skills,
     hosts: { get: getHostAdapter, list: listHosts },
     paths,

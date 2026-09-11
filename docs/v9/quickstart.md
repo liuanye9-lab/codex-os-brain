@@ -63,6 +63,48 @@ brain handoff progress --summary "finished smoke path" --json
 
 Creates `.brain/feature-backlog.json`, `.brain/progress.md`, and `.brain/smoke.sh`.
 
+## Governance gate
+
+Bind a workflow's own manifest to the Stop gate, so an unadjudicated entry cannot be published:
+
+```bash
+brain task create --task-id kb-q3 --objective "publish the Q3 policy set" \
+  --criterion governance --manifest workspace/knowledge-manifest.json --json
+```
+
+Any entry without `production_ready: true`, and any dangling `parent_id` / `source_ids` /
+`related_ids`, blocks completion. It fails closed: a missing or unreadable manifest is a failure,
+and an absent readiness flag is not consent. See `governance-and-delegation.md`.
+
+## Delegation (fan-out)
+
+Splitting is decided by task shape, never by a preference for more agents:
+
+```bash
+brain fanout assess --units 500 \
+  --independent-units --isolated-context --per-unit-verifiable --json
+```
+
+When it does split, the ledger prevents the largest multi-agent failure mode — repeating work
+someone already did — by handing every dispatch a read-only list of what is finished:
+
+```bash
+brain fanout register --plan kb-q3 --units "f1,f2,f3" --json
+brain fanout claim    --plan kb-q3 --worker inventory-A --limit 2 --json
+brain fanout complete --plan kb-q3 --unit f1 --worker inventory-A \
+  --verified --verifier-ref "ev#<harness-run>" --json
+brain fanout status   --plan kb-q3 --json
+```
+
+`--verified` without `--verifier-ref` is refused: a worker cannot vouch for itself. Watch
+`zeroVerificationRate` in `status` — the share of delegated output adopted with no check at all.
+
+## The Stop gate is bounded
+
+Stop blocks a completion claim at most three times per task, and steps aside earlier if the
+unresolved set stops shrinking. A release is **not** a pass: it is written to `.brain/progress.md`
+as `released WITHOUT verification`, with the criteria still open.
+
 ## Skills (P4)
 
 ```bash

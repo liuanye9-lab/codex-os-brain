@@ -27,6 +27,7 @@ function commandGuide() {
       verify: 'Re-run executable acceptance criteria.',
       evidence: 'claim | attach',
       handoff: 'init | status | progress',
+      fanout: 'assess | register | claim | complete | status',
       hooks: 'doctor | enable | disable',
       mcp: 'serve',
     },
@@ -122,7 +123,9 @@ async function runCli(argv, io = defaultIo(), services = {}) {
     } else {
       if (!args.objective) return io.error('objective is required', EXIT.usage);
       const criterionIds = args.criterion ? String(args.criterion).split(',') : [];
-      const customIds = criterionIds.filter(id => !['tests', 'scope'].includes(id));
+      // Built-in verifiers are harness code, not caller-supplied shell, so they need no approval.
+      // Only a criterion that runs an arbitrary command is "custom".
+      const customIds = criterionIds.filter(id => !['tests', 'scope', 'governance'].includes(id));
       if (customIds.length && (!args.command || args['approve-custom-verifier'] !== true)) {
         return io.error('custom criteria require --command and --approve-custom-verifier', EXIT.usage);
       }
@@ -134,6 +137,12 @@ async function runCli(argv, io = defaultIo(), services = {}) {
           };
         }
         if (id === 'scope') return { id, required: true, verifier: 'git_diff_bounded' };
+        if (id === 'governance') {
+          return {
+            id, required: true, verifier: 'manifest_gate',
+            verifierSpec: args.manifest ? { manifest: args.manifest } : {},
+          };
+        }
         return {
           id, required: true, verifier: 'command_exit_0',
           verifierSpec: {
@@ -217,6 +226,42 @@ async function runCli(argv, io = defaultIo(), services = {}) {
       taskId: task?.taskId,
       objective: task?.objective || args.objective,
       sessionSummary: args.summary || args._[2] || 'Progress update',
+    }));
+  }
+  if (group === 'fanout' && (!action || action === 'status')) {
+    return io.json(core.fanout.status({ planId: args.plan || 'default' }));
+  }
+  if (group === 'fanout' && action === 'assess') {
+    // Decide by task shape, never by preference for more agents.
+    return io.json(core.fanout.assessSplit({
+      units: Number(args.units || 0),
+      crossUnitDependency: args['independent-units'] !== true,
+      sharedContextRequired: args['isolated-context'] !== true,
+      exceedsSingleContext: args['exceeds-context'] === true,
+      perUnitVerifiable: args['per-unit-verifiable'] === true,
+    }));
+  }
+  if (group === 'fanout' && action === 'register') {
+    const units = String(args.units || args._[2] || '').split(',').map(value => value.trim()).filter(Boolean);
+    if (units.length === 0) return io.error('units is required (comma separated)', EXIT.usage);
+    return io.json(core.fanout.register({ planId: args.plan || 'default', units: units.map(id => ({ id, label: id })) }));
+  }
+  if (group === 'fanout' && action === 'claim') {
+    if (!args.worker) return io.error('worker is required', EXIT.usage);
+    return io.json(core.fanout.claim({ planId: args.plan || 'default', worker: args.worker, limit: Number(args.limit || 1) }));
+  }
+  if (group === 'fanout' && action === 'complete') {
+    if (!args.unit) return io.error('unit is required', EXIT.usage);
+    // Verified status is a harness fact; the CLI may only pass through a verifier reference.
+    if (args.verified === true && !args['verifier-ref']) {
+      return io.error('--verified requires --verifier-ref from a harness check', EXIT.usage);
+    }
+    return io.json(core.fanout.complete({
+      planId: args.plan || 'default',
+      unitId: args.unit,
+      worker: args.worker,
+      verified: args.verified === true,
+      verifierRef: args['verifier-ref'] || null,
     }));
   }
   if (group === 'skill' && (!action || action === 'list')) return io.json(core.skills.list());
