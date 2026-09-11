@@ -9,15 +9,22 @@ const { verifyReadmeLinks, verifyPackageContents, verifyVisualProvenance } = req
 
 const root = path.resolve(__dirname, '..');
 
-test('README documents V9 external surfaces and adaptive lifecycle', () => {
+test('README documents V11 external surfaces and adaptive lifecycle', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  for (const required of ['Codex Brain V9', '```mermaid', 'brain status', 'brain mcp serve', 'PreToolUse', 'Stop', 'V1–V8', 'Ollama', 'brain embeddings doctor']) assert.ok(readme.includes(required), required);
+  for (const required of ['Codex Brain V11', '```mermaid', 'brain status', 'brain mcp serve', 'SessionStart', 'PreToolUse', 'Stop', 'V1–V8']) assert.ok(readme.includes(required), required);
   assert.equal((readme.match(/```mermaid/g) || []).length >= 2, true);
+  // V11 removed these surfaces; the README must not advertise them again.
+  // Removed surfaces may only appear inside an explicit removal notice, never as usage.
+  for (const gone of ['brain embeddings', 'brain memory ', 'brain cognition', 'Ollama']) {
+    const advertised = readme.split('\n')
+      .filter(line => line.includes(gone) && !line.includes('V11 已移除'));
+    assert.deepEqual(advertised, [], `README still advertises removed surface: ${gone}`);
+  }
 });
 
-test('README explains V9 core ideas in plain Chinese with familiar analogies', () => {
+test('README explains V11 core ideas in plain Chinese with familiar analogies', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  for (const required of ['安全副驾驶', '任务合同', '本地资料柜', '红绿灯', '小抄', 'v1/README.md']) assert.ok(readme.includes(required), required);
+  for (const required of ['安全副驾驶', '任务合同', '红绿灯', '小抄', 'v1/README.md']) assert.ok(readme.includes(required), required);
 });
 
 test('README names the AI engineering disciplines behind the plain-language metaphors', () => {
@@ -78,11 +85,11 @@ test('product, release, runtime contract, and compatibility identity are consist
   const publicPackage = JSON.parse(fs.readFileSync(path.join(root, 'config', 'public-package.json'), 'utf8'));
   const plugin = JSON.parse(fs.readFileSync(path.join(root, '.codex-plugin', 'plugin.json'), 'utf8'));
   assert.deepEqual(packageJson.codexBrain, publicPackage.codexBrain);
-  assert.equal(packageJson.codexBrain.productMajor, 10);
+  assert.equal(packageJson.codexBrain.productMajor, 11);
   assert.equal(packageJson.codexBrain.runtimeContract, 9);
   assert.equal(packageJson.codexBrain.releaseVersion, packageJson.version);
   assert.equal(packageJson.codexBrain.compatibilityName, packageJson.name);
-  assert.equal(plugin.codexBrain.productMajor, 10);
+  assert.equal(plugin.codexBrain.productMajor, 11);
   assert.equal(plugin.codexBrain.runtimeContract, 9);
 });
 

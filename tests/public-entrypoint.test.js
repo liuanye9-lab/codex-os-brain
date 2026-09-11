@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 
@@ -15,11 +16,12 @@ test('exports stable public control-plane modules', async () => {
   assert.equal(typeof api.behavioralMemory.createCandidate, 'function');
 });
 
-test('stable core and cognitive lab have separate package entrypoints', async () => {
+test('the package exposes a single stable core entrypoint and no lab surface', async () => {
   const core = await import('../core.js');
-  const labs = await import('../labs/cognitive-assets.js');
   assert.equal(typeof core.v9Core.createV9Core, 'function');
-  assert.equal(typeof labs.createCognitiveAssetProvider, 'function');
+  await assert.rejects(() => import('../labs/cognitive-assets.js'), /Cannot find module/);
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  assert.equal(pkg.exports['./labs/cognitive-assets'], undefined);
 });
 
 test('self-check exposes safe defaults without starting a model or hook', () => {

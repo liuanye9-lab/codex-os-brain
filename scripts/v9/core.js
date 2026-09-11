@@ -15,49 +15,12 @@ const { advanceCircuit, classifyFailure, resetCircuitForOperation } = require('.
 const { evaluateAction } = require('./policy');
 const { captureVerifierBaseline } = require('./verifiers');
 const migration = require('./migration');
-const { createEmbeddingService } = require('./embeddings');
 const handoff = require('./handoff');
 const { createSkillsService } = require('./skills');
-const { createMemoryService } = require('./memory-service');
-const { createMemoryHarness } = require('./memory-harness');
-const { backupMemoryDatabase } = require('./memory-db');
-const { createCognitiveAssetProvider } = require('./cognitive-assets');
-const {
-  compareEncryptedMemoryBackup,
-  createEncryptedMemoryBackup,
-  createMacKeychainStore,
-  inspectEncryptedMemoryBackup,
-  verifyEncryptedMemoryBackup,
-} = require('./memory-encrypted-backup');
-const {
-  drillRecoveryKey,
-  exportRecoveryKey,
-  importRecoveryKey,
-  recoverMemoryRuntime,
-  restoreEncryptedMemoryBackup,
-  rotateRecoveryKey,
-} = require('./memory-recovery');
 const { getHostAdapter, listHosts } = require('./hosts');
 const { IDENTITY } = require('./identity');
 
 const EVENT_FIELDS = ['eventId', 'kind', 'taskId', 'turnId', 'status', 'reasonCode', 'signature', 'evidenceId', 'durationMs', 'createdAt'];
-
-function disabledFeature(name, extraStatus = {}) {
-  return new Proxy({
-    status: () => ({ enabled: false, reason: 'feature_disabled', feature: name, ...extraStatus }),
-  }, {
-    get(target, property) {
-      if (property in target) return target[property];
-      if (property === 'then') return undefined;
-      return () => {
-        const error = new Error(`feature_disabled:${name}`);
-        error.code = 'feature_disabled';
-        error.feature = name;
-        throw error;
-      };
-    },
-  });
-}
 
 function readV9Config(configPath) {
   const file = configPath || path.resolve(__dirname, '..', '..', 'config', 'brain-lite-v9.json');
@@ -70,13 +33,9 @@ function createV9Core({
   projectRoot: configuredProjectRoot,
   sessionId: configuredSessionId,
   taskId: configuredTaskId,
-  cognitiveAssetAuthorityMode = 'operator_guardrail_only',
-  cognitiveAssetApprovalVerifier = null,
 } = {}) {
   const basePaths = paths;
   const enabled = config.enabled === true;
-  const memoryEnabled = enabled && config.memory?.enabled === true;
-  const cognitiveAssetsEnabled = enabled && config.cognitiveAssets?.enabled === true;
   const projectRoot = () => path.resolve(configuredProjectRoot || process.env.BRAIN_PROJECT_ROOT || process.cwd());
   const rawSessionId = String(configuredSessionId || process.env.BRAIN_SESSION_ID || process.env.CODEX_THREAD_ID || 'default');
   const runtimePaths = config.hooks?.projectScoped === false ? paths : scopeV9Paths(paths, projectRoot());
@@ -88,25 +47,7 @@ function createV9Core({
     sessionId: rawSessionId,
     taskId: configuredTaskId,
   });
-  const embeddings = createEmbeddingService({ paths });
   const skills = createSkillsService({ paths });
-  const memory = memoryEnabled
-    ? createMemoryService({ paths })
-    : disabledFeature('memory', { liveDatabaseEncrypted: false });
-  const memoryHarness = memoryEnabled ? createMemoryHarness({ paths }) : disabledFeature('memory_harness');
-  const cognitiveAssets = cognitiveAssetsEnabled
-    ? createCognitiveAssetProvider({
-      paths,
-      authorityMode: cognitiveAssetAuthorityMode,
-      approvalVerifier: cognitiveAssetApprovalVerifier,
-    })
-    : disabledFeature('cognitive_assets', {
-      lab: true,
-      playbookExecution: false,
-      liveDatabaseEncrypted: false,
-      sensitivePersistenceAllowed: false,
-    });
-  const memoryBackupKeyStore = createMacKeychainStore();
   const evidenceSealer = createEvidenceSealer({ paths });
   const controlGuard = createControlGuard({ guardPath: paths.controlGuardPath, evidenceSealer });
   if (enabled) {
@@ -308,17 +249,6 @@ function createV9Core({
         taskId: outcome.contract.taskId,
         status: outcome.evaluation.status,
       });
-      if (memoryEnabled && outcome.evaluation.status === 'complete') {
-        try {
-          memory.createMemory({
-            content: `Task ${outcome.contract.taskId} verified complete: ${outcome.contract.objective}`,
-            kind: 'verified_outcome',
-            sourceUri: `task:${outcome.contract.taskId}`,
-            actor: 'verification_harness',
-            metadata: { evidenceIds: outcome.results.map(item => item.evidenceId) },
-          });
-        } catch { /* optional */ }
-      }
       return { ...outcome.evaluation, results: outcome.results, lastVerifiedAt: outcome.contract.lastVerifiedAt };
     },
     runOne(criterionId, spec = {}, options = {}) {
@@ -360,48 +290,30 @@ function createV9Core({
       enabled,
       features: {
         stableCore: enabled,
-        memory: memoryEnabled,
-        cognitiveAssets: cognitiveAssetsEnabled,
+        memory: false,
+        cognitiveAssets: false,
         playbookExecution: false,
       },
       runtimeRoot: paths.runtimeRoot,
       controlStore: enabled ? { kind: 'sqlite', sessionId: controlStore.sessionId, integrity: controlStore.integrity() } : { enabled: false },
-      memory: memory.status(),
-      cognitiveAssets: cognitiveAssets.status(),
+      memory: { enabled: false, reason: 'delegated_to_host', host: 'codex_native_memories' },
+      cognitiveAssets: { enabled: false, reason: 'removed_in_v11' },
     }),
     contracts,
     events,
     verification,
     failures,
-    embeddings,
     migration,
     handoff,
     skills,
-    memory,
-    memoryHarness,
-    cognitiveAssets,
-    backupMemory: () => backupMemoryDatabase({ paths }),
-    encryptedMemoryBackup: {
-      initKey: options => memoryBackupKeyStore.init(options),
-      create: () => createEncryptedMemoryBackup({ paths, keyStore: memoryBackupKeyStore }),
-      inspect: input => inspectEncryptedMemoryBackup(input),
-      verify: input => verifyEncryptedMemoryBackup({ input, paths, keyStore: memoryBackupKeyStore }),
-      compare: input => compareEncryptedMemoryBackup({ input, paths, keyStore: memoryBackupKeyStore }),
-      restore: options => restoreEncryptedMemoryBackup({ ...options, paths, keyStore: memoryBackupKeyStore }),
-      recoveryExport: options => exportRecoveryKey({ ...options, paths, keyStore: memoryBackupKeyStore }),
-      recoveryDrill: options => drillRecoveryKey({ ...options, paths }),
-      recoveryImport: options => importRecoveryKey({ ...options, keyStore: memoryBackupKeyStore }),
-      recoveryRotate: options => rotateRecoveryKey({ ...options, paths, keyStore: memoryBackupKeyStore }),
-      recover: options => recoverMemoryRuntime({ ...options, paths }),
-    },
     hosts: { get: getHostAdapter, list: listHosts },
     paths,
     sessionId: controlStore.sessionId,
     config,
     features: {
       stableCore: enabled,
-      memory: memoryEnabled,
-      cognitiveAssets: cognitiveAssetsEnabled,
+      memory: false,
+      cognitiveAssets: false,
       playbookExecution: false,
     },
     projectRoot,

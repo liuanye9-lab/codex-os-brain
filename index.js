@@ -8,7 +8,6 @@ import v8Review from './scripts/brain-lite-v8-review.js';
 import behavioralMemory from './scripts/brain-lite-behavioral-memory.js';
 import behavioralPolicy from './scripts/brain-lite-behavioral-policy.js';
 import v9Core from './scripts/v9/core.js';
-import v9CognitiveAssets from './scripts/v9/cognitive-assets.js';
 import v9Doctor from './scripts/v9/doctor.js';
 import v9EvidenceSeal from './scripts/v9/evidence-seal.js';
 import v9HookConfig from './scripts/v9/hook-config.js';
@@ -29,7 +28,6 @@ export {
   traceV2,
   v8Review,
   v9Core,
-  v9CognitiveAssets,
   v9Doctor,
   v9EvidenceSeal,
   v9HookConfig,
@@ -52,7 +50,6 @@ export default Object.freeze({
   behavioralPolicy,
   v9: Object.freeze({
     core: v9Core,
-    cognitiveAssets: v9CognitiveAssets,
     doctor: v9Doctor,
     evidenceSeal: v9EvidenceSeal,
     hookConfig: v9HookConfig,

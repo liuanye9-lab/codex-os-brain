@@ -5,7 +5,6 @@ const { createV9Core, readV9Config } = require('../scripts/v9/core');
 const { dispatchHook } = require('../scripts/v9/hook-dispatch');
 const { handleSession } = require('../scripts/v9/hooks/session');
 const { handleRisk } = require('../scripts/v9/hooks/risk');
-const { handleObservation } = require('../scripts/v9/hooks/observer');
 const { handleStop } = require('../scripts/v9/hooks/stop');
 const { getHostAdapter } = require('../scripts/v9/hosts');
 
@@ -33,24 +32,20 @@ async function main() {
   const adapter = getHostAdapter(hostName);
 
   const bind = handler => value => handler(value, core);
+  // V11: three hooks only. Every extra sensor was cost without a distinct failure mode.
+  //   SessionStart -> restore task contract context after a new/resumed session
+  //   PreToolUse   -> block actions outside the signed task boundary
+  //   Stop         -> refuse an unverified completion claim
   const handlers = {
     SessionStart: bind(handleSession),
-    SessionEnd: bind(handleObservation),
-    PostCompact: bind(handleSession),
-    PreCompact: bind(handleSession),
     PreToolUse: bind(handleRisk),
-    PostToolUse: bind(handleObservation),
-    PermissionRequest: bind(handleRisk),
-    SubagentStart: bind(handleObservation),
-    SubagentStop: bind(handleObservation),
     Stop: bind(handleStop),
-    UserPromptSubmit: async () => ({}),
   };
 
   const output = await adapter.handle(input, async normalized => dispatchHook(normalized, {
     enabled,
     handlers,
-    failClosedEvents: new Set(['PreToolUse', 'PermissionRequest', 'Stop']),
+    failClosedEvents: new Set(['PreToolUse', 'Stop']),
     auditInternalError(event, error) {
       const reasonCode = String(error?.code || 'hook_internal_error').slice(0, 80);
       try {
