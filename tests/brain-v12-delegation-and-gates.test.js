@@ -10,6 +10,7 @@ const path = require('node:path');
 
 const { clearStopGate, evaluateStopGate, readStopGate } = require('../scripts/v9/stop-gate');
 const { assessSplit, claimUnits, completeUnit, fanoutStatus, registerUnits } = require('../scripts/v9/fanout');
+const { withFileLock } = require('../scripts/v9/store');
 const { captureVerifierBaseline, runVerifier, verifyVerifierBaseline } = require('../scripts/v9/verifiers');
 const { handleStop } = require('../scripts/v9/hooks/stop');
 
@@ -295,6 +296,73 @@ test('a verified claim without a verifier reference is not recorded as verified'
   assert.equal(fanoutStatus(scope).verified, 0);
 });
 
+test('a claim is a lease, so a crashed worker never strands its units', () => {
+  // Found by the A/B eval: units held by a worker that never reported back were unreachable
+  // forever, and the work was silently lost.
+  const { paths } = tempPaths();
+  const scope = { paths, projectScope: 'p', planId: 'lease' };
+  registerUnits({ ...scope, units: [{ id: 'u1' }, { id: 'u2' }] });
+  claimUnits({ ...scope, worker: 'crashed', limit: 2 });
+
+  // While the lease is live, nobody may take the work away.
+  assert.deepEqual(claimUnits({ ...scope, worker: 'healthy', limit: 5 }).claimed, []);
+
+  // Once it expires, the units return to the pool and the reclaim is recorded.
+  const retry = claimUnits({ ...scope, worker: 'healthy', limit: 5, leaseMs: 0 });
+  assert.deepEqual(retry.reclaimed, ['u1', 'u2']);
+  assert.deepEqual(retry.claimed, ['u1', 'u2']);
+  assert.equal(fanoutStatus({ ...scope, leaseMs: 0 }).reclaimed, 2);
+});
+
+test('status surfaces units held past their lease instead of hiding them', () => {
+  const { paths } = tempPaths();
+  const scope = { paths, projectScope: 'p', planId: 'stall' };
+  registerUnits({ ...scope, units: [{ id: 'u1', label: 'stuck unit' }] });
+  claimUnits({ ...scope, worker: 'crashed', limit: 1 });
+
+  // Let the claim age past a 1ms lease, so the assertion does not depend on sub-millisecond timing.
+  const until = Date.now() + 5;
+  while (Date.now() < until) { /* deliberate short wait */ }
+
+  const status = fanoutStatus({ ...scope, leaseMs: 1 });
+  assert.equal(status.stalled, 1);
+  assert.deepEqual(status.stalledSample, ['stuck unit']);
+
+  // A unit still inside its lease is not reported as stalled.
+  assert.equal(fanoutStatus({ ...scope, leaseMs: 60_000 }).stalled, 0);
+});
+
+test('a contended ledger makes workers wait instead of starving them', () => {
+  // Found by a real 5-process concurrency run: lock_busy threw straight out of claimUnits, so
+  // whichever workers lost the race silently received no work at all.
+  const { paths } = tempPaths();
+  const scope = { paths, projectScope: 'p', planId: 'contended' };
+  registerUnits({ ...scope, units: [{ id: 'u1' }, { id: 'u2' }] });
+
+  const file = path.join(paths.fanoutRoot, 'p', 'contended.json');
+  const lock = `${file}.lock`;
+  fs.mkdirSync(path.dirname(lock), { recursive: true });
+  fs.writeFileSync(lock, JSON.stringify({ pid: 999999 }));
+
+  // A lock older than the stale window must be broken rather than waited on forever.
+  const past = Date.now() - 60_000;
+  fs.utimesSync(lock, past / 1000, past / 1000);
+
+  const claim = claimUnits({ ...scope, worker: 'patient', limit: 1 });
+  assert.deepEqual(claim.claimed, ['u1']);
+});
+
+test('releasing a lock another process already cleared is not an error', () => {
+  // The stale-lock cleanup raced itself under real concurrency and threw ENOENT mid-run.
+  const { root } = tempPaths();
+  const lock = path.join(root, 'racy.lock');
+  const outcome = withFileLock(lock, () => {
+    fs.unlinkSync(lock); // simulate another process winning the cleanup
+    return 'completed';
+  });
+  assert.equal(outcome, 'completed');
+});
+
 test('plans and projects keep separate ledgers', () => {
   const { paths } = tempPaths();
   registerUnits({ paths, projectScope: 'p1', planId: 'x', units: [{ id: 'u1' }] });
@@ -310,9 +378,33 @@ test('splitting is refused whenever units are coupled, however many there are', 
   assert.equal(coupled.recommend, 'single_agent');
   assert.ok(coupled.blockers.includes('units_must_talk_to_each_other'));
 
+  // An unqualified "shared context required" is still read as coupling.
   const shared = assessSplit({ units: 500, crossUnitDependency: false, sharedContextRequired: true, perUnitVerifiable: true });
   assert.equal(shared.recommend, 'single_agent');
-  assert.ok(shared.blockers.includes('shared_context_required'));
+  assert.ok(shared.blockers.includes('shared_mutable_state'));
+});
+
+test('shared read-only context is not coupling, but shared mutable state is', () => {
+  // Found by an adversarial eval case: copying a style guide into every dispatch costs nothing,
+  // so it must not force a thousand independent units back onto one agent.
+  const readOnly = assessSplit({
+    units: 1000, crossUnitDependency: false, sharedContextRequired: true, sharedContextMutable: false, perUnitVerifiable: true,
+  });
+  assert.equal(readOnly.recommend, 'fan_out');
+
+  const mutable = assessSplit({
+    units: 1000, crossUnitDependency: false, sharedContextRequired: true, sharedContextMutable: true, perUnitVerifiable: true,
+  });
+  assert.equal(mutable.recommend, 'single_agent');
+  assert.ok(mutable.blockers.includes('shared_mutable_state'));
+});
+
+test('ordering is a dependency even when units share no data', () => {
+  const ordered = assessSplit({
+    units: 40, crossUnitDependency: false, sharedContextRequired: false, orderDependent: true, perUnitVerifiable: true,
+  });
+  assert.equal(ordered.recommend, 'single_agent');
+  assert.ok(ordered.blockers.includes('units_must_be_produced_in_order'));
 });
 
 test('splitting is refused when a unit cannot be checked on its own', () => {

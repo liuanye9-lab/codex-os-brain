@@ -61,9 +61,17 @@ function appendJsonl(filePath, event) {
 function withFileLock(lockPath, fn, options = {}) {
   ensureParent(lockPath);
   const staleMs = Number(options.staleMs || 30_000);
+  // Every filesystem call here races another process doing exactly the same thing, so each one
+  // tolerates the file vanishing underneath it rather than assuming its own check still holds.
   if (fs.existsSync(lockPath)) {
-    const age = Date.now() - fs.statSync(lockPath).mtimeMs;
-    if (age > staleMs) fs.unlinkSync(lockPath);
+    try {
+      const age = Date.now() - fs.statSync(lockPath).mtimeMs;
+      if (age > staleMs) fs.unlinkSync(lockPath);
+    } catch (error) {
+      // Another holder cleared it between our check and our stat/unlink. That is the outcome we
+      // wanted anyway; only a genuinely unexpected error is worth reporting.
+      if (error.code !== 'ENOENT') throw error;
+    }
   }
   let handle;
   try {
@@ -77,7 +85,11 @@ function withFileLock(lockPath, fn, options = {}) {
     return fn();
   } finally {
     fs.closeSync(handle);
-    if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
+    try {
+      fs.unlinkSync(lockPath);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
   }
 }
 

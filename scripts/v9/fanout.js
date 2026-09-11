@@ -25,6 +25,11 @@ const { atomicWriteJson, readJsonSafe, withFileLock } = require('./store');
 
 const LEDGER_VERSION = 1;
 const TERMINAL = new Set(['completed', 'rejected', 'abandoned']);
+// A claim is a lease. Long enough that a slow worker is never robbed mid-flight, short enough that
+// a dead worker does not strand its units for the rest of the run.
+const DEFAULT_LEASE_MS = 15 * 60 * 1000;
+// How long a worker will keep retrying a contended ledger before giving up and reporting it.
+const LOCK_WAIT_MS = 10 * 1000;
 
 function ledgerPath(paths, projectScope, planId) {
   const safe = String(planId || 'default').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120);
@@ -50,16 +55,37 @@ function unitKey(unit) {
   return crypto.createHash('sha256').update(String(unit)).digest('hex').slice(0, 16);
 }
 
+/**
+ * Take the ledger lock and apply a change.
+ *
+ * Under real concurrency the lock is contended, and failing immediately starves whichever workers
+ * happen to lose the race — measured at four of five workers claiming nothing at all. Retry with
+ * randomised backoff so contention slows a worker down instead of silently excluding it. The wait
+ * is bounded: a lock that never frees must surface as an error, not as an infinite hang.
+ */
 function mutate(file, planId, fn) {
-  return withFileLock(`${file}.lock`, () => {
-    const ledger = loadLedger(file, planId);
-    const now = new Date().toISOString();
-    const result = fn(ledger, now);
-    ledger.createdAt = ledger.createdAt || now;
-    ledger.updatedAt = now;
-    atomicWriteJson(file, ledger);
-    return result;
-  });
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  let attempt = 0;
+  for (;;) {
+    try {
+      return withFileLock(`${file}.lock`, () => {
+        const ledger = loadLedger(file, planId);
+        const now = new Date().toISOString();
+        const result = fn(ledger, now);
+        ledger.createdAt = ledger.createdAt || now;
+        ledger.updatedAt = now;
+        atomicWriteJson(file, ledger);
+        return result;
+      });
+    } catch (error) {
+      if (error.message !== 'lock_busy' || Date.now() >= deadline) throw error;
+      attempt += 1;
+      // Exponential backoff with jitter, so retrying workers do not resynchronise into a herd.
+      const backoff = Math.min(2 ** attempt, 64) + Math.floor(Math.random() * 16);
+      const until = Date.now() + backoff;
+      while (Date.now() < until) { /* short spin; waits here are sub-100ms by construction */ }
+    }
+  }
 }
 
 /** Register the units this plan covers. Re-registering an existing unit never resets its state. */
@@ -91,12 +117,34 @@ function registerUnits({ paths, projectScope = 'default', planId = 'default', un
  * Returns only units nobody holds and nobody finished, so two workers cannot be handed the same
  * work. `completedContext` is what the lead injects into the dispatch: a read-only list of what is
  * already done. Workers never write it.
+ *
+ * A worker that dies after claiming would otherwise strand its units forever, so a claim is a
+ * lease: once it goes stale it returns to the pool. The unit is not lost, and it is not silently
+ * handed out twice either — the reclaim is recorded.
  */
-function claimUnits({ paths, projectScope = 'default', planId = 'default', worker, limit = 1 } = {}) {
+function claimUnits({
+  paths, projectScope = 'default', planId = 'default', worker, limit = 1, leaseMs = DEFAULT_LEASE_MS,
+} = {}) {
   if (!worker) throw new Error('fanout_worker_required');
   const file = ledgerPath(paths, projectScope, planId);
   return mutate(file, planId, (ledger, now) => {
     const claimed = [];
+    const reclaimed = [];
+    const deadline = Date.parse(now) - Number(leaseMs);
+
+    for (const unit of Object.values(ledger.units)) {
+      if (unit.state !== 'claimed') continue;
+      const claimedAt = Date.parse(unit.claimedAt || 0);
+      if (Number.isFinite(claimedAt) && claimedAt < deadline) {
+        unit.state = 'pending';
+        unit.reclaimedFrom = unit.claimedBy;
+        unit.reclaimCount = (unit.reclaimCount || 0) + 1;
+        unit.claimedBy = null;
+        unit.claimedAt = null;
+        reclaimed.push(unit.key);
+      }
+    }
+
     for (const unit of Object.values(ledger.units)) {
       if (claimed.length >= limit) break;
       if (unit.state !== 'pending') continue;
@@ -108,7 +156,7 @@ function claimUnits({ paths, projectScope = 'default', planId = 'default', worke
     const completedContext = Object.values(ledger.units)
       .filter(unit => unit.state === 'completed')
       .map(unit => unit.label);
-    return { planId, worker: String(worker), claimed, completedContext };
+    return { planId, worker: String(worker), claimed, reclaimed, completedContext };
   });
 }
 
@@ -142,17 +190,23 @@ function completeUnit({
  * Plan status, including the metric worth watching: how much delegated output was adopted with no
  * check at all. A high zero-verification rate means the fan-out is propagating unexamined work.
  */
-function fanoutStatus({ paths, projectScope = 'default', planId = 'default' } = {}) {
+function fanoutStatus({ paths, projectScope = 'default', planId = 'default', leaseMs = DEFAULT_LEASE_MS } = {}) {
   const ledger = loadLedger(ledgerPath(paths, projectScope, planId), planId);
   const units = Object.values(ledger.units);
   const completed = units.filter(unit => unit.state === 'completed');
   const verified = completed.filter(unit => unit.verified === true);
   const unverified = completed.filter(unit => unit.verified !== true);
+  const deadline = Date.now() - Number(leaseMs);
+  // Held past their lease: a worker took these and never came back.
+  const stalled = units.filter(unit => unit.state === 'claimed' && Date.parse(unit.claimedAt || 0) < deadline);
   return {
     planId: ledger.planId,
     total: units.length,
     pending: units.filter(unit => unit.state === 'pending').length,
     claimed: units.filter(unit => unit.state === 'claimed').length,
+    stalled: stalled.length,
+    stalledSample: stalled.slice(0, 10).map(unit => unit.label),
+    reclaimed: units.filter(unit => (unit.reclaimCount || 0) > 0).length,
     completed: completed.length,
     verified: verified.length,
     unverified: unverified.length,
@@ -169,17 +223,33 @@ function fanoutStatus({ paths, projectScope = 'default', planId = 'default' } = 
  * not need to talk to each other. Everything else -- speed, "more agents", architectural fashion --
  * is not a reason. Wall-clock time is not accuracy, and extra compute can be bought far more
  * cheaply by raising a single agent's thinking budget than by paying for orchestration.
+ *
+ * Two distinctions the first version got wrong, both found by cases written to break it:
+ *
+ *  - Shared *read-only* context (a style guide, a schema, a constant) is not coupling. It can be
+ *     copied into every dispatch at no correctness cost. Only shared *mutable* state forces one
+ *     agent, so `sharedContextRequired` now asks whether the shared thing is written to.
+ *  - Ordering is a dependency even without data flow. Units that must be produced in sequence
+ *     cannot be worked in parallel, however independent their contents are.
  */
 function assessSplit({
   units = 0,
   crossUnitDependency = true,
   sharedContextRequired = true,
+  sharedContextMutable = null,
+  orderDependent = false,
   exceedsSingleContext = false,
   perUnitVerifiable = false,
 } = {}) {
   const blockers = [];
   if (crossUnitDependency) blockers.push('units_must_talk_to_each_other');
-  if (sharedContextRequired) blockers.push('shared_context_required');
+
+  // Default to the cautious reading when the caller does not say whether the shared context is
+  // mutable: an unqualified "shared context required" is treated as coupling, as before.
+  const mutableShared = sharedContextMutable === null ? sharedContextRequired : sharedContextMutable;
+  if (sharedContextRequired && mutableShared) blockers.push('shared_mutable_state');
+
+  if (orderDependent) blockers.push('units_must_be_produced_in_order');
   if (!perUnitVerifiable) blockers.push('no_independent_per_unit_check');
   if (units < 3 && !exceedsSingleContext) blockers.push('too_few_units_to_pay_for_handoffs');
 
