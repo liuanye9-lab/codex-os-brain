@@ -1,1158 +1,213 @@
-# Codex Brain V11：Coding Agent 可靠性 Harness（个人版）
+# Codex Brain — 个人可靠性 Harness
 
-[![Version](https://img.shields.io/badge/version-0.17.0-5b5bd6)](package.json)
-[![Hooks](https://img.shields.io/badge/hooks-3%20sensors-8957e5)](hooks/hooks.json)
-[![Runtime](https://img.shields.io/badge/runtime-local--first-1f883d)](docs/v9/privacy-and-threat-model.md)
-[![Interfaces](https://img.shields.io/badge/interfaces-hooks%20%7C%20CLI%20%7C%20MCP-0969da)](docs/v9/quickstart.md)
-[![Eval](https://img.shields.io/badge/eval-reliability%20suites-orange)](evals/v9-reliability/runner.cjs)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+给 Codex 装一套安全带：**agent 说"做完了"的时候，由机器去验证，而不是相信它。**
 
-![Codex Brain reliability copilot](assets/codex-brain-ip-hero.png)
-
-> Unofficial community project. Codex and related marks belong to OpenAI; this generated illustration does not imply affiliation or endorsement. Visual provenance is recorded in [`assets/visual-provenance.json`](assets/visual-provenance.json).
-
-V11 的主线只有一件事：在宿主真实触发的 Hook 路径上阻止 Coding Agent 越界修改，并阻止它在没有通过验收时宣布完成。
-
-**V11 做的主要是减法。** V10 曾经自带一整套长期记忆（SQLite + 向量 + 加密备份 + 恢复密钥）和一层认知资产实验协议，并向 12 个 Hook 事件全量注册。实际使用下来这些都是成本而非收益：Codex 已经内置 Memories，自建记忆层等于同一件事有两个负责人；认知资产层从未在日常里被启用，却贡献了全仓最大的单文件和唯一一个真实的时钟缺陷。V11 把它们整层删除，并把传感面收敛到三个各自对应一种明确失败模式的 Hook：
-
-| Hook | 拦的是哪一种失败 |
-|---|---|
-| `SessionStart` | 新开 / 恢复会话后丢失任务合同上下文 |
-| `PreToolUse` | 动作越过已签名的任务边界 |
-| `Stop` | 没通过验收就宣布「已完成」 |
-
-长期记忆与跨会话召回交给宿主原生能力，harness 不再自带记忆库、向量索引或嵌入服务。
-
-底层任务合同、Hooks、CLI、MCP、SQLite 和 verifier 继续使用已经稳定的 V9 runtime contract，避免为了改产品代号破坏现有安装与数据兼容。因此 npm 包名、`scripts/v9` 路径和部分 schema 名称在 V11 中仍保留；它们表示兼容层，不表示产品仍停留在 V9。
-
-## 最快部署：优先使用 Codex 原生 Plugin
-
-仓库根目录现在提供 `.codex-plugin/plugin.json`、`.mcp.json` 和 `hooks/hooks.json`。通过 Codex 的 Plugin 管理器安装本仓库，是默认分发路径：Plugin 负责声明 Hook 与零依赖、只读、未绑定项目的状态 MCP，项目门禁仍默认关闭，不会因为“装上了”就修改某个项目或初始化认知数据库。需要任务创建、验证或其他受控本地状态写入时，CLI 和 full MCP 都必须显式传入 `--project`。只有用户对具体项目显式确认后，才执行 `brain hooks enable --project "$PWD" --confirm`。
-
-从公开仓 checkout 安装原生 Plugin：
+不是让模型更聪明，是让它**不能声称未经验证的完成**、**不能悄悄改掉验收标准**、**不能把没人检查过的产出当成结果交付**。
 
 ```bash
-codex plugin marketplace add "$PWD" --json
-codex plugin add codex-brain-v9@codex-brain --json
-```
-
-仓库自带 `.agents/plugins/marketplace.json`；`npm run test:plugin-canary` 会在临时 `CODEX_HOME` 里真实走完 marketplace add、plugin add、零依赖 MCP initialize 和默认不建库，并核对真实用户配置未变化。
-
-npm 全局安装继续作为兼容 CLI 路径，不再是产品身份或默认架构：
-
-先让 Agent 进入你要保护的项目目录，然后把下面整段发给它：
-
-```text
-请在当前项目部署 Codex Brain V11 Harness 的兼容 CLI。先确认 Node.js >= 22.5，再执行：
-npm install --global codex-brain-v9@0.17.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
-
-只允许把 Codex Brain 增量合并进当前用户的 Codex Hook loader，不要改 Claude Code Hooks，不要修改项目业务文件。保留用户已有 Hooks；项目 task、事件和记忆仍按 projectRoot 隔离。如果任一步失败就停止并报告原始错误。完成后只在 doctor 同时满足 ok=true、eventsComplete=true、fingerprintMatch=true、packageVersionMatch=true、runtimeDigestMatch=true、runtimeHealthy=true、runtimeStorageWritable=true，且 evidence-signing-loop=passed 时告诉我“安装完整”；只有真实 host canary 记录到事件后才能告诉我“宿主门禁已生效”。
-```
-
-如果你自己在终端操作，先 `cd` 到目标项目，再复制这一行：
-
-```bash
-npm install --global codex-brain-v9@0.17.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
-```
-
-这条兼容命令把运行时安装到 npm 全局目录，并把通用 loader 增量合并进当前用户的 `$CODEX_HOME/hooks.json`（默认 `~/.codex/hooks.json`）。loader 在没有活动项目合同的时候静默返回，task、事件和证据仍按 projectRoot 隔离；Memory 与 Cognitive Labs 默认关闭。安装器会保留已有 Hooks，并自动保存可恢复的原配置。不要使用 `sudo npm install`；如果全局 npm 目录不可写，先改用用户级 Node 版本管理器。
-
-部署成功后可直接使用：
-
-```bash
-codex-brain task create --task-id demo --objective "ship safely" --criterion tests --json
-codex-brain verify --json
-```
-
-需要完整卸载时：
-
-```bash
-codex-brain hooks disable --project "$PWD" --confirm --json && npm uninstall --global codex-brain-v9
-```
-
-把 AI 编程助手想成**司机**：它负责开车、认路、做决定。  
-Codex Brain 像坐在副驾的人：**平时不唠叨、不抢方向盘**；只有快碰到红线、要做高风险操作、连续撞同一堵墙、长对话被压缩，或它说「已经做完」时，才提醒、补小抄，或踩一脚刹车。
-
-> 它**不是**另一个 Agent，不是 OS 沙箱，也不承诺让模型永远正确。
-> 它是一套本地可靠性实验框架：把「目标、边界、证据、失败、交接」变成可回归检查的规则。Hooks 只覆盖宿主实际触发的事件，不能代替操作系统权限、容器隔离、代码审查或发布审批。
-> 内置 `test_runner` 仍在当前用户权限和项目代码上执行，只能产生 `project_tests` 级证据。创建任务时会封印 package scripts、lockfile 与 test/tests 输入；这些输入变化后拒绝执行。要求 `trusted_acceptance` 的合同在独立 runner 尚未接入时会 fail closed。
-
-### Start here：先验稳定 Core，再决定开哪些 Labs
-
-```bash
-git clone https://github.com/liuanye9-lab/codex-os-brain.git
-cd codex-os-brain
-npm install && npm test
-npm link
-
-brain --help
-brain doctor --json
-brain task create --task-id demo --objective "ship safely" --criterion tests --json
-brain verify --json
-```
-
-Node.js 必须是 **22.5+**。`brain doctor` 不修改项目业务文件，但会运行临时签名闭环，并可能首次初始化本机证据密钥；项目 hooks 默认关闭，只有显式执行 `brain hooks enable --project "$PWD" --confirm` 才会写入项目配置。
-
-### 可选的最小上下文续航
-
-有些人会在自己的私有环境里额外接一条很短的 `UserPromptSubmit` hook：只从本地核心摘要中取身份、协作偏好和安全边界，再交给 Agent。它解决的是跨任务的连续性，不是把完整聊天、人格设定或长期记忆塞进每一轮。
-
-这类 hook 应当只读、本地运行、固定 token 上限、失败静默放行；遇到发布、删除、密钥、长期记忆或人格文件时，工具前 hook 只提醒核对范围、证据和回滚，不伪装成强制审批。个人核心文件、用户画像、真实会话和全局 hook 配置都不属于这个公开仓库，也不在公开导出范围内。
-
-### 30 秒对照：没装 vs 装了
-
-```mermaid
-flowchart LR
-  subgraph Before["没装 harness"]
-    B1["Agent 自己开车"] --> B2["靠自觉记目标"]
-    B2 --> B3["靠自觉说做完了"]
-    B3 --> B4["撞墙就重试"]
-    B4 --> B5["人靠感觉收场"]
-  end
-  subgraph After["装了 Codex Brain"]
-    A1["Agent 仍是司机"] --> A2["任务合同写清目标/红线"]
-    A2 --> A3["合同签名 + 固定验收题"]
-    A3 --> A4["项目隔离 + 路由证据防篡改"]
-    A4 --> A5["熔断 / 恢复 / 可逆 Hooks"]
-  end
-  Before -. "升级" .-> After
-```
-
----
-
-## 目录
-
-1. [装上之后，你到底得到什么](#装上之后你到底得到什么)
-2. [Agent 会有哪些具体提升](#agent-会有哪些具体提升)
-3. [什么时候会插手，什么时候闭嘴](#什么时候会插手什么时候闭嘴)
-4. [一图看懂架构](#一图看懂架构)
-5. [P0–P6：0.10 可靠性控制平面](#p0p6-010-可靠性控制平面)
-6. [历代版本：解决了什么问题，为什么那样改](#历代版本解决了什么问题为什么那样改)
-7. [五分钟跑起来](#五分钟跑起来)
-8. [工程术语对照](#工程术语对照)
-9. [它做不到什么](#它做不到什么)
-10. [文档索引](#文档索引)
-
----
-
-## 装上之后，你到底得到什么
-
-安装并启用后，你的工作流会多出一套**本地、可审计、默认可静默**的护栏，而不是再塞一个会抢话的「超级大脑」。
-
-### 能力全景图（你买到的是整套安全带，不是更吵的导航）
-
-```mermaid
-mindmap
-  root((Codex Brain<br/>装上后你得到))
-    三条入口
-      项目 hooks 传感器
-      brain CLI 控制台
-      本地 MCP 插口
-    任务合同
-      目标 objective
-      红线 constraints
-      范围 scope
-      验收 criteria
-    可执行验收
-      claim 仅自述
-      verify 真重跑
-      harnessVerified
-      合同与题目签名
-    信任边界
-      macOS Keychain
-      Windows DPAPI
-      Linux libsecret 或 0600 文件降级
-      路由账本 hash chain + MAC
-      降级成无签名记录也拒绝
-    项目隔离
-      task event failure 分区
-      embedding memory 分区
-      临时 eval projectRoot
-    失败熔断
-      2 次警告
-      3 次开路灯
-      按 operation 独立复位
-    班次交接
-      backlog
-      progress
-      smoke
-    安检策略
-      路径规范化
-      风险表
-    有门禁增强
-      技能工牌
-      未核验记忆
-      可选本地嵌入
-    工程闭环
-      脱敏事件
-      可靠性考场
-      隐私导出
-      能力真烟测
-      崩溃恢复与临时明文清理
-```
-
-### 1. 三条统一入口（同一套规则）
-
-```mermaid
-flowchart TB
-  H["hooks<br/>项目传感器"] --> Core["同一套 V9 Core<br/>策略 / 合同 / 验收 / 事件"]
-  C["brain CLI<br/>手边控制台"] --> Core
-  M["MCP<br/>通用插口"] --> Core
-  Core --> R1["读：状态 · 失败 · 证据 · 交接"]
-  Core --> R2["写：建任务 · claim · checkpoint"]
-  Core --> R3["刹：禁区 · 熔断 · 未验收完成"]
-```
-
-| 入口 | 大白话 | 你得到什么 |
-|---|---|---|
-| **项目 hooks** | 装在项目里的传感器 | 在 `SessionStart` / `PreToolUse` / `PostToolUse` / `PreCompact` / `PostCompact` / `Stop` 等时点自动观察；平时安静，触发红线才介入 |
-| **`brain` CLI** | 手边控制台 | 建任务、验收、交接、技能、记忆、嵌入、hooks 开关，全部可脚本化、可 JSON 输出 |
-| **本地 MCP** | 给其他应用的标准插口 | Cursor / 其他 MCP 客户端可读状态与证据，受控写任务与 claim；**不能**绕过策略、装模型、跑迁移 |
-
-三端共用同一 core：**不会出现「CLI 一套规矩、hooks 另一套」**。
-
-### 2. 一份「任务合同」（Task Contract）
-
-装上后你可以（也应当）把每次正经活写成合同：
-
-- **objective**：要做成什么  
-- **constraints**：明确红线（用户说的 > 推断的）  
-- **scope.allowed / forbidden**：能动哪里、不能动哪里  
-- **criteria + verifier**：怎样才算验收通过  
-
-这不是写给人类看的文档玩具，而是 **Stop / verify / close 的硬门槛**。
-
-```mermaid
-flowchart LR
-  U["用户意图"] --> TC["Task Contract"]
-  TC --> O["objective<br/>要做成什么"]
-  TC --> C["constraints<br/>不能碰什么"]
-  TC --> S["scope<br/>允许/禁止路径"]
-  TC --> K["criteria<br/>如何验收"]
-  K --> V["verifier 插件<br/>command / tests / scope / human…"]
-  V --> Gate["Stop / close 硬门槛"]
-```
-
-### 3. 可执行验收，而不是「口头完成」
-
-| 以前常见情况 | 装上之后 |
-|---|---|
-| Agent 说「测试过了 / 做完了」 | 只记为 **claim（自述）**，状态仍是 `unverified` |
-| 你凭感觉相信 | `brain verify` **重新跑** command / test / scope 等 verifier |
-| 过关靠自觉 | 只有 verifier 重跑产生、且本机 HMAC 封印有效的 `harnessVerified: true` 证据才能把 criterion 标成 `passed` |
-
-这里的 `harnessVerified` 表示“当前 Harness 确实重跑并封印了结果”，不等于“测试在独立安全域中运行”。`test_runner` 会先核对任务创建时封印的 `package.json`、lockfile、`test/` 和 `tests/`；评分输入发生变化就返回 `verifier_inputs_changed`，不会执行被改写的测试脚本。只有后续接入独立账户、容器或受保护 CI，并能验证 runner/policy/artifact digest 的执行器，才应产出 `trusted_acceptance`。
-
-类比：**学生自己在卷子上打勾不算分，老师重批才算分。**
-
-```mermaid
-sequenceDiagram
-  participant A as Agent 学生
-  participant B as Brain 老师
-  participant E as 真实环境<br/>测试/命令/路径
-  A->>B: claim「我做完了 / 测过了」
-  Note over B: 只记 unverified<br/>不能当 passed
-  A->>B: 请求 Stop / close
-  B->>E: verify 重跑 verifier
-  E-->>B: exit code / diff / 结果
-  alt 全部 harnessVerified=passed
-    B-->>A: 放行完成
-  else 缺证据 / 失败 / 仅自述
-    B-->>A: 刹车：completion_unverified
-  end
-```
-
-### 4. 失败熔断（Failure Circuit）
-
-同类失败：
-
-1. 第 1 次：记一笔  
-2. 第 2 次：**警告——换路线**  
-3. 第 3 次：**熔断——别再盲重试**
-
-减少「同一面墙连撞十分钟」的 token 与时间浪费。
-
-```mermaid
-stateDiagram-v2
-  [*] --> 绿灯_closed
-  绿灯_closed --> 绿灯_closed: 第1次同类失败<br/>只记账
-  绿灯_closed --> 黄灯_warning: 第2次同类失败<br/>提醒换路
-  黄灯_warning --> 红灯_open: 第3次同类失败<br/>熔断暂停盲重试
-  红灯_open --> 绿灯_closed: 后续调用成功<br/>清零复位
-  note right of 红灯_open
-    按失败签名累计
-    不是任意错误混在一起
-  end note
-```
-
-### 5. 班次交接工件（Session Handoff）
-
-在项目下生成 / 维护：
-
-```text
-.brain/
-  feature-backlog.json   # 功能清单（passes 只能在验证后翻 true）
-  progress.md            # 本班做了什么、留下什么
-  smoke.sh               # 下一班先点烟：环境还活着吗
-```
-
-上下文压缩或新开会话时，副驾驶补的是**目标 + 红线 + 未决 + 交接摘要**，不是整段聊天复读。
-
-```mermaid
-flowchart TB
-  subgraph 上一班 Session N
-    W1["做一小步功能"] --> W2["写 progress.md"]
-    W2 --> W3["更新 backlog 状态"]
-    W3 --> W4["尽量留下可合并的干净状态"]
-  end
-  subgraph 交接桌 .brain
-    F1["feature-backlog.json"]
-    F2["progress.md"]
-    F3["smoke.sh"]
-  end
-  subgraph 下一班 Session N+1
-    S1["先跑 smoke"] --> S2["读 progress + git log"]
-    S2 --> S3["选下一个未完成 feature"]
-    S3 --> S4["再动手改代码"]
-  end
-  W4 --> F1 & F2 & F3
-  F1 & F2 & F3 --> S1
-```
-
-### 6. 能力边界策略（Capability Policy）
-
-不再靠「命令字符串里有没有 delete 字样」这种贴纸式匹配，而是：
-
-- 路径 **canonicalize**（规范化真实路径）  
-- **allow / deny** 前缀与禁区  
-- 工具与 shell 的 **risk table**（如 `git push --force`、`rm -rf`、管道远程执行）
-
-```mermaid
-flowchart LR
-  T["工具调用<br/>Write / Bash / …"] --> P["路径规范化<br/>realpath / resolve"]
-  P --> D1{"落在 forbidden？"}
-  D1 -->|是| Block["level 4 刹车"]
-  D1 -->|否| D2{"超出 allowed？"}
-  D2 -->|是| Block
-  D2 -->|否| R["风险表分级<br/>low / med / high / critical"]
-  R --> D3{"high / critical？"}
-  D3 -->|是| Confirm["确认或拦截"]
-  D3 -->|否| Allow["放行 · 安静记账"]
-```
-
-### 7. 技能门禁（有门禁的增强，不是永远在线）
-
-- **Skills**：激活必须声明 **期望验收项 + token 预算**；产出是证据候选项，不是指令  
-- **召回不归 harness 管**：V11 起，长期记忆与跨会话召回完全交给宿主（Codex 原生 Memories）。harness 不再自带记忆库、向量索引或嵌入服务——同一件事只留一个负责人
-
-```mermaid
-flowchart TB
-  subgraph Skills["技能 = 临时工工牌"]
-    SA["activate"] --> SB["expected criteria"]
-    SA --> SC["token budget"]
-    SB --> SD["产出 = 证据候选项<br/>不是命令"]
-  end
-  subgraph Memory["记忆 = 便利贴墙"]
-    M1["写入 / 召回"] --> M2["默认 UNVERIFIED"]
-    M2 --> M3{"来自 harness 验证结果？"}
-    M3 -->|是| M4["晋升 verified_outcome"]
-    M3 -->|否| M5["注入时强制提醒：勿当圣旨"]
-  end
-```
-
-### 8. 隐私与本地优先
-
-- 默认 **local-first**：状态在 `CODEX_BRAIN_HOME`（或 `~/.codex-brain`）  
-- 事件是**脱敏元数据**，不默认存原始 prompt / 原始工具输出  
-- 公开发布走 **allowlist 导出**，不是把私有目录洗一遍就上传  
-
-### 9. 可度量的可靠性考场
-
-```bash
-npm run eval:reliability
-```
-
-四个固定考站：**虚假完成、死循环、越权、热路径税（延迟）**——用来回答「装了到底有没有用」，而不是「我觉得更稳」。
-
-```mermaid
-flowchart LR
-  E["npm run eval:reliability"] --> S1["false-completion<br/>假完成拦得住吗"]
-  E --> S2["loop<br/>撞墙会熔断吗"]
-  E --> S3["overreach<br/>越权拦得住吗"]
-  E --> S4["tax<br/>热路径够快吗"]
-  S1 & S2 & S3 & S4 --> REP["JSON 报表<br/>ok / 分项 details"]
-```
-
-### 10. 你**不会**自动得到的东西（避免预期错位）
-
-- 不会自动让模型更聪明、写出更优雅的算法  
-- 不会替代 code review 与领域专家判断  
-- 不会在 hooks 默认关闭时「隐形全托管」——**要显式 enable**  
-- 不能把语义正确性形式化证明完（它管的是过程可靠性，不是定理证明器）
-
----
-
-## Agent 会有哪些具体提升
-
-下面按**真实 coding agent 常见失败模式**对照。提升指的是 **可靠性 / 可控性 / 成本纪律**，不是 benchmark 上的「智商分数」。
-
-### 机制定位（装 harness 改的是流程，不是「智商」）
-
-```mermaid
-flowchart LR
-  A["Agent 自述完成"] --> B["签名任务合同"]
-  B --> C["固定 verifier 以 argv 重跑"]
-  C --> D["签名证据"]
-  D --> E{"required 全部通过？"}
-  E -->|"是"| F["允许完成"]
-  E -->|"否"| G["保持 partial / 拦截 Stop"]
-```
-
-> 这是机制图，不是效果分数或因果实验。`npm run eval:reliability` 当前是机制回归套件；真实生产收益需要后续 A/B 任务、盲评和置信区间验证。
-
-### 八种翻车 → 八种抬升（总览）
-
-```mermaid
-flowchart LR
-  subgraph Pain["常见翻车"]
-    P1["假完成"]
-    P2["目标漂移"]
-    P3["死循环重试"]
-    P4["越权手滑"]
-    P5["跨会话失忆"]
-    P6["上下文税"]
-    P7["记忆/技能污染"]
-    P8["不可复盘"]
-  end
-  subgraph Gain["Brain 抬升"]
-    G1["可执行验收"]
-    G2["任务合同+小抄"]
-    G3["失败熔断"]
-    G4["路径/风险策略"]
-    G5["交接本 handoff"]
-    G6["native-first 节税"]
-    G7["UNVERIFIED + 工牌"]
-    G8["events + eval"]
-  end
-  P1 --> G1
-  P2 --> G2
-  P3 --> G3
-  P4 --> G4
-  P5 --> G5
-  P6 --> G6
-  P7 --> G7
-  P8 --> G8
-```
-
-### A. 完成声明更诚实（False Completion ↓）
-
-| 现象 | 无 harness | 有 Codex Brain |
-|---|---|---|
-| 「功能做好了」但测试没跑 / 跑挂 | 你常被带节奏 | Stop / close 可被 **harness re-run** 挡住 |
-| 把「改了文件」当成「验收通过」 | 极易发生 | criterion 必须挂 **可执行证据** |
-
-**专业表述**：completion 从 *self-report* 升级为 *externally verifiable acceptance*（外部可验证验收）。
-
-### B. 目标与红线更抗遗忘（Goal Drift ↓）
-
-| 现象 | 无 harness | 有 Codex Brain |
-|---|---|---|
-| 长对话后偏离原始目标 | 很常见 | Task Contract + compact 后小抄强制带回 objective / constraints |
-| 「用户说了不能动 X」被冲淡 | 靠模型自觉 | explicit constraints 有冲突检测；scope 可拦路径 |
-
-### C. 重复无效动作更少（Looping ↓）
-
-| 现象 | 无 harness | 有 Codex Brain |
-|---|---|---|
-| 同一错误重试 N 次 | 烧 token | 失败签名 + 2 警告 / 3 熔断 |
-| 换个说法再撞一次 | 难以察觉 | 同类 signature 累计 |
-
-### D. 高风险动作更难「手滑」（Overreach ↓）
-
-| 现象 | 无 harness | 有 Codex Brain |
-|---|---|---|
-| 写到 secrets、误删、强推远程 | 依赖模型谨慎 | PreToolUse 策略：禁区路径、critical shell 模式要求确认或拒绝 |
-| 只靠 prompt「请小心」 | 软约束 | **fail-closed** 红线（策略边界）+ **fail-open** 观察（坏观察器不卡死干活） |
-
-### E. 跨会话 / 压缩后更能接上（Long-horizon Continuity ↑）
-
-| 现象 | 无 harness | 有 Codex Brain |
-|---|---|---|
-| 新 session 不知道上一班做到哪 | 靠人复述 | progress + backlog + smoke 交接协议 |
-| 压缩后只剩模糊摘要 | 易丢红线 | 有界 checkpoint（目标/约束/未决）+ handoff 上下文 |
-
-对齐业界 long-running harness 思路：**增量推进 + 干净交接 + 可检查 backlog**，但保持 native-first，不默认 multi-agent 编排。
-
-### F. 上下文更「省座位」（Context Tax ↓）
-
-| 现象 | 无 harness / 重 harness | 有 Codex Brain V9 |
-|---|---|---|
-| 每轮塞长 system / 人设 / 全历史 | 贵且挤掉任务本身 | **默认真干**；有症状才注入；召回有条数与 token 上限 |
-| 多 Agent 默认开会 | 协调成本高 | 子代理 / 技能 **按证据按需**；清晰任务上路由可能 **0 质量增益、token 大涨** |
-
-**专业表述**：从 *always-on orchestration* 转为 *measured augmentation*（计量后的增强）。
-
-```mermaid
-flowchart TB
-  Task["接到任务"] --> Native["默认：原生 Agent 直做"]
-  Native --> Q{"出现明确症状？"}
-  Q -->|没有| V["独立验收即可"]
-  Q -->|缺信息| Clarify["先澄清<br/>不要瞎派探子"]
-  Q -->|有历史线索| Recall["有界本地召回"]
-  Q -->|可独立验证的子活| Gate["确定性路由门"]
-  Gate -->|不划算| V
-  Gate -->|划算| Child["只读子调查"]
-  Recall --> V
-  Child --> V
-  Clarify --> Native
-```
-
-模型调度现在只相信“验收收据”，不相信模型自报成功。子模型执行后先留下预记录；母 Agent 应用结果，再用无 shell 字符串的 argv verifier 重跑测试。收据只保存状态、耗时、命令与输出哈希、证据 ID 和产物哈希，不保存对话或测试输出正文。失败只有明确归因为模型能力才进入路由学习，旧布尔日志、未知归因和 verifier 基础设施故障全部排除。三个不同任务指纹独立通过后，route 才可能进入 stable。
-
-```mermaid
-flowchart LR
-  Route["确定性路由"] --> Run["直做或只读委派"]
-  Run --> Draft["预记录 / 收据草稿"]
-  Draft --> Verify["母 Agent 独立 verifier"]
-  Verify --> Receipt["脱敏哈希收据"]
-  Receipt --> Ledger["追加式路由账本"]
-  Ledger --> Candidate["证据门控策略候选"]
-```
-
-设计与命令见 [verifier-backed model routing evidence](docs/v9/model-routing-evidence.md)。
-
-### G. 记忆与技能更安全（Poisoning / Skill Sprawl ↓）
-
-| 现象 | 无 harness | 有 Codex Brain |
-|---|---|---|
-| 过期笔记当圣旨 | 记忆污染 | 注入强制 UNVERIFIED；冲突与 supersedes 可记录 |
-| 技能随意注入 | 成本与副作用不清 | 激活要 **expected criteria + budget**；产出仅是 evidence candidate |
-
-### H. 可观测、可复盘（Observability ↑）
-
-你得到：
-
-- 脱敏 **events.jsonl**（工具结果状态、失败签名、验收事件）  
-- **circuit** 状态（是否已熔断）  
-- **verify results**（谁、用什么 fingerprint、何时 harness 验证）  
-- **eval 报表**（四考站是否绿）
-
-这让「Agent 今天又犯什么病」从感觉变成可统计信号（触发频率、重复失败、验证缺口）——**不是通用 BI**，但是调策略的原材料。
-
-### 提升一览（给决策者看的表）
-
-| 维度 | 提升方向 | 机制关键词 |
-|---|---|---|
-| 完成可信度 | 虚假完成更难混过 | executable verifiers, harnessVerified |
-| 约束遵守 | 越界更易被拦 | task contract, path policy |
-| 失败处理 | 盲重试更短 | failure circuit |
-| 长程任务 | 交接更干净 | handoff backlog / progress / smoke |
-| 成本纪律 | 默认编排税更低 | native-first, silent-by-default |
-| 记忆安全 | 待证召回 | unverified memory banner |
-| 技能治理 | 有预算有验收 | skill activation contract |
-| 工程闭环 | 可测可回归 | reliability eval suites |
-
----
-
-## 什么时候会插手，什么时候闭嘴
-
-```mermaid
-flowchart TB
-  Ev["hooks 事件到来"] --> Quiet{"有明确症状？"}
-  Quiet -->|没有| Log["只记允许元数据<br/>闭嘴"]
-  Quiet -->|有任务合同需补回| Note["补小抄：目标/红线/未决"]
-  Quiet -->|禁区或高危| Brake["fail-closed 刹车"]
-  Quiet -->|同类失败×2| Warn["黄灯：换路线"]
-  Quiet -->|同类失败×3| Open["红灯：熔断"]
-  Quiet -->|声称完成| Exam["重批卷 verify"]
-  Exam -->|全过| Pass["放行"]
-  Exam -->|不过| Brake
-  ObsFail["观察器自己挂了"] --> OpenFail["fail-open<br/>不锁死正常干活"]
-```
-
-| 场景 | 大白话 | V9 行为 |
-|---|---|---|
-| 日常读写，范围已说清 | 正常开车 | 只记允许的元数据，**不打扰** |
-| 有明确目标/红线 | 办事前写清单 | 需要时补回 Task Contract 与交接摘要 |
-| 禁区路径 / 高危写 / 强推 / 破坏性删除 | 转账前再核收款人 | 策略拦截或要求确认（fail-closed） |
-| 同类失败反复出现 | 路口红绿灯 | 2 警告，3 熔断 |
-| 上下文压缩 / 新会话 | 换班留言 | 有界小抄 + handoff，不复读全文 |
-| Agent 声称完成 | 交卷按题号查 | **重跑 verifier**；自述不算数 |
-| 观察器自己挂了 | 仪表盘坏了别锁死油门 | 观察类失败 **fail-open**，不阻断正常工作 |
-
-热路径 hooks：**不联网、不调用模型**。预算目标：`PreToolUse` &lt; 100 ms，`PostToolUse` &lt; 150 ms——副驾驶不能比开车还慢。
-
----
-
-## 一图看懂架构
-
-### 总装图：三种入口，共享核心，按项目分舱
-
-```mermaid
-flowchart TB
-  subgraph Driver["开车的人"]
-    Agent["AI 编程助手\n司机"]
-  end
-  subgraph Ports["三种入口"]
-    Hooks["项目传感器\nhooks"]
-    CLI["brain 命令行\n手边控制台"]
-    MCP["本地 MCP\n通用插口"]
-  end
-  subgraph CorePlane["V9 可靠性控制平面"]
-    Core["V9 可靠性控制平面"]
-    Scope["projectRoot 规范化 + 哈希分区"]
-    Contract["签名任务合同\n目标 / 边界 / 固定验收题"]
-    Verify["可执行验收\n实时重跑 + 证据封印"]
-    Circuit["按 operation 分槽的失败红绿灯"]
-    Handoff["交接本"]
-    Policy["安检门"]
-    Memory["SQLite 记忆\n候选门禁 + 时态召回"]
-    Ledger["路由证据账本\nhash chain + MAC"]
-  end
-  Keychain["macOS Keychain\n签名密钥"] --> Contract
-  Keychain --> Ledger
-  Agent --> Hooks
-  Human["使用者"] --> CLI
-  Client["其他应用"] --> MCP
-  Hooks --> Core
-  CLI --> Core
-  MCP --> Core
-  Core --> Scope
-  Scope --> Contract
-  Scope --> Verify
-  Scope --> Circuit
-  Scope --> Memory
-  Verify --> Ledger
-  Core --> Handoff
-  Core --> Policy
-```
-
-### 运行时状态机：大部分时间安静，关键点才出声
-
-```mermaid
-stateDiagram-v2
-  [*] --> 安静工作
-  安静工作 --> 记一笔: 普通工具事件
-  记一笔 --> 安静工作: 无明确风险
-  安静工作 --> 补小抄: 压缩 / 交接
-  安静工作 --> 先刹车: 禁区或高风险
-  安静工作 --> 提醒绕路: 第2次同类失败
-  提醒绕路 --> 先刹车: 第3次熔断
-  安静工作 --> 交卷验收: Stop / 完成声明
-  交卷验收 --> 先刹车: active 丢失但 guard 仍在
-  交卷验收 --> 重批卷: 校验合同签名并重跑固定 verifier
-  重批卷 --> [*]: 全部 harnessVerified
-  重批卷 --> 先刹车: 缺证据 / 失败 / 仅自述
-  安静工作 --> 显式降级: 非策略 Hook 异常
-  显式降级 --> 安静工作: 告警已记录
-```
-
-### 一次工具调用在副驾驶眼里长什么样
-
-```mermaid
-sequenceDiagram
-  participant User as 使用者
-  participant Agent as Agent 司机
-  participant Hook as hooks 传感器
-  participant Core as V9 Core
-  participant World as 仓库/终端
-  User->>Agent: 提需求
-  Agent->>Hook: PreToolUse
-  Hook->>Core: 路径策略 + 任务范围
-  alt 红线
-    Core-->>Hook: deny / 需确认
-    Hook-->>Agent: 刹车
-  else 允许
-    Core-->>Hook: allow
-    Hook-->>Agent: 继续
-    Agent->>World: 真正执行工具
-    World-->>Agent: 结果
-    Agent->>Hook: PostToolUse
-    Hook->>Core: 记账 / 失败签名 / 熔断?
-    Agent->>Hook: Stop「做完了」
-    Hook->>Core: verify 重跑?
-    Core-->>Agent: 放行或拦住
-  end
-```
-
----
-
-## P0–P6：0.10 可靠性控制平面
-
-在 V9「安全副驾驶」之上，0.10 把「证据」从状态字段升级为**可重放协议**，并补齐交接、评测、策略、技能、宿主与记忆。
-
-### 分层示意图：从「能刹住」到「可证明」
-
-```mermaid
-flowchart TB
-  subgraph L1["第一层 · 硬核可靠性"]
-    direction LR
-    P0["P0 可执行验收<br/>老师重批卷"]
-    P1["P1 班次交接<br/>换班留言本"]
-    P2["P2 可靠性考场<br/>四科目驾照"]
-  end
-  subgraph L2["第二层 · 边界与增强门禁"]
-    direction LR
-    P3["P3 路径安检<br/>能力策略"]
-    P4["P4 技能工牌<br/>预算 + 验收项"]
-  end
-  subgraph L3["第三层 · 接入与记忆语义"]
-    direction LR
-    P5["P5 多宿主插头<br/>Codex / Claude / MCP"]
-    P6["P6 版本化记忆<br/>默认未核验"]
-  end
-  L1 --> L2 --> L3
-```
-
-```mermaid
-flowchart TB
-  subgraph P0["P0 验收"]
-    direction LR
-    A0["claim"] --> A1["verify 重跑"] --> A2["harnessVerified"]
-  end
-  subgraph P1["P1 交接"]
-    direction LR
-    B0["backlog"] --> B1["progress"] --> B2["smoke"]
-  end
-  subgraph P2["P2 考场"]
-    direction LR
-    C0["假完成"] --> C1["熔断"] --> C2["越权"] --> C3["延迟税"]
-  end
-  subgraph P3["P3 安检"]
-    D0["canonicalize"] --> D1["allow/deny"] --> D2["risk table"]
-  end
-  subgraph P4["P4 技能"]
-    E0["activate"] --> E1["criteria+budget"] --> E2["候选证据"]
-  end
-  subgraph P5["P5 宿主"]
-    F0["Codex"] --> F1["Claude"] --> F2["MCP"]
-  end
-  subgraph P6["P6 记忆"]
-    G0["recall"] --> G1["UNVERIFIED"] --> G2["verified 晋升"]
-  end
-  P0 --- P1
-  P1 --- P2
-  P3 --- P4
-  P5 --- P6
-```
-
-| 优先级 | 能力 | 大白话 | 解决的问题 | 你怎么用 |
-|---|---|---|---|---|
-| **P0** | 可执行验收 | 老师重批卷 | 自述完成、假 passed | `brain verify` / `brain evidence claim` |
-| **P1** | 班次交接 | 换班留言本 | 压缩/跨会话失忆与烂尾 | `brain handoff init\|status\|progress` |
-| **P2** | 可靠性考场 | 驾照四科目 | 「我觉得更稳」无法证明 | `npm run eval:reliability` |
-| **P3** | 路径能力策略 | 机场安检 | 关键词误伤/漏拦 | hooks PreToolUse + `policy.js` |
-| **P4** | 技能焊死证据 | 临时工工牌 | 技能乱注入无验收 | `brain skill activate --criterion …` |
-| **P5** | 多宿主适配 | 旅行转接头 | 绑死单一 IDE | `BRAIN_HOST=codex\|claude\|mcp` |
-| **P6** | 召回归宿主 | 不重复造记忆 | 双份记忆互相打架 | 宿主原生 Memories（V11 移除自建层） |
-
-详见 [docs/v9/p0-p6-reliability-plane.md](docs/v9/p0-p6-reliability-plane.md)。
-## 历代版本：解决了什么问题，为什么那样改
-
-这不是「版本号越大功能越多越好」的堆料史。每一版都先钉住一个**高频翻车点**，再发现护栏本身的成本与盲区，最后收敛成 V9 的原则：
-
-> **控制必须赚回自己的成本（control must earn its cost）。**  
-> 清晰、低风险、可验证的工作 → 让原生 Agent 直接干；  
-> 只有出现明确症状 → 系统才介入。
-
-### 演进时间线
-
-```mermaid
-timeline
-  title Codex Brain 从笔记本到可靠性实验框架
-  section 记与诚实
-    V1 笔记本 : 把目标从聊天里搬到本地可检查记录
-               : 发现：记得住 ≠ 是真的
-    V2 诚实    : 自述不能当证据
-               : 发现：诚实仍可能死磕错路
-  section 换路与姿势
-    V3 换路    : 卡住时逼你换策略
-               : 发现：万能检查表会误报
-    V4 姿势卡  : 短工作卡代替长人设
-               : 发现：管不住截图/文档证据
-  section 证据与工程
-    V5 出处    : 多模态只记可表示证据
-               : 发现：收证据 ≠ 已验收
-    V6 改完即查 : 靠近编辑点做工程体检
-               : 发现：建议不能自动变许可
-  section 重与轻
-    V7 重 harness : 可观测闭环 + 进化门
-                  : 发现：默认全开变成上下文税
-    V8 默认直做   : native-first + 计量增强
-                  : 发现：三端仍需统一小规则
-  section 副驾驶
-    V9 可靠性副驾驶 : 统一 core · 证据门 · 熔断 · 隐私
-    0.10 P0–P6    : 可重放验收 · 交接 · 考场 · 安检 · 技能/宿主/记忆
-    0.12 信任加固 : 签整份合同 · 项目隔离 · 路由账本 MAC · 可逆 Hooks · 恢复闭环
-    0.13 生产基线 : 跨平台持钥 · 11 事件清单 · 运行时指纹 · 无 shell verifier
-```
-
-### 版本主线（一图串起来）
-
-```mermaid
-flowchart LR
-  V1["V1<br/>笔记本"] --> V2["V2<br/>诚实"]
-  V2 --> V3["V3<br/>换路"]
-  V3 --> V4["V4<br/>姿势卡"]
-  V4 --> V5["V5<br/>资料出处"]
-  V5 --> V6["V6<br/>改完即查"]
-  V6 --> V7["V7<br/>重 harness"]
-  V7 --> V8["V8<br/>默认直做"]
-  V8 --> V9["V9<br/>可靠性副驾驶"]
-  V9 --> V91["0.10<br/>P0–P6"]
-  V91 --> V12["0.12<br/>信任边界加固"]
-  V12 --> V13["0.13<br/>跨平台生产基线"]
-```
-
-### V7 重编排 vs V9 副驾驶（为何变轻）
-
-```mermaid
-flowchart TB
-  subgraph V7style["V7 倾向：默认厚甲"]
-    H1["长驻 prompt / 记忆注入"]
-    H2["常开 hooks 与分流"]
-    H3["多 Agent 协调"]
-    H4["自我进化流水线"]
-    H1 --> H2 --> H3 --> H4
-  end
-  subgraph V9style["V9 倾向：默认赤膊干活 + 按需护具"]
-    L1["原生 Agent 直做"]
-    L2["有症状才注入/拦截"]
-    L3["验收与红线常备"]
-    L4["增强要算账 eval/tax"]
-    L1 --> L2 --> L3 --> L4
-  end
-  V7style -->|"模型变强后<br/>编排税 > 收益"| V9style
-```
-
-### 总表（问题 → 手段 → 为何还要演进）
-
-| 版本 | 当时主要问题（大白话） | 专业出发点 | 加了什么 | 留下的教训 / 为何继续改 |
-|---|---|---|---|---|
-| **V1** | 聊着聊着忘掉目标、重复踩坑 | 持久化与可追溯：把关键状态移出瞬时对话 | 本地笔记 / 轻量索引 / 会话开始条件注入 / Stop 捕获教训 | **记得住 ≠ 是真的**；错误信念也会被忠实保存 → V2 |
-| **V2** | 模型说得很满，证据不够 | 置信度校准：self-report ≠ evidence | 在线：信号融合与对质；离线：回顾记忆再晋升/存疑 | 更诚实仍可能死磕错误路线 → V3 |
-| **V3** | 卡在一条路上反复小修 | 失败环检测与策略切换（anti-loop） | 卡住检测、突破清单（回退/分解/换工具/质疑目标） | 万能检查表会误报；不同任务需要不同姿势 → V4 |
-| **V4** | 大道理都会，一忙就局部最优 | 轻量模式路由，避免每轮长 persona | owner / operator / reviewer / coach 短工作卡 | 纯文本姿态管不住截图/文档类证据 → V5 |
-| **V5** | 截图 PDF 当过又丢，或假装看懂了 | 多模态摄入的可表示证据边界 | sidecar：元数据、可提取文本、unsupported 状态 | 收证据更好 ≠ 改完代码已验收 → V6 |
-| **V6** | 局部改对、整体埋雷（漏测、密钥、膨胀文件） | 贴近因果点的工程 harness | PostTool 检测：漏验、危险编辑、密钥、依赖与结构债 | 常驻检查易吵；「建议」不能自动变「许可」→ V7 |
-| **V7** | 想自我进化却可能直接改策略/记忆 | 治理门：proposal → candidate → 审批/验证 | Evolution Gate、trace/eval、隐私门、人审 | **护栏全集默认开启**在强模型时代变成上下文税与干扰 → V8 |
-| **V8** | 编排太重，清晰任务被拖慢 | Native-first control plane；增强要可计量 | Task Contract、context economy、trace、harness tax、skill lifecycle、policy lab | hooks/CLI/MCP 仍需统一小规则 → V9 |
-| **V9** | 三端策略不一致；要安静也要能刹得住 | 统一可靠性副驾驶 + 证据门 + 熔断 + 可选本地召回 | 同一 core、hooks/CLI/MCP、迁移回退、隐私导出 | 证据仍偏状态字段；长程交接与硬评测不足 → **0.10 P0–P6** |
-| **0.10** | 假完成、弱交接、弱评测、弱策略、弱技能/记忆/多宿主 | 可重放验收 + handoff + eval + capability policy | 本文 P0–P6 | 仍不替代语义专家；继续用 eval 说话 |
-| **0.12** | 合同题目可被换、项目状态串线、路由证据自证、Hooks 恢复不可信 | 把每条安全声明变成会失败的可执行门禁 | 合同整体签名、Keychain、项目分区、账本 MAC、运行时 doctor、恢复清理 | 同 UID 全权限进程仍是系统信任边界；旧无 MAC 备份需受控迁移 |
-| **0.13** | Linux/Windows 持钥缺口、POSIX-only Hook、doctor 只看表面、任意 shell verifier、版本漂移 | 先把可安装和可诊断基线做实 | Keychain/DPAPI/libsecret、Windows Hook 命令、11 事件矩阵、包与运行时 digest、真实签名闭环、`shell:false` argv、三平台 CI | 仍不是 same-UID 安全边界；Hook 宿主差异和真实效果需持续验证 |
-| **0.14** | 任务开始前的脏文件被误算、并发会话串线、JSONL 与合同分步写 | 把“相对任务开始时”与“按会话归因”做成数据模型 | Git baseline、ignored forbidden 取样、rename 双端、mode 指纹、SQLite task/session/event/CAS、worktree 写租约 | 同一 worktree 只允许一个可归因写任务；并行写需独立 worktree |
-| **0.15** | 机制测试不能回答真实收益、误拦截和成本 | 建立可重复且不泄露内容的 paired A/B | `npm run eval:ab` 离线回放；`npm run eval:ab:live -- --model <model>` 运行 4 对真实 Codex smoke；输出误完成、越权、拦截混淆矩阵、P50/P95/P99、token、人工打断等价成本 | 首次真实 canary 发现 CLI 0.146 未发出 Hook 事件，当前只能声明实验框架完成，不能声明门禁收益；见 [真实 A/B 结果](docs/v9/codex-ab-v0.15-results.md) |
-
-### 分版细说（优化出发点写清楚）
-
-#### V1 — 从「聊天记忆」到「可检查笔记本」
-
-- **问题**：长会话丢失目标；同一纠正反复出现；决策只活在对话气泡里。  
-- **出发点**：先解决 **persistence（持久化）** 与 **traceability（可追溯）**，而不是一上来追求准确率分数。  
-- **手段**：小而可读的本地状态/教训文件 + 条件注入，而不是巨型黑盒记忆库。  
-- **边界**：保存系统会连错误一起保存。
-
-#### V2 — 诚实优先：自述不能当证据
-
-- **问题**：Agent 语气很确定，但没有外部依据。  
-- **出发点**：**epistemic humility（认知谦逊）**——把「我觉得」和「我有证据」拆开。  
-- **手段**：多信号置信、对质、不敢则追问或降调；离线再整合记忆。  
-- **边界**：诚实 ≠ 会换搜索路径。
-
-#### V3 — 卡住时逼你换路
-
-- **问题**：单轨死磕（single-track persistence）。  
-- **出发点**：在 **unproductive loop 变得可见** 的时刻介入，而不是每句都说教。  
-- **手段**：重复卡住信号 → 下一轮突破清单。  
-- **边界**：检查表会误伤；姿势应随任务变。
-
-#### V4 — 短工作卡，而不是长人设
-
-- **问题**：原则会背，压力下只顾眼前 diff。  
-- **出发点**：**context thrift（上下文节俭）**——用显式信号选窄姿态，而不是常驻万金油 prompt。  
-- **手段**：owner / operator / reviewer / coach。  
-- **边界**：管不住非文本证据生命周期。
-
-#### V5 — 资料要有出处，不假装看懂
-
-- **问题**：截图/PDF 影响过任务，随后从记忆蒸发；或把文件名当理解。  
-- **出发点**：**evidence representation（可表示证据）**——只记录能安全表示的东西，明确 unsupported。  
-- **边界**：摄入完善 ≠ 变更已验证。
-
-#### V6 — 改完马上做工程体检
-
-- **问题**：AI 改动局部正确，却引入漏测、密钥、臃肿结构、错误层修改。  
-- **出发点**：**shift-left observability**——在因果编辑点附近暴露失败模式。  
-- **手段**：纯检测器 + 红灯记录 + 节流，避免永远吵闹。  
-- **边界**：顾问型，不该静默改写；自我改系统需要治理 → V7。
-
-#### V7 — 重 harness：可观测闭环 + 进化门
-
-- **问题**：长程不可靠：丢上下文、漂目标、工具过程不可见、完成不可验、错误不可复用。  
-- **出发点**：把 coding session 当成 **engineered execution loop**（需求→计划→执行→trace→验证→人审→学习），而不是写更好的 prompt。  
-- **手段**：工作记忆、trace/eval、prompt pack、隐私门、人审、reward/replay、看板……以及 **Evolution Gate**（提案必须候选化，敏感变更要批/要证）。  
-- **历史地位**：定下至今仍正确的硬核原则——**验证、隐私、人审、可观测、评估**。  
-- **为何收缩**：模型变强后，**每层默认全开**会：吞上下文、抢判断、多 Agent 空转、自动进化推噪声。  
-- 复盘：[docs/history/v7-heavy-harness.md](docs/history/v7-heavy-harness.md)
-
-#### V8 — Native-first：默认让主 Agent 干活
-
-- **问题**：V7 式编排在「任务已经清晰」时变成纯税。  
-- **出发点**：**measured augmentation**——增强模块可开关；用 harness tax 对比原生基线；策略进 lab，技能走 lifecycle。  
-- **实证取向**：清晰任务上，路由子代理可能 **质量不涨、token/延迟大涨**；含糊任务缺信号时，多派几个探子也猜不到没说出口的业务规则 → **先澄清，再编排**。  
-- **边界**：控制面模块仍需与 hooks/CLI/MCP 收成一套产品规则。
-
-#### V9 — 安全副驾驶（当前主线）
-
-- **问题**：要保留 V7/V8 的硬护栏，但默认安静、三端一致、可迁移可回退、隐私可导出。  
-- **出发点**：  
-  - **native-first**：司机开车，副驾驶按症状介入；  
-  - **evidence-gated completion**：完成门控；  
-  - **fail-closed red lines / fail-open observers**；  
-  - **local-first privacy**。  
-- **手段**：Task Contract、事件、证据门、失败电路、hooks/CLI/MCP 统一 core、V1–V8 复制式迁移。  
-- **0.10 增量**：把「证据」做成可执行 verifier；补 handoff、eval、path policy、skills、hosts、memory 版本语义（P0–P6）。
-
-### 从历代演进里沉淀的产品原则
-
-```mermaid
-flowchart TB
-  P1["1 持久化服务验证<br/>不是替代验证"] --> P2["2 自述 < 证据<br/>证据最好可重放"]
-  P2 --> P3["3 卡住换路<br/>> 加长 prompt"]
-  P3 --> P4["4 上下文要短、按需<br/>常驻即有税"]
-  P4 --> P5["5 多模态/记忆<br/>标明知道到哪一步"]
-  P5 --> P6["6 问题靠近编辑点暴露<br/>建议 ≠ 放行"]
-  P6 --> P7["7 自我改进必须过治理门"]
-  P7 --> P8["8 编排默认关<br/>打开要有收益证明"]
-  P8 --> P9["9 三端一套策略<br/>红线硬 · 观察软"]
-  P9 --> P10["10 用 eval 约束叙事"]
-```
-
-1. **持久化要服务验证，而不是替代验证。**  
-2. **自述永远小于证据；证据最好可重放。**  
-3. **卡住时换路，比加长 prompt 更有效。**  
-4. **姿态与上下文要短、要按需，常驻即有税。**  
-5. **多模态与记忆都要标明「知道到什么程度」。**  
-6. **工程问题靠近编辑点暴露，但建议 ≠ 放行。**  
-7. **自我改进必须过治理门。**  
-8. **编排默认关闭；打开要有独立收益证明。**  
-9. **三端一套策略；红线硬，观察软。**  
-10. **用 eval 约束叙事，避免「架构故事」膨胀。**
-## 五分钟跑起来
-
-需要 **Node.js 22.5+**（任务合同与事件账本使用内置 `node:sqlite`）。
-
-### 安装路径图
-
-```mermaid
-flowchart LR
-  A["git clone"] --> B["npm install"]
-  B --> C["npm test"]
-  C --> D["npm run eval:reliability"]
-  D --> E["npm link"]
-  E --> F["brain status"]
-  F --> G["task create"]
-  G --> H["evidence claim"]
-  H --> I["brain verify"]
-  I --> J["handoff init"]
-  J --> K["hooks enable<br/>可选"]
-```
-
-```bash
-git clone https://github.com/liuanye9-lab/codex-os-brain.git
-cd codex-os-brain
+git clone <this-repo> && cd codex-os-brain
 npm install
-npm test
-npm run eval:reliability
-npm link
-
-brain status --json
-brain task create --task-id demo --objective "verify the V9 adapter" --criterion tests --json
-brain evidence claim --criterion tests --id claim1 --json   # 仅自述，未验收
-brain verify --json                                        # harness 重跑
-brain handoff init --objective "verify the V9 adapter" --json
+node bin/brain.js hooks enable --project "$(pwd)" --confirm
+node bin/brain.js doctor          # 全绿即生效
 ```
 
-别名：`brain` 与 `codex-brain` 均可。
+---
 
-### 任务与验收（P0）
+## 它到底拦住了什么（10 轮 A/B 实测）
+
+对照组是**真实的上一版代码路径**，不是稻草人。每个套件都包含**本该放行的负例**——只会拦截的门禁毫无价值，所以误拦率排在最前面。
+
+| 指标 | 装之前 | 装之后 |
+|---|---|---|
+| **误拦诚实的完成** | 0 / 2 | **0 / 2** |
+| **误拦可发布的内容** | — | **0 / 2** |
+| 虚假完成声明 | 5 / 5 | 5 / 5 *（无提升，见下）* |
+| 会话被门禁卡死 | 2 / 3 | **0 / 3** |
+| 未裁决内容流入生产 | 0 / 7 拦下 | **7 / 7 拦下** |
+| 规避手段（改测试/换靶/自证） | 0 / 7 拦下 | **7 / 7 拦下** |
+| fan-out 重复派活 | 无机制 | **0 / 60** |
+
+**代价**：Stop 决策 p95 从 0.130ms → 0.326ms（+0.196ms）。治理校验线性，2 万条 10.4ms。
+
+10 轮两臂各只产生 **1 种结果签名** = 完全确定性，可复现：
 
 ```bash
-brain task create --task-id release --objective "ship safely" --criterion tests,scope --json
-brain evidence claim --criterion tests --id ev1 --kind claim --ref agent --json
-brain verify --json                 # 重跑 verifiers
-brain verify --status-only --json   # 只看存档评分
-brain task checkpoint --summary "midway" --json
+npm run eval:gates              # 完整数据
+node evals/v12-ab/runner.cjs --assert   # 回归门禁，破坏即 exit 1
 ```
 
-### 交接本（P1）
+原始数据：[`evals/v12-ab/baseline-results.json`](evals/v12-ab/baseline-results.json)
+
+### 三个必须挑明的诚实结论
+
+1. **虚假完成拦截是零结果。** 上一版本来就 5/5 全拦，这轮的门禁工作买到的是"不死锁"，**不是"拦得更准"**。
+2. **有两项拒绝编造数字。** "真实 agent 不用账本会重复多少"取决于模型是否听话，用随机模型模拟就是造假，故记为 *unmeasurable*。
+3. **自证测试集不算能力。** 按判据写的用例是循环论证。真正有意义的是**事后专门写来打脸的对抗集**——它一上来就打中 2/4，修正后才归零。
+
+---
+
+## 三个 hook，各拦一件事
+
+| Hook | 时机 | 做什么 |
+|---|---|---|
+| `SessionStart` | 会话开始 | 注入当前任务合同：目标、约束、未完成的验收项 |
+| `PreToolUse` | 每次工具调用前 | 越界写入、危险删除直接 deny |
+| `Stop` | 声称完成时 | **重跑验收器**。没过就不许结束 |
+
+从 12 个 hook 收敛到 3 个：**能在事前拦住的，不需要事后记录。**
+
+---
+
+## 核心机制
+
+### 1. 任务合同：先签字，再干活
 
 ```bash
-brain handoff init --json
-brain handoff status --json
-brain handoff progress --summary "固定了 Stop 验收" --json
+node bin/brain.js task create --task-id demo \
+  --objective "修复登录超时" --criterion tests --json
 ```
 
-### 技能 / 宿主（P4–P6）
+验收标准在动手前写死并签名。`Stop` 时由 harness **重新执行**验收器——agent 自己说通过不算数。
 
-```bash
-brain skill list --json
-brain skill activate --id brain-lite-model-router --criterion tests --budget 2000 --json
-brain hosts list --json
-```
+### 2. 输入封印：不许改靶
 
-召回不在这里：V11 已移除 `brain memory` / `brain cognition` / `brain embeddings` 这三组命令，长期记忆改由宿主原生能力负责。
+验收器的输入（`package.json`、测试目录等）会被封印。把 `"test": "real-suite"` 改成 `"test": "exit 0"` 这种操作，会以 `verifier_inputs_changed` 被拒。
 
-### 给项目装传感器
-
-```bash
-brain hooks doctor --project "$PWD" --json
-brain hooks enable --project "$PWD" --confirm --json
-brain hooks disable --project "$PWD" --confirm --json
-```
-
-默认**不**改 Claude Code hooks。Codex 当前从用户级 `$CODEX_HOME/hooks.json` 加载命令 Hook，因此启用会增量合并通用 loader，并在同目录创建原配置备份和安装状态文件；真正的 task/control/memory 数据仍按 projectRoot 隔离。未发生外部修改时，禁用会逐字节恢复原文件、原权限和软链；安装后若其他工具又增加了 Hook，禁用只移除带 `codex-brain-v9` 所有权标记的条目，不回滚新配置。若 loader 已含 owned hooks 但没有 sidecar，安装器会先剥离 owned 部分再重建原件，避免把自己的 hooks 备份成“用户原件”。
-
-`brain hooks doctor` 不再把“存在一个合法 JSON 文件”当成已启用。它会核对所有权、11 个声明事件、重复项、预期指纹、hook 进程烟测和运行时存储可写性；只有这些条件都满足才算完整安装。外部合法 hook 可以省略可选 `timeout`；owned 热路径使用短超时，Stop 为容纳最长 120 秒 verifier 使用 130 秒预算。
-
-用户 Hook loader 会写入安装机器的绝对插件路径，不应提交。安装 sidecar 与备份保存在 `$CODEX_HOME`，卸载成功后自动移除。
-
-```mermaid
-flowchart LR
-  Existing["用户现有 Hooks"] --> Merge["增量合并<br/>只增加 owned entries"]
-  Merge --> Backup["备份原字节 / 权限 / 软链目标"]
-  Backup --> Doctor{"doctor 逐项验真"}
-  Doctor -->|"7 事件 + 指纹 + 烟测 + 可写"| Healthy["完整安装"]
-  Doctor -->|"缺项 / 漂移 / 运行失败"| Degraded["明确 degraded"]
-  Healthy --> Disable["disable"]
-  Disable -->|"期间无外部修改"| Restore["逐字节恢复原配置"]
-  Disable -->|"期间新增外部 Hook"| RemoveOwned["只移除 owned entries"]
-```
-
-### 验收信任边界
-
-V0.13 起，验收题目与验收结果分开保护：任务创建时会规范化并签署整份合同规范，覆盖 objective、scope、`required`、verifier 类型和完整 `verifierSpec`；每条证据再绑定合同指纹与标准指纹。运行时参数不能把已钉死的命令替换成 `echo ok`，空 criteria、未签名 waiver 和 `requireHarness:false` 都不能完成任务。macOS 使用 Keychain，Windows 使用当前用户 DPAPI，Linux 优先使用 libsecret；没有 Secret Service 时会降级为权限为 `0600` 的本地文件，并在 threat model 中明确标为较弱模式。
-
-这不是对同一操作系统用户的恶意进程建立强隔离。同 UID 且能改 npm 安装目录、运行时脚本、进程环境或凭据存储的攻击者仍在可信计算基之外。doctor 会核对 Hook 所有权、11 个声明事件、manifest 指纹、包版本、实际运行时 digest，并跑一次临时合同→verifier→证据签名→完成判定闭环；这能发现常见漂移和直接改 JSON，不能代替容器、独立账户或硬件隔离。路径预检查会解析不存在目标的最近已存在父目录，阻止父级 symlink 逃逸；它仍不能消除检查与执行之间的 TOCTOU，因此 shell 正则和 PreToolUse 都只是协作式 guardrail，最终还需 PostToolUse、Git diff 与 OS sandbox。
-
-`projectScoped: true` 现在会实际消费：task、event、failure、embedding 和 SQLite memory 都按规范化 project root 的哈希分区。一个项目的 active task 与记忆不会注入另一个项目。任务实例使用随机 UUID，另存稳定 `taskFingerprint` 做分析；重复 objective 不再碰撞。SQLite 中存在 active task 但 Guard 缺失、签名无效或 hash 不一致时会 fail closed。创建顺序先写 SQLite、再写 Guard；Guard 写入失败只回滚本次 spec hash 对应的新任务，不会删除同 ID 的既有 Guard。
-
-```mermaid
-flowchart LR
-  Create["创建任务"] --> Canonical["规范化整份合同<br/>objective / scope / criteria / verifierSpec"]
-  Canonical --> Sign["平台密钥提供者<br/>HMAC 签合同"]
-  Sign --> Run["Stop 实时重跑固定 verifier"]
-  Run --> Evidence["证据绑定<br/>合同指纹 + 标准指纹"]
-  Evidence --> Gate{"完成门禁"}
-  Gate -->|"签名正确 + required 全通过"| Complete["允许完成"]
-  Gate -->|"改题 / 空标准 / waiver / 仅自述"| Block["fail closed"]
-  Run --> Receipt["固定本地 verifier 收据"]
-  Receipt --> Ledger["路由账本<br/>hash chain + MAC"]
-  Ledger -->|"手改 / 重算 hash / 降级无签名"| Reject["拒绝进入路由策略"]
-```
-
-Hook 覆盖、阻断能力和已知缺口见 [Hook Coverage Matrix](docs/v9/hook-coverage.md)。核心区别是：观察到事件不等于能阻断事件；只有宿主接受并执行返回决策的路径才属于门禁。
-
-### MCP
-
-```bash
-brain mcp serve --project /absolute/path/to/project
-```
+工作流需要写自己的产物时，在合同里**显式声明**豁免——豁免会削弱封印，所以绝不推断：
 
 ```json
-{
-  "mcpServers": {
-    "codex-brain": {
-      "command": "brain",
-      "args": ["mcp", "serve", "--project", "/absolute/path/to/project"]
-    }
-  }
-}
+{ "verifierSpec": {
+    "baselinePaths": ["package.json", "tests", "workspace"],
+    "baselineExcludePaths": ["workspace/knowledge-manifest.json"] } }
 ```
 
-原生 Plugin 会从 `.mcp.json` 发现零依赖、未绑定项目的只读状态服务；上面的配置是显式绑定项目的 full MCP。full MCP 可读状态/任务/失败/事件/验收/交接/技能；Memory 与 Cognitive Labs 工具只在对应 feature 显式启用时注册。它可受控建任务、checkpoint、**claim** 证据、激活技能、验证后关闭任务。
-**不能**自证 passed、下载模型、改嵌入配置、批准迁移、绕过策略。
+### 3. 门禁有上限，但释放 ≠ 通过
 
-### 验收与发布卫生
+判据可能根本无法满足（缺二进制、验收器必崩、冲突没人裁决）。所以门禁是**有界**的：
+
+- **拦截上限**：同一任务最多拦 3 次
+- **停滞检测**：未通过项不再减少 = 在原地打转，门禁让路
+
+释放会写入 `released WITHOUT verification` + 原因，判据仍未通过、合同仍开着。
+
+一个例外：**账本本身读不出来时继续拦截**。Stop 是 fail-closed 事件，不能让"把状态目录搞坏"成为关掉门禁的手段。
+
+### 4. 治理门禁：把"不该发布"变成机械阻塞
+
+内容治理工作流用 `production_ready` 标记每条产物。写在 skill 里那只是自然语言，靠模型自觉；绑到合同上就是机械的：
 
 ```bash
-npm test
-npm run check
-npm run eval:reliability
-node scripts/build-public-export.js --output /tmp/codex-brain-v9-public
+node bin/brain.js task create --task-id kb-q3 \
+  --objective "发布 Q3 制度页" --criterion governance \
+  --manifest workspace/knowledge-manifest.json --json
 ```
 
-源码 checkout 中，`npm test` 会递归发现 `tests/` 下全部 `test/spec` 文件，不再依赖容易漏测的手工白名单；npm 安装包不携带源码测试目录，改为执行隔离的公开 API、CLI、doctor、Hooks 可逆安装和 MCP 自检，因此安装后的 `npm test` / `npm run check` 也有真实可运行的契约。可靠性 eval 始终使用临时 `projectRoot`、Brain home 和 state home，不会改写调用项目的 `.brain`。
+未标记 ready 的条目、悬空的 `parent_id`/`source_ids` 引用，一律阻塞完成。**fail-closed**：清单缺失/损坏/为空都算失败，缺字段不视为同意。
 
 ---
 
-## 工程术语对照
+## 多 agent：只做账本，不做编排器
 
-| 术语 | 大白话 | 在本项目中的落点 |
-|---|---|---|
-| **Harness** | 套在模型外面的缰绳与跑道 | 整个 Codex Brain：约束感知、动作、验收与交接 |
-| **Reliability control plane** | 可靠性调度台 | V9 core：合同、策略、验证、事件、熔断 |
-| **Task Contract** | 任务合同 | objective / constraints / scope / criteria |
-| **Executable verifier** | 可执行验收器 | command / test_runner / git_diff_bounded / human_attestation… |
-| **harnessVerified** | 老师签过字 | 仅 harness 重跑可置 true |
-| **Native-first** | 默认让主模型直做 | 无症状不注入、不强制 multi-agent |
-| **Measured augmentation** | 增强要算账 | harness tax、skill budget、eval |
-| **Fail-closed / fail-open** | 红线死锁 / 观察器坏了不挡路 | PreToolUse&Stop vs 纯观察 |
-| **Context engineering** | 座位怎么分 | 有界 checkpoint、召回上限、交接摘要 |
-| **Loop engineering** | 交通规则 | 失败电路 + 证据交卷 |
-| **Capability policy** | 能力与路径门禁 | path canonicalize + risk table |
-| **Evidence-gated memory** | 有证据才晋升的记忆 | UNVERIFIED 默认；verified_outcome 晋升 |
-| **Host adapter** | 宿主转接头 | Codex / Claude / generic MCP |
-| **RAG（可选）** | 先翻资料柜再答 | 本地嵌入；结果是候选证据不是指令 |
+这是本项目**最反直觉的设计决定**，基于调研而非架构偏好：
 
----
+- 等 thinking token 预算下，单 agent 在多跳推理上**追平或胜出**——每次 handoff 只会损失信息
+- 共享 context 的多 agent（71%）反而**差于**单 agent（78%）；隔离 context 才是 84%
+- 步骤重复是多 agent 最大单一失效模式（1600+ 标注 trace 中占 17.14%）
 
-## 它做不到什么
+所以**不造 orchestrator**，只造两样东西：
 
-```mermaid
-flowchart TB
-  Yes["Brain 能帮你"] --> Y1["少假完成"]
-  Yes --> Y2["少越界与盲重试"]
-  Yes --> Y3["压缩/换班后更能接上"]
-  Yes --> Y4["过程可复盘、可回归"]
-  No["Brain 不能替你"] --> N1["语义一定正确"]
-  No --> N2["产品/业务一定对"]
-  No --> N3["不建合同不 verify 也自动变稳"]
-  No --> N4["猜出你没说的隐藏验收标准"]
+### 拆分判据——先问该不该拆
+
+```bash
+node bin/brain.js fanout assess --units 500 \
+  --independent-units --isolated-context --per-unit-verifiable --json
 ```
 
-- **不能**保证语义正确、产品正确、安全到可形式化证明  
-- **不能**替代资深工程师的设计评审与业务判断  
-- **不能**在你不建 Task Contract、不跑 verify、不 enable hooks 时「自动变稳」  
-- **不能**单靠多 Agent 猜出用户没说的隐藏验收标准（此时应 **澄清**，不是加戏）  
+耦合 / 共享可变状态 / 顺序依赖 / 无法逐项验证 / 单元太少 → **一律不拆**。
 
-副驾驶不是方向盘。它减少的是：**遗忘、越界、死循环、假完成、无交接、无计量的编排税**。
+"共享 context"是两种不同情况：风格指南人人只读，复制进每个 dispatch 不花钱；索引人人写，那是真耦合。
 
-### 当前已知缺口与路线图
+```bash
+--shared-readonly     # 共享只读 → 不算耦合
+--order-dependent     # 必须按序产出 → 拆不了
+```
 
-- **0.13 已覆盖**：跨平台证据密钥提供者、Windows Hook 命令、11 个声明事件、Hook/包/运行时指纹、临时签名闭环 doctor、`shell:false` verifier、清理后的子进程环境、精确版本部署。
-- **0.14 已覆盖**：baseline-based diff、被 ignore 的 forbidden 路径、rename 两端与 chmod、按 session/task 选择、CAS 更新、SQLite 事务事件与 session-scoped circuit；同一 worktree 的写任务使用 lease，真正并行写应使用独立 worktree。
-- **0.15 实验框架已覆盖**：离线 replay 进入三平台 CI，真实 Codex paired smoke 需要显式 `--confirm-paid`；报告不保存 prompt、tool output、绝对路径、凭据或 transcript。
-- **仍需外部证据**：三平台 Runner 要以本次推送后的 GitHub Actions 为准；真实 4 对 smoke 不是 release-grade 因果结论，P95/P99 与误拦截率需要至少 64 对 pilot，P99 建议 300–500 个样本。
+用同一个知识库工作流检验，**不同阶段结论相反**：盘点、逐页评分 → 拆；跨页一致性发布 → 不拆。
 
----
+### 委派账本——防重复 + 防自证
 
-## 文档索引
+```bash
+node bin/brain.js fanout register --plan kb --units "f1,f2,f3" --json
+node bin/brain.js fanout claim    --plan kb --worker A --limit 2 --json
+node bin/brain.js fanout complete --plan kb --unit f1 --worker A \
+  --verified --verifier-ref "ev#<harness-run>" --json
+node bin/brain.js fanout status   --plan kb --json
+```
 
-| 文档 | 内容 |
-|---|---|
-| [CLI / hooks / MCP 快速开始](docs/v9/quickstart.md) | 命令与接入 |
-| [Hook Coverage Matrix](docs/v9/hook-coverage.md) | 3 个声明事件、阻断能力与已知宿主边界 |
-| [P0–P6 可靠性控制平面](docs/v9/p0-p6-reliability-plane.md) | 0.10 机制说明 |
-| [V10 → V11 升级说明](docs/v9/v10-to-v11.md) | 移除项、hook 收敛与升级步骤 |
-| [V1–V8 迁移与回退](docs/v9/migration.md) | 搬家协议 |
-| [隐私与威胁模型](docs/v9/privacy-and-threat-model.md) | 本地优先与导出 |
-| [研究与开源归属](docs/v9/research-and-attribution.md) | 论文与上游概念 |
-| [Claude Brain v8.3 对照分析](docs/v9/claude-brain-v8.3-comparison.md) | 逐机制吸收、拒绝项与验证映射 |
-| [V7 重 harness 复盘](docs/history/v7-heavy-harness.md) | 为何从重到轻 |
-| [V1–V8 历史设计](v1/README.md) | 分版设计原文入口 |
+- **防重复**：已完成清单由 lead 持有，每次 claim 只读注入。worker 看不见别人做过什么，靠 prompt 提醒是无效的
+- **防自证**：`--verified` 必须带 harness 的 verifier-ref，worker 不能为自己背书
+- **零验证率**：`zeroVerificationRate` 统计"完全没检查就被采纳"的比例。接近 1.0 说明这次 fan-out 只是在批量生产未经审视的产出
+
+**认领是租约**：worker 崩溃不会把活儿带走。`status` 报 `stalled`，`fanout reclaim` 显式回收，活着的认领永远不会被抢。
 
 ---
 
-MIT licensed. See [LICENSE](LICENSE).
+## 命令速查
+
+```bash
+# 健康检查
+node bin/brain.js doctor --json
+
+# 任务与验收
+node bin/brain.js task create --task-id X --objective "..." --criterion tests --json
+node bin/brain.js verify --json
+node bin/brain.js task close --task-id X --json
+
+# 委派
+node bin/brain.js fanout assess|register|claim|complete|reclaim|status
+
+# 交接
+node bin/brain.js handoff init|status|progress
+
+# hook 开关（回滚用）
+node bin/brain.js hooks disable --project "$(pwd)" --confirm
+```
+
+## 验证与门禁
+
+```bash
+npm test                  # 182 项
+npm run check             # 测试 + 发布校验 + A/B 回归门禁
+npm run eval:gates        # 完整 A/B 数据
+npm run eval:reliability  # 可靠性考场
+```
+
+---
+
+## 它**不做**什么
+
+- 不让模型更聪明。装了之后 agent 不会写出更好的代码，只是**不能假装写好了**
+- 不检查产物内容是否正确。治理门禁检查的是"声称就绪的条目是否自洽、引用是否可解析、冲突是否已裁决"
+- 不 spawn、不调度 agent。账本记录认领与结果，跑 worker 是宿主的事
+- 不让委派变安全。无法逐项验证的活儿，拆给再多 worker 也还是无法验证
+
+## 已知边界
+
+- **参数是拍的**：门禁上限 3 次、租约 15 分钟，需要真实使用几天才能校准
+- **缺真实会话实证**：hook 在 Codex 真实对话中自动触发，目前只有二进制静态证据 + 直喂 hook 进程的验证
+- **能力提升无 LLM 长会话数据**：以上全部是机械验证，不代表产出质量提升
+
+## 文档
+
+- [快速上手](docs/v9/quickstart.md)
+- [治理与委派](docs/v9/governance-and-delegation.md)
+- [hook 覆盖范围](docs/v9/hook-coverage.md)
+- [V10 → V11 变更](docs/v9/v10-to-v11.md)
+
+## 隐私
+
+本地优先。事件只记录白名单字段，不落 prompt 原文与工具输出原文；日志中的 token 特征会被替换为 `[redacted-token]`。
+
+## License
+
+MIT
