@@ -21,15 +21,20 @@ test('status emits stable JSON', () => {
   assert.deepEqual(Object.keys(JSON.parse(result.stdout)).sort(), ['cognitiveAssets', 'controlStore', 'enabled', 'features', 'identity', 'memory', 'runtimeRoot', 'version']);
 });
 
-test('Memory and Cognitive Labs require explicit per-launch confirmation', () => {
-  const blocked = run(['cognition', 'status', '--enable-cognitive-assets', '--json']);
-  assert.equal(blocked.status, 3);
-  assert.match(blocked.stderr, /confirm-labs/);
-  const enabled = run(['cognition', 'status', '--enable-cognitive-assets', '--confirm-labs', '--json']);
-  assert.equal(enabled.status, 0, enabled.stderr);
-  const status = JSON.parse(enabled.stdout);
-  assert.equal(status.enabled, true);
-  assert.equal(status.lab, true);
+test('V11 refuses to resurrect the removed memory and cognitive-asset layers', () => {
+  // The old escape hatch must fail loudly, not silently no-op.
+  const labs = run(['status', '--enable-cognitive-assets', '--confirm-labs', '--json']);
+  assert.equal(labs.status, 2);
+  assert.match(labs.stderr, /removed in V11/);
+  const mem = run(['status', '--enable-memory', '--json']);
+  assert.equal(mem.status, 2);
+  assert.match(mem.stderr, /Codex native memories/);
+  // The command groups themselves are gone.
+  for (const group of ['memory', 'cognition', 'embeddings', 'harness']) {
+    const gone = run([group, 'status', '--json']);
+    assert.equal(gone.status, 2, `${group} should be unknown`);
+    assert.match(gone.stderr, /unknown command/);
+  }
 });
 
 test('help and doctor expose an actionable public interface contract', () => {
@@ -37,7 +42,10 @@ test('help and doctor expose an actionable public interface contract', () => {
   assert.equal(help.status, 0, help.stderr);
   const guide = JSON.parse(help.stdout);
   assert.equal(guide.usage, 'brain <command> [action] [--flags] [--json]');
-  assert.match(guide.commands.memory, /create/);
+  assert.equal(guide.commands.memory, undefined);
+  assert.equal(guide.commands.cognition, undefined);
+  assert.equal(guide.commands.embeddings, undefined);
+  assert.match(guide.commands.verify, /Re-run/);
   const doctor = run(['doctor', '--json']);
   assert.equal(doctor.status, 0, doctor.stderr);
   const report = JSON.parse(doctor.stdout);
@@ -100,30 +108,4 @@ test('task create, show, and verify share persisted core state', () => {
   assert.equal(JSON.parse(verified.stdout).status, 'partial');
 });
 
-test('embedding configure is confirmation-gated and visible through status', () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-cli-embed-'));
-  const blocked = run(['embeddings', 'configure', '--model', 'qwen3-embedding:0.6b', '--json'], home);
-  assert.equal(blocked.status, 3);
-  assert.match(blocked.stderr, /confirm/);
-  const configured = run(['embeddings', 'configure', '--model', 'qwen3-embedding:0.6b', '--confirm', '--json'], home);
-  assert.equal(configured.status, 0, configured.stderr);
-  assert.equal(JSON.parse(configured.stdout).requiresReindex, true);
-  const status = run(['embeddings', 'status', '--json'], home);
-  assert.equal(JSON.parse(status.stdout).model, 'qwen3-embedding:0.6b');
-});
 
-test('encrypted restore and recovery mutation commands require explicit confirmation', () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-cli-recovery-'));
-  const restore = run(['memory', 'restore-encrypted', '--input', '/tmp/example.cbmem', '--json'], home);
-  assert.equal(restore.status, 3);
-  assert.match(restore.stderr, /confirm-restore/);
-  const recoveryExport = run(['memory', 'recovery-export', '--json'], home);
-  assert.equal(recoveryExport.status, 3);
-  assert.match(recoveryExport.stderr, /confirm/);
-  const recoveryImport = run(['memory', 'recovery-import', '--json'], home);
-  assert.equal(recoveryImport.status, 3);
-  assert.match(recoveryImport.stderr, /confirm/);
-  const recover = run(['memory', 'recover', '--json'], home);
-  assert.equal(recover.status, 3);
-  assert.match(recover.stderr, /confirm/);
-});

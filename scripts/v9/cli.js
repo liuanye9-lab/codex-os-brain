@@ -27,9 +27,7 @@ function commandGuide() {
       verify: 'Re-run executable acceptance criteria.',
       evidence: 'claim | attach',
       handoff: 'init | status | progress',
-      memory: 'status | create | get | update | transition | delete | query | aggregate | entity | link | traverse | recover',
-      cognition: 'status | digest | retention-status | retention-enforce',
-      embeddings: 'status | recommend | configure | doctor | probe | pull | prompt',
+      fanout: 'assess | register | claim | complete | reclaim | status',
       hooks: 'doctor | enable | disable',
       mcp: 'serve',
     },
@@ -73,12 +71,9 @@ async function runCli(argv, io = defaultIo(), services = {}) {
   const paths = services.paths || resolveV9Paths();
   const projectRoot = args.project || process.cwd();
   const config = structuredClone(readV9Config());
-  const labsRequested = args['enable-memory'] === true || args['enable-cognitive-assets'] === true;
-  if (labsRequested && args['confirm-labs'] !== true) {
-    return io.error('enabling Memory or Cognitive Labs requires --confirm-labs', EXIT.blocked);
+  if (args['enable-memory'] === true || args['enable-cognitive-assets'] === true) {
+    return io.error('memory and cognitive-asset layers were removed in V11; Codex native memories own recall', EXIT.usage);
   }
-  if (args['enable-memory'] === true || args['enable-cognitive-assets'] === true) config.memory.enabled = true;
-  if (args['enable-cognitive-assets'] === true) config.cognitiveAssets.enabled = true;
   const core = services.core || createV9Core({
     config,
     paths,
@@ -90,13 +85,6 @@ async function runCli(argv, io = defaultIo(), services = {}) {
 
   if (!group || group === 'help' || args.help === true) return io.json(commandGuide());
   if (group === 'status') return io.json(core.status());
-  if (group === 'cognition' && (!action || action === 'status')) return io.json(core.cognitiveAssets.status());
-  if (group === 'cognition' && action === 'digest') return io.json(core.cognitiveAssets.dailyDigest({ limit: args.limit }));
-  if (group === 'cognition' && action === 'retention-status') return io.json(core.cognitiveAssets.retentionStatus());
-  if (group === 'cognition' && action === 'retention-enforce') {
-    if (args['confirm-retention'] !== true) return io.error('retention enforcement requires --confirm-retention', EXIT.blocked);
-    return io.json(core.cognitiveAssets.enforceRetention({ confirm: true, actor: 'cli_operator' }));
-  }
   if (group === 'doctor') {
     const v9 = core.status();
     const hooks = doctorHooks({ projectRoot, pluginRoot, runtimePaths: core.paths });
@@ -135,7 +123,9 @@ async function runCli(argv, io = defaultIo(), services = {}) {
     } else {
       if (!args.objective) return io.error('objective is required', EXIT.usage);
       const criterionIds = args.criterion ? String(args.criterion).split(',') : [];
-      const customIds = criterionIds.filter(id => !['tests', 'scope'].includes(id));
+      // Built-in verifiers are harness code, not caller-supplied shell, so they need no approval.
+      // Only a criterion that runs an arbitrary command is "custom".
+      const customIds = criterionIds.filter(id => !['tests', 'scope', 'governance'].includes(id));
       if (customIds.length && (!args.command || args['approve-custom-verifier'] !== true)) {
         return io.error('custom criteria require --command and --approve-custom-verifier', EXIT.usage);
       }
@@ -147,6 +137,12 @@ async function runCli(argv, io = defaultIo(), services = {}) {
           };
         }
         if (id === 'scope') return { id, required: true, verifier: 'git_diff_bounded' };
+        if (id === 'governance') {
+          return {
+            id, required: true, verifier: 'manifest_gate',
+            verifierSpec: args.manifest ? { manifest: args.manifest } : {},
+          };
+        }
         return {
           id, required: true, verifier: 'command_exit_0',
           verifierSpec: {
@@ -232,6 +228,62 @@ async function runCli(argv, io = defaultIo(), services = {}) {
       sessionSummary: args.summary || args._[2] || 'Progress update',
     }));
   }
+  if (group === 'fanout' && (!action || action === 'status')) {
+    return io.json(core.fanout.status({
+      planId: args.plan || 'default',
+      ...(args['lease-ms'] === undefined ? {} : { leaseMs: Number(args['lease-ms']) }),
+    }));
+  }
+  if (group === 'fanout' && action === 'reclaim') {
+    // Units held by a worker that never came back. Reclaiming is deliberate rather than automatic
+    // on read, so an operator decides when a slow worker is treated as dead.
+    return io.json(core.fanout.reclaim({
+      planId: args.plan || 'default',
+      ...(args['lease-ms'] === undefined ? {} : { leaseMs: Number(args['lease-ms']) }),
+    }));
+  }
+  if (group === 'fanout' && action === 'assess') {
+    // Decide by task shape, never by preference for more agents.
+    //
+    // Shared context is two different situations wearing one name. A style guide or schema every
+    // unit reads can be copied into each dispatch for free; an index every unit writes to is real
+    // coupling. `--shared-readonly` says the shared thing is not written to, which is why a
+    // thousand independent units are not dragged back onto one agent by a constant.
+    const isolated = args['isolated-context'] === true;
+    const sharedReadonly = args['shared-readonly'] === true;
+    return io.json(core.fanout.assessSplit({
+      units: Number(args.units || 0),
+      crossUnitDependency: args['independent-units'] !== true,
+      sharedContextRequired: !(isolated || sharedReadonly),
+      sharedContextMutable: sharedReadonly ? false : null,
+      orderDependent: args['order-dependent'] === true,
+      exceedsSingleContext: args['exceeds-context'] === true,
+      perUnitVerifiable: args['per-unit-verifiable'] === true,
+    }));
+  }
+  if (group === 'fanout' && action === 'register') {
+    const units = String(args.units || args._[2] || '').split(',').map(value => value.trim()).filter(Boolean);
+    if (units.length === 0) return io.error('units is required (comma separated)', EXIT.usage);
+    return io.json(core.fanout.register({ planId: args.plan || 'default', units: units.map(id => ({ id, label: id })) }));
+  }
+  if (group === 'fanout' && action === 'claim') {
+    if (!args.worker) return io.error('worker is required', EXIT.usage);
+    return io.json(core.fanout.claim({ planId: args.plan || 'default', worker: args.worker, limit: Number(args.limit || 1) }));
+  }
+  if (group === 'fanout' && action === 'complete') {
+    if (!args.unit) return io.error('unit is required', EXIT.usage);
+    // Verified status is a harness fact; the CLI may only pass through a verifier reference.
+    if (args.verified === true && !args['verifier-ref']) {
+      return io.error('--verified requires --verifier-ref from a harness check', EXIT.usage);
+    }
+    return io.json(core.fanout.complete({
+      planId: args.plan || 'default',
+      unitId: args.unit,
+      worker: args.worker,
+      verified: args.verified === true,
+      verifierRef: args['verifier-ref'] || null,
+    }));
+  }
   if (group === 'skill' && (!action || action === 'list')) return io.json(core.skills.list());
   if (group === 'skill' && action === 'activate') {
     if (!args.id) return io.error('id is required', EXIT.usage);
@@ -247,116 +299,7 @@ async function runCli(argv, io = defaultIo(), services = {}) {
     if (!args.id) return io.error('id is required', EXIT.usage);
     return io.json(core.skills.deactivate(args.id));
   }
-  if (group === 'memory' && (!action || action === 'status')) return io.json(core.memory.status());
-  if (group === 'memory' && action === 'create') {
-    if (!args.content) return io.error('content is required', EXIT.usage);
-    return io.json(core.memory.createMemory({ content: args.content, kind: args.kind, confidence: args.confidence, privacy: args.privacy, sourceUri: args.source, validFrom: args['valid-from'], validTo: args['valid-to'], idempotencyKey: args['idempotency-key'], actor: args.actor }));
-  }
-  if (group === 'memory' && action === 'get') {
-    if (!args.id) return io.error('id is required', EXIT.usage);
-    const item = core.memory.getMemory(args.id);
-    return item ? io.json(item) : io.error('memory not found', EXIT.failed);
-  }
-  if (group === 'memory' && action === 'update') {
-    if (!args.id || !args['expected-version']) return io.error('id and expected-version are required', EXIT.usage);
-    return io.json(core.memory.updateMemory(args.id, { content: args.content, validFrom: args['valid-from'], validTo: args['valid-to'], expectedVersion: Number(args['expected-version']), approvedBy: args['approved-by'], idempotencyKey: args['idempotency-key'] }));
-  }
-  if (group === 'memory' && action === 'transition') {
-    if (!args.id || !args.status || !args['expected-version'] || !args['approved-by']) return io.error('id, status, expected-version, and approved-by are required', EXIT.usage);
-    return io.json(core.memory.transitionMemory(args.id, args.status, { expectedVersion: Number(args['expected-version']), approvedBy: args['approved-by'], reason: args.reason, idempotencyKey: args['idempotency-key'] }));
-  }
-  if (group === 'memory' && action === 'delete') {
-    if (!args.id || !args['expected-version'] || !args['approved-by']) return io.error('id, expected-version, and approved-by are required', EXIT.usage);
-    return io.json(core.memory.deleteMemory(args.id, { expectedVersion: Number(args['expected-version']), approvedBy: args['approved-by'], reason: args.reason, idempotencyKey: args['idempotency-key'] }));
-  }
-  if (group === 'memory' && action === 'query') {
-    if (!args.query) return io.error('query is required', EXIT.usage);
-    let queryVector = null; let embedding = { used: false, degraded: false };
-    if (args.semantic) {
-      try { const result = await core.embeddings.embed({ text: args.query }); queryVector = result.vector; embedding = { used: true, fingerprint: result.fingerprint, model: result.model }; }
-      catch (error) { embedding = { used: false, degraded: true, reason: error.code || error.message }; }
-    }
-    return io.json({ ...core.memory.search({ query: args.query, queryVector, limit: args.limit, includeCandidates: args['include-candidates'] === true, at: args.at }), embedding });
-  }
-  if (group === 'memory' && action === 'aggregate') return io.json(core.memory.aggregate({ by: args.by }));
-  if (group === 'memory' && action === 'import-index') {
-    if (!args.input || !args.confirm) return io.error('input and confirm are required', EXIT.blocked);
-    return io.json(core.memory.importFlatIndex(args.input));
-  }
-  if (group === 'memory' && action === 'entity') return io.json(core.memory.upsertEntity({ name: args.name, entityType: args.type }));
-  if (group === 'memory' && action === 'link') return io.json(core.memory.link({ fromEntityId: args.from, toEntityId: args.to, relation: args.relation, status: args.status, approvedBy: args['approved-by'], validFrom: args['valid-from'], validTo: args['valid-to'], provenanceUri: args.source }));
-  if (group === 'memory' && action === 'traverse') return io.json({ entityId: args.id, nodes: core.memory.traverse({ entityId: args.id, depth: args.depth, at: args.at }) });
-  if (group === 'memory' && action === 'state-put') return io.json(core.memory.putStateBlock({ blockId: args.id, agentId: args.agent, scope: args.scope, content: args.content || '', accessMode: args.mode, expectedVersion: args['expected-version'] ? Number(args['expected-version']) : undefined, approvedBy: args['approved-by'] }));
-  if (group === 'memory' && action === 'state-list') return io.json({ blocks: core.memory.listStateBlocks(args.agent, args.scope) });
-  if (group === 'memory' && action === 'feedback') return io.json(core.memory.feedback({ query: args.query, queryHash: args['query-hash'], ownerType: args.type, ownerId: args.id, rank: args.rank ? Number(args.rank) : null, signal: args.signal }));
-  if (group === 'memory' && action === 'eval-add') return io.json(core.memory.addEvalCase({ caseId: args.id, query: args.query, expectedOwnerIds: String(args.expected || '').split(',').filter(Boolean), tags: args.tags ? String(args.tags).split(',') : [] }));
-  if (group === 'memory' && action === 'eval-list') return io.json({ cases: core.memory.listEvalCases() });
-  if (group === 'memory' && action === 'backup') {
-    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
-    return io.json(await core.backupMemory());
-  }
-  if (group === 'memory' && action === 'backup-key-init') {
-    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
-    return io.json(core.encryptedMemoryBackup.initKey({ confirm: true }));
-  }
-  if (group === 'memory' && action === 'backup-encrypted') {
-    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
-    return io.json(await core.encryptedMemoryBackup.create());
-  }
-  if (group === 'memory' && action === 'backup-inspect') return args.input ? io.json(core.encryptedMemoryBackup.inspect(args.input)) : io.error('input is required', EXIT.usage);
-  if (group === 'memory' && action === 'backup-verify') return args.input ? io.json(await core.encryptedMemoryBackup.verify(args.input)) : io.error('input is required', EXIT.usage);
-  if (group === 'memory' && action === 'backup-compare') return args.input ? io.json(await core.encryptedMemoryBackup.compare(args.input)) : io.error('input is required', EXIT.usage);
-  if (group === 'memory' && action === 'recover') {
-    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
-    return io.json(core.encryptedMemoryBackup.recover({ confirm: true }));
-  }
-  if (group === 'memory' && action === 'restore-encrypted') {
-    if (!args.input) return io.error('input is required', EXIT.usage);
-    if (!args['confirm-restore']) return io.error('confirm-restore is required', EXIT.blocked);
-    return io.json(await core.encryptedMemoryBackup.restore({ input: args.input, confirm: true, allowUninitialized: args['allow-uninitialized'] === true }));
-  }
-  if (group === 'memory' && action === 'recovery-export') {
-    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
-    if (!args['output-a'] || !args['output-b'] || !args['passphrase-a-file'] || !args['passphrase-b-file']) return io.error('output-a, output-b, passphrase-a-file, and passphrase-b-file are required', EXIT.usage);
-    return io.json(core.encryptedMemoryBackup.recoveryExport({ outputA: args['output-a'], outputB: args['output-b'], passphraseAFile: args['passphrase-a-file'], passphraseBFile: args['passphrase-b-file'], confirm: true }));
-  }
-  if (group === 'memory' && action === 'recovery-drill') {
-    if (!args['share-a'] || !args['share-b'] || !args['passphrase-a-file'] || !args['passphrase-b-file']) return io.error('share-a, share-b, passphrase-a-file, and passphrase-b-file are required', EXIT.usage);
-    return io.json(await core.encryptedMemoryBackup.recoveryDrill({ shareA: args['share-a'], shareB: args['share-b'], passphraseAFile: args['passphrase-a-file'], passphraseBFile: args['passphrase-b-file'], input: args.input }));
-  }
-  if (group === 'memory' && action === 'recovery-import') {
-    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
-    if (!args['share-a'] || !args['share-b'] || !args['passphrase-a-file'] || !args['passphrase-b-file']) return io.error('share-a, share-b, passphrase-a-file, and passphrase-b-file are required', EXIT.usage);
-    return io.json(core.encryptedMemoryBackup.recoveryImport({ shareA: args['share-a'], shareB: args['share-b'], passphraseAFile: args['passphrase-a-file'], passphraseBFile: args['passphrase-b-file'], confirm: true, replace: args.replace === true }));
-  }
-  if (group === 'memory' && action === 'recovery-rotate') {
-    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
-    const required = ['current-share-a','current-share-b','current-passphrase-a-file','current-passphrase-b-file','new-output-a','new-output-b','new-passphrase-a-file','new-passphrase-b-file'];
-    if (required.some(key => !args[key])) return io.error(`${required.join(', ')} are required`, EXIT.usage);
-    return io.json(await core.encryptedMemoryBackup.recoveryRotate({ confirm: true, currentRecovery: { shareA: args['current-share-a'], shareB: args['current-share-b'], passphraseAFile: args['current-passphrase-a-file'], passphraseBFile: args['current-passphrase-b-file'] }, newRecovery: { outputA: args['new-output-a'], outputB: args['new-output-b'], passphraseAFile: args['new-passphrase-a-file'], passphraseBFile: args['new-passphrase-b-file'] } }));
-  }
-  if (group === 'harness' && action === 'cycle') return io.json(core.memoryHarness.cycle());
-  if (group === 'harness' && action === 'candidates') return io.json({ candidates: core.memoryHarness.candidates() });
   if (group === 'hosts' && (!action || action === 'list')) return io.json({ hosts: core.hosts.list() });
-  if (group === 'embeddings' && (!action || action === 'status')) return io.json(core.embeddings.status());
-  if (group === 'embeddings' && action === 'recommend') return io.json(core.embeddings.recommend(args.profile || 'zh-light'));
-  if (group === 'embeddings' && action === 'configure') {
-    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
-    if (!args.model) return io.error('model is required', EXIT.usage);
-    return io.json(core.embeddings.configure({ model: args.model, endpoint: args.endpoint, dimensions: args.dimensions, batchSize: args['batch-size'], confirm: true }));
-  }
-  if (group === 'embeddings' && action === 'mark-indexed') {
-    if (!args.confirm) return io.error('confirm is required', EXIT.blocked);
-    if (!args.manifest) return io.error('manifest is required', EXIT.usage);
-    return io.json(core.embeddings.markIndexed({ manifestPath: args.manifest, confirm: true }));
-  }
-  if (group === 'embeddings' && action === 'doctor') return io.json(await core.embeddings.doctor());
-  if (group === 'embeddings' && action === 'probe') return io.json(await core.embeddings.probe({ text: args.text }));
-  if (group === 'embeddings' && action === 'pull') {
-    if (!args['confirm-download']) return io.error('confirm-download is required', EXIT.blocked);
-    return io.json(core.embeddings.pull({ model: args.model, confirm: true }));
-  }
-  if (group === 'embeddings' && action === 'prompt') return io.json({ prompt: core.embeddings.adaptationPrompt() });
   if (group === 'hooks' && (!action || action === 'doctor')) return io.json(doctorHooks({ projectRoot, pluginRoot }));
   if (group === 'hooks' && ['enable', 'disable'].includes(action)) {
     if (!args.confirm) return io.error('confirm is required', EXIT.blocked);

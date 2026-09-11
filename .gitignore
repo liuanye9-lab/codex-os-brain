@@ -9,3 +9,4 @@ reports/
 .codex/hooks.json
 .codex/hooks.codex-brain-v9.state.json
 .codex/hooks.json.codex-brain-v9.backup
+sbom.cdx.json

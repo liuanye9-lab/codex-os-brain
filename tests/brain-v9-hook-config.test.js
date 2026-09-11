@@ -14,9 +14,12 @@ test('hook manifest uses PLUGIN_ROOT and explicit short timeouts', () => {
     groups.flatMap(group => group.hooks.map(hook => ({ ...hook, event }))));
   assert.ok(commands.every(hook => hook.command.includes('${PLUGIN_ROOT}')));
   assert.ok(commands.every(hook => hook.commandWindows.includes('%PLUGIN_ROOT%')));
-  assert.ok(commands.filter(hook => hook.event !== 'Stop').every(hook => hook.timeout <= 2));
+  assert.ok(commands.filter(hook => hook.event !== 'Stop').every(hook => hook.timeout <= 5));
   assert.ok(commands.filter(hook => hook.event === 'Stop').every(hook => hook.timeout >= 120));
   assert.deepEqual(Object.keys(manifest.hooks), REQUIRED_EVENTS);
+  // V11 contract: exactly three sensors, each with a distinct failure mode.
+  assert.deepEqual(REQUIRED_EVENTS, ['SessionStart', 'PreToolUse', 'Stop']);
+  assert.equal(commands.length, 3);
 });
 
 test('enable writes only project hooks after confirmation', () => {

@@ -1,25 +1,25 @@
 {
   "name": "codex-brain-v9",
-  "version": "0.16.0",
-  "description": "Codex Brain V10 reliability harness; V9 is the compatible runtime contract and cognitive assets remain an opt-in lab.",
+  "version": "0.17.0",
+  "description": "Codex Brain V11 personal reliability harness: three hooks, signed task contracts, and verified completion. Recall is delegated to Codex native memories.",
   "type": "module",
   "main": "./index.js",
   "exports": {
     ".": "./index.js",
-    "./core": "./core.js",
-    "./labs/cognitive-assets": "./labs/cognitive-assets.js"
+    "./core": "./core.js"
   },
   "codexBrain": {
     "productName": "Codex Brain",
-    "productMajor": 10,
-    "releaseVersion": "0.16.0",
+    "productMajor": 11,
+    "releaseVersion": "0.17.0",
     "runtimeContract": 9,
-    "cognitiveAssetProtocol": 1,
-    "releaseChannel": "research-preview",
+    "releaseChannel": "personal",
     "compatibilityName": "codex-brain-v9"
   },
   "license": "MIT",
-  "engines": { "node": ">=22.5" },
+  "engines": {
+    "node": ">=22.5"
+  },
   "bin": {
     "brain": "bin/brain.js",
     "codex-brain": "bin/brain.js"
@@ -27,7 +27,6 @@
   "files": [
     "index.js",
     "core.js",
-    "labs/cognitive-assets.js",
     ".mcp.json",
     ".agents/plugins/marketplace.json",
     ".codex-plugin/plugin.json",
@@ -39,7 +38,6 @@
     "config/brain-lite-v8.json",
     "config/brain-lite-v9.json",
     "config/brain-lite.json",
-    "config/embedding-model-presets.json",
     "config/public-export-allowlist.json",
     "config/public-package.json",
     "hooks/hooks.json",
@@ -74,7 +72,6 @@
   "scripts": {
     "test": "node scripts/test-contract.js",
     "check": "node scripts/check-contract.js",
-    "test:behavioral-memory": "node --test tests/brain-lite-behavioral-memory-*.test.js",
     "test:package": "node scripts/package-selftest.js",
     "test:pack-install": "node scripts/pack-install-smoke.js",
     "test:plugin-canary": "node scripts/plugin-canary.js",
@@ -85,15 +82,11 @@
     "eval:ab": "npm run eval:mechanism",
     "eval:ab:live": "npm run eval:live-canary",
     "mcp:probe": "node scripts/probe-v9-mcp.mjs",
-    "smoke:production": "node scripts/production-smoke.js",
-    "memory:v9:capabilities": "node scripts/v9/capability-verifier.js",
-    "test:v9:memory": "node --test tests/brain-v9-memory-db.test.js tests/brain-v9-memory-service.test.js tests/brain-v9-memory-harness.test.js",
-    "memory:capabilities": "node scripts/v9/capability-verifier.js",
-    "memory:harness": "node bin/brain.js harness cycle"
+    "smoke:production": "node scripts/production-smoke.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/client": "2.0.0-beta.5",
-    "@modelcontextprotocol/server": "2.0.0-beta.5",
-    "zod": "4.4.2"
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "zod": "4.6.2"
   }
 }

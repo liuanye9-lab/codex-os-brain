@@ -1,16 +1,44 @@
 {
   "version": 1,
   "hooks": {
-    "SessionStart": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"", "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"", "timeout": 2 }] }],
-    "SessionEnd": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"", "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"", "timeout": 2 }] }],
-    "UserPromptSubmit": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"", "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"", "timeout": 2 }] }],
-    "PreToolUse": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"", "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"", "timeout": 2 }] }],
-    "PostToolUse": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"", "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"", "timeout": 2 }] }],
-    "PermissionRequest": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"", "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"", "timeout": 2 }] }],
-    "SubagentStart": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"", "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"", "timeout": 2 }] }],
-    "SubagentStop": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"", "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"", "timeout": 2 }] }],
-    "PreCompact": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"", "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"", "timeout": 2 }] }],
-    "PostCompact": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"", "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"", "timeout": 2 }] }],
-    "Stop": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"", "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"", "timeout": 130 }] }]
+    "SessionStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"",
+            "timeout": 130
+          }
+        ]
+      }
+    ]
   }
 }

@@ -1,6 +1,6 @@
 {
   "version": 9,
-  "policyVersion": "brain-lite-v9-adaptive-reliability",
+  "policyVersion": "brain-v11-personal-reliability",
   "enabled": true,
   "fallbackVersion": 8,
   "hooks": {
@@ -19,14 +19,6 @@
     "requireHarnessReRun": true,
     "agentClaimsAreUnverified": true
   },
-  "cognitiveAssets": {
-    "enabled": false,
-    "captureDefault": "explicit_project_opt_in",
-    "hotPath": "metadata_only",
-    "authorityMode": "operator_guardrail_only",
-    "dailyDigestLimit": 5,
-    "candidateBacklogThrottleDays": 7
-  },
   "handoff": {
     "enabled": true,
     "dir": ".brain",
@@ -36,26 +28,26 @@
     "requireExpectedCriteria": true,
     "outputsAreEvidenceCandidates": true
   },
-  "memory": {
-    "enabled": false,
-    "injectionBanner": "UNVERIFIED MEMORY",
-    "promoteOnlyFromVerifiedOutcomes": true
-  },
   "hosts": {
     "default": "codex",
-    "supported": ["codex", "claude", "generic-mcp"]
-  },
-  "embeddings": {
-    "optional": true,
-    "provider": "ollama",
-    "localOnly": true,
-    "usedByHooks": false,
-    "requireMatchingIndexFingerprint": true,
-    "lexicalFallback": true
+    "supported": [
+      "codex",
+      "claude",
+      "generic-mcp"
+    ]
   },
   "migration": {
     "mode": "copy",
-    "preserveVersions": [1, 2, 3, 4, 5, 6, 7, 8],
+    "preserveVersions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
     "requireVerifiedBackup": true,
     "requireExplicitConfirmation": true
   },
@@ -63,5 +55,14 @@
     "storeRawPrompts": false,
     "storeRawToolOutput": false,
     "storePrivatePaths": false
+  },
+  "activeHooks": [
+    "SessionStart",
+    "PreToolUse",
+    "Stop"
+  ],
+  "recall": {
+    "owner": "codex_native_memories",
+    "selfManagedRecall": false
   }
 }

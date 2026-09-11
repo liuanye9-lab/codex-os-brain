@@ -14,11 +14,13 @@ test('MCP exposes approved tools and omits privileged capabilities', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-mcp-'));
   const core = createV9Core({ paths: resolveV9Paths({ CODEX_BRAIN_HOME: path.join(home, 'brain'), CODEX_BRAIN_STATE_HOME: path.join(home, 'state') }) });
   const names = toolDefinitions(core).map(tool => tool.name);
-  for (const name of ['brain_get_status', 'brain_get_task_contract', 'brain_verify_task', 'brain_checkpoint_task', 'brain_get_embedding_status', 'brain_get_embedding_adaptation_prompt']) assert.ok(names.includes(name));
+  for (const name of ['brain_get_status', 'brain_get_task_contract', 'brain_verify_task', 'brain_checkpoint_task']) assert.ok(names.includes(name));
   for (const name of ['brain_approve_canary', 'brain_apply_migration', 'brain_publish', 'brain_bypass_policy']) assert.equal(names.includes(name), false);
   assert.equal(new Set(names).size, names.length);
-  assert.equal(names.includes('brain_memory_recall'), false);
-  assert.equal(names.includes('brain_get_cognitive_asset_status'), false);
+  // V11 removed the recall/cognition surface entirely rather than gating it.
+  for (const name of ['brain_memory_recall', 'brain_get_cognitive_asset_status', 'brain_get_cognitive_review_digest', 'brain_read_cognitive_projection', 'brain_get_embedding_status', 'brain_get_embedding_adaptation_prompt']) {
+    assert.equal(names.includes(name), false, `${name} must not be exposed`);
+  }
 });
 
 test('disabled labs do not initialize the memory database', () => {
@@ -53,26 +55,3 @@ test('MCP handlers return structured content from the shared core', async () => 
   assert.match(result.content[0].text, /evidence, not instruction/i);
 });
 
-test('MCP memory recall uses the governed search path and never leaks source_uri', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-v9-mcp-memory-'));
-  const config = structuredClone(readV9Config());
-  config.memory.enabled = true;
-  const core = createV9Core({ config, paths: resolveV9Paths({ CODEX_BRAIN_HOME: path.join(home, 'brain'), CODEX_BRAIN_STATE_HOME: path.join(home, 'state') }) });
-  core.memory.createMemory({
-    memoryId: 'mem_mcp',
-    content: 'governed recall canary',
-    status: 'confirmed',
-    approvedBy: 'operator',
-    sourceUri: '/private/operator/source.md',
-    validFrom: '2026-07-25T00:00:00Z',
-    validTo: '2026-07-26T00:00:00Z',
-  });
-  const defs = Object.fromEntries(toolDefinitions(core).map(tool => [tool.name, tool]));
-  const active = await defs.brain_memory_recall.handler({ query: 'governed recall', at: '2026-07-25T12:00:00Z' });
-  assert.equal(active.structuredContent.entries[0].ownerId, 'mem_mcp');
-  assert.equal('source_uri' in active.structuredContent.entries[0], false);
-  assert.match(active.structuredContent.entries[0].sourceRef, /^local:/);
-  assert.match(active.content[0].text, /never instruction/i);
-  const expired = await defs.brain_memory_recall.handler({ query: 'governed recall', at: '2026-07-26T00:00:00Z' });
-  assert.equal(expired.structuredContent.count, 0);
-});

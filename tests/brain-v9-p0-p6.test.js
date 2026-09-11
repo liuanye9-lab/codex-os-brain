@@ -18,7 +18,6 @@ const { createTaskContract } = require('../scripts/v9/task-contract');
 function tempCore() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-p0p6-'));
   const config = structuredClone(readV9Config());
-  config.memory.enabled = true;
   return { home, core: createV9Core({ config, paths: resolveV9Paths({ CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: path.join(home, 'state') }) }) };
 }
 
@@ -105,19 +104,16 @@ test('P0: duplicate explicit task id does not mutate the existing guard', () => 
   assert.equal(core.contracts.active().objective, 'original');
 });
 
-test('P0: tasks and memory are isolated by project root', async () => {
+test('P0: tasks are isolated by project root', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-project-scope-'));
   const basePaths = resolveV9Paths({ CODEX_BRAIN_HOME: home, CODEX_BRAIN_STATE_HOME: path.join(home, 'state') });
   const projectA = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-project-a-'));
   const projectB = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-project-b-'));
   const config = structuredClone(readV9Config());
-  config.memory.enabled = true;
   const a = createV9Core({ config, paths: basePaths, projectRoot: projectA });
   const b = createV9Core({ config, paths: basePaths, projectRoot: projectB });
   a.contracts.create({ taskId: 'alpha', objective: 'alpha billing key migration', criteria: [{ id: 'tests', verifier: 'test_runner', verifierSpec: { executable: 'npm', args: ['test'] } }] });
-  a.memory.createMemory({ memoryId: 'alpha-memory', content: 'alpha only' });
   assert.equal(b.contracts.active(), null);
-  assert.equal(b.memory.getMemory('alpha-memory'), null);
   assert.notEqual(a.paths.tasksRoot, b.paths.tasksRoot);
   assert.deepEqual(await handleSession({ event: 'SessionStart', projectRoot: projectB }, b), {});
 });
@@ -226,14 +222,17 @@ test('P5: host adapters normalize codex and claude events', async () => {
   assert.equal(applied.continue, false);
 });
 
-test('P6: memory is candidate-first and approval gated', () => {
+test('P6: recall is delegated to the host and the harness ships no memory store', () => {
   const { core } = tempCore();
-  const a = core.memory.createMemory({ content: 'prefer local embeddings', kind: 'preference' });
-  assert.equal(a.status, 'candidate');
-  assert.equal(core.memory.search({ query: 'local embeddings' }).count, 0);
-  const b = core.memory.transitionMemory(a.memory_id, 'confirmed', { expectedVersion: 1, approvedBy: 'operator' });
-  assert.equal(b.status, 'confirmed');
-  assert.equal(core.memory.search({ query: 'local embeddings' }).count, 1);
+  const status = core.status();
+  assert.equal(status.features.memory, false);
+  assert.equal(status.features.cognitiveAssets, false);
+  assert.equal(status.memory.reason, 'delegated_to_host');
+  assert.equal(status.memory.host, 'codex_native_memories');
+  // A harness-side recall surface must not exist at all; disabled is not enough.
+  assert.equal(core.memory, undefined);
+  assert.equal(core.embeddings, undefined);
+  assert.equal(core.cognitiveAssets, undefined);
 });
 
 test('hot path policy stays under latency budget', () => {

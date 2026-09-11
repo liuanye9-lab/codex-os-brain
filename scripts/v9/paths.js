@@ -33,15 +33,8 @@ function resolveV9Paths(env = process.env, options = {}) {
     evidenceSealKeyPath: pathImpl.join(localRuntimeRoot, 'evidence', 'seal.key'),
     controlDbPath: pathImpl.join(localRuntimeRoot, 'control', 'control.sqlite3'),
     controlGuardPath: pathImpl.join(runtimeRoot, 'control', 'active.guard.json'),
-    memoryRoot: pathImpl.join(localRuntimeRoot, 'memory'),
-    memoryDbPath: pathImpl.join(localRuntimeRoot, 'memory', 'memory.sqlite3'),
-    memoryBackupRoot: pathImpl.join(localRuntimeRoot, 'memory', 'backups'),
-    memoryEncryptedBackupRoot: pathImpl.join(localRuntimeRoot, 'memory', 'encrypted-backups'),
-    memoryBackupStatePath: pathImpl.join(localRuntimeRoot, 'memory', 'backup-state.json'),
-    memoryDeviceIdPath: pathImpl.join(localRuntimeRoot, 'memory', 'device-id'),
-    memoryRestoreRoot: pathImpl.join(localRuntimeRoot, 'memory', 'restore'),
-    memoryRestoreLockPath: pathImpl.join(localRuntimeRoot, 'memory', 'restore.lock'),
-    memoryRestoreJournalPath: pathImpl.join(localRuntimeRoot, 'memory', 'restore-journal.json'),
+    stopGateRoot: pathImpl.join(localRuntimeRoot, 'stop-gate'),
+    fanoutRoot: pathImpl.join(runtimeRoot, 'fanout'),
     configPath: pathImpl.join(brainHome, 'config', 'brain-lite-v9.json'),
   };
 }

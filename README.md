@@ -1,6 +1,7 @@
-# Codex Brain V10：Coding Agent 可靠性 Harness（研究预览）
+# Codex Brain V11：Coding Agent 可靠性 Harness（个人版）
 
-[![Version](https://img.shields.io/badge/version-0.16.0-5b5bd6)](package.json)
+[![Version](https://img.shields.io/badge/version-0.17.0-5b5bd6)](package.json)
+[![Hooks](https://img.shields.io/badge/hooks-3%20sensors-8957e5)](hooks/hooks.json)
 [![Runtime](https://img.shields.io/badge/runtime-local--first-1f883d)](docs/v9/privacy-and-threat-model.md)
 [![Interfaces](https://img.shields.io/badge/interfaces-hooks%20%7C%20CLI%20%7C%20MCP-0969da)](docs/v9/quickstart.md)
 [![Eval](https://img.shields.io/badge/eval-reliability%20suites-orange)](evals/v9-reliability/runner.cjs)
@@ -10,9 +11,19 @@
 
 > Unofficial community project. Codex and related marks belong to OpenAI; this generated illustration does not imply affiliation or endorsement. Visual provenance is recorded in [`assets/visual-provenance.json`](assets/visual-provenance.json).
 
-V10 的稳定主线只有一件事：在宿主真实触发、且已经过 canary 验证的 Hook 路径上阻止 Coding Agent 越界修改，并阻止它在没有通过验收时宣布完成。认知资产、长期记忆和跨 Agent 投影属于可选实验层，默认不构成安装成功、任务完成或能力已验证的证明。
+V11 的主线只有一件事：在宿主真实触发的 Hook 路径上阻止 Coding Agent 越界修改，并阻止它在没有通过验收时宣布完成。
 
-底层任务合同、Hooks、CLI、MCP、SQLite 和 verifier 继续使用已经稳定的 V9 runtime contract，避免为了改产品代号破坏现有安装与数据兼容。因此 npm 包名、`scripts/v9` 路径和部分 schema 名称在 V10 中仍保留；它们表示兼容层，不表示产品仍停留在 V9。
+**V11 做的主要是减法。** V10 曾经自带一整套长期记忆（SQLite + 向量 + 加密备份 + 恢复密钥）和一层认知资产实验协议，并向 12 个 Hook 事件全量注册。实际使用下来这些都是成本而非收益：Codex 已经内置 Memories，自建记忆层等于同一件事有两个负责人；认知资产层从未在日常里被启用，却贡献了全仓最大的单文件和唯一一个真实的时钟缺陷。V11 把它们整层删除，并把传感面收敛到三个各自对应一种明确失败模式的 Hook：
+
+| Hook | 拦的是哪一种失败 |
+|---|---|
+| `SessionStart` | 新开 / 恢复会话后丢失任务合同上下文 |
+| `PreToolUse` | 动作越过已签名的任务边界 |
+| `Stop` | 没通过验收就宣布「已完成」 |
+
+长期记忆与跨会话召回交给宿主原生能力，harness 不再自带记忆库、向量索引或嵌入服务。
+
+底层任务合同、Hooks、CLI、MCP、SQLite 和 verifier 继续使用已经稳定的 V9 runtime contract，避免为了改产品代号破坏现有安装与数据兼容。因此 npm 包名、`scripts/v9` 路径和部分 schema 名称在 V11 中仍保留；它们表示兼容层，不表示产品仍停留在 V9。
 
 ## 最快部署：优先使用 Codex 原生 Plugin
 
@@ -32,8 +43,8 @@ npm 全局安装继续作为兼容 CLI 路径，不再是产品身份或默认�
 先让 Agent 进入你要保护的项目目录，然后把下面整段发给它：
 
 ```text
-请在当前项目部署 Codex Brain V10 Harness 的兼容 CLI。先确认 Node.js >= 22.5，再执行：
-npm install --global codex-brain-v9@0.16.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
+请在当前项目部署 Codex Brain V11 Harness 的兼容 CLI。先确认 Node.js >= 22.5，再执行：
+npm install --global codex-brain-v9@0.17.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
 
 只允许把 Codex Brain 增量合并进当前用户的 Codex Hook loader，不要改 Claude Code Hooks，不要修改项目业务文件。保留用户已有 Hooks；项目 task、事件和记忆仍按 projectRoot 隔离。如果任一步失败就停止并报告原始错误。完成后只在 doctor 同时满足 ok=true、eventsComplete=true、fingerprintMatch=true、packageVersionMatch=true、runtimeDigestMatch=true、runtimeHealthy=true、runtimeStorageWritable=true，且 evidence-signing-loop=passed 时告诉我“安装完整”；只有真实 host canary 记录到事件后才能告诉我“宿主门禁已生效”。
 ```
@@ -41,7 +52,7 @@ npm install --global codex-brain-v9@0.16.0 && codex-brain hooks enable --project
 如果你自己在终端操作，先 `cd` 到目标项目，再复制这一行：
 
 ```bash
-npm install --global codex-brain-v9@0.16.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
+npm install --global codex-brain-v9@0.17.0 && codex-brain hooks enable --project "$PWD" --confirm --json && codex-brain doctor --project "$PWD" --json
 ```
 
 这条兼容命令把运行时安装到 npm 全局目录，并把通用 loader 增量合并进当前用户的 `$CODEX_HOME/hooks.json`（默认 `~/.codex/hooks.json`）。loader 在没有活动项目合同的时候静默返回，task、事件和证据仍按 projectRoot 隔离；Memory 与 Cognitive Labs 默认关闭。安装器会保留已有 Hooks，并自动保存可恢复的原配置。不要使用 `sudo npm install`；如果全局 npm 目录不可写，先改用用户级 Node 版本管理器。
@@ -117,12 +128,10 @@ flowchart LR
 4. [一图看懂架构](#一图看懂架构)
 5. [P0–P6：0.10 可靠性控制平面](#p0p6-010-可靠性控制平面)
 6. [历代版本：解决了什么问题，为什么那样改](#历代版本解决了什么问题为什么那样改)
-7. [事务记忆与加密同步](#事务记忆与加密同步)
-8. [认知资产协议](#认知资产协议)
-9. [五分钟跑起来](#五分钟跑起来)
-10. [工程术语对照](#工程术语对照)
-11. [它做不到什么](#它做不到什么)
-12. [文档索引](#文档索引)
+7. [五分钟跑起来](#五分钟跑起来)
+8. [工程术语对照](#工程术语对照)
+9. [它做不到什么](#它做不到什么)
+10. [文档索引](#文档索引)
 
 ---
 
@@ -331,11 +340,10 @@ flowchart LR
   D3 -->|否| Allow["放行 · 安静记账"]
 ```
 
-### 7. 技能与记忆（有门禁的增强，不是永远在线）
+### 7. 技能门禁（有门禁的增强，不是永远在线）
 
 - **Skills**：激活必须声明 **期望验收项 + token 预算**；产出是证据候选项，不是指令  
-- **Memory**：召回默认带 `[UNVERIFIED MEMORY]`；只有 harness 验证通过的结果才可晋升为 `verified_outcome`  
-- **可选本地嵌入（Ollama）**：本地资料柜召回；**hooks 热路径永不调模型 / 永不调 Ollama**
+- **召回不归 harness 管**：V11 起，长期记忆与跨会话召回完全交给宿主（Codex 原生 Memories）。harness 不再自带记忆库、向量索引或嵌入服务——同一件事只留一个负责人
 
 ```mermaid
 flowchart TB
@@ -736,67 +744,9 @@ flowchart TB
 | **P3** | 路径能力策略 | 机场安检 | 关键词误伤/漏拦 | hooks PreToolUse + `policy.js` |
 | **P4** | 技能焊死证据 | 临时工工牌 | 技能乱注入无验收 | `brain skill activate --criterion …` |
 | **P5** | 多宿主适配 | 旅行转接头 | 绑死单一 IDE | `BRAIN_HOST=codex\|claude\|mcp` |
-| **P6** | 版本化记忆 | 未核验便利贴 | 记忆污染当圣旨 | `brain memory create\|transition\|query` |
+| **P6** | 召回归宿主 | 不重复造记忆 | 双份记忆互相打架 | 宿主原生 Memories（V11 移除自建层） |
 
 详见 [docs/v9/p0-p6-reliability-plane.md](docs/v9/p0-p6-reliability-plane.md)。
-
----
-
-## 事务记忆与加密同步
-
-V9 的记忆源已经从 `grep + Markdown` 升级为本地 SQLite：WAL 事务、版本化 CRUD、FTS5/BM25、持久向量、结构化聚合、时态图遍历和候选审批都由数据库承担。Markdown 仍适合人审，grep 仍适合定位，但两者不再冒充记忆存储层。
-
-```mermaid
-flowchart LR
-  Source["来源证据"] --> SQL["SQLite WAL<br/>事务 + CRUD"]
-  SQL --> Hybrid["FTS5/BM25 + 向量<br/>混合召回"]
-  SQL --> Graph["时态关系图<br/>递归遍历"]
-  Hybrid --> Feedback["显式反馈 + 固定评测"]
-  Graph --> Feedback
-  Feedback --> Candidate["优化候选<br/>人工审批后试验"]
-  SQL --> Snapshot["SQLite 在线快照<br/>完整性检查"]
-  Snapshot --> AES["AES-256-GCM<br/>完整头部 MAC + Keychain 持钥"]
-  AES --> Remote["私有同步目标<br/>只收 .cbmem 密文"]
-  AES --> Split["2-of-2 离线密钥份额<br/>分设备 + 分口令保管"]
-  Remote --> Restore["认证血缘 + 恢复租约<br/>原子换库 + 自动回滚"]
-  Restore --> Cleanup["崩溃 recover<br/>清理锁、日志与明文临时副本"]
-```
-
-同步不采用 last-write-wins。每个不可变 `.cbmem` 包都带经过认证的 `databaseId → parentBackupId → backupId` 血缘；`same` 只验证不换库，远端祖先链包含本地 head 才允许确认后的自动 fast-forward 恢复，分叉、外来数据库和未知血缘全部阻断。恢复过程会持有协作租约、检查数据库占用、先做回滚快照，再通过同文件系统原子换库和崩溃日志保证失败可回退。
-
-```mermaid
-stateDiagram-v2
-  [*] --> Verify
-  Verify --> Same: 同一 head
-  Verify --> FastForward: 远端祖先含本地 head
-  Verify --> LocalAhead: 远端是已知旧祖先
-  Verify --> Diverged: 从旧祖先分叉
-  Verify --> Foreign: databaseId 不同
-  Verify --> Unknown: 无法证明血缘
-  Same --> NoOp
-  FastForward --> ConfirmedRestore
-  LocalAhead --> KeepLocal
-  Diverged --> Block
-  Foreign --> Block
-  Unknown --> Block
-```
-
-```bash
-brain memory backup-key-init --confirm
-brain memory backup-encrypted --confirm
-brain memory backup-verify --input /path/to/backup.cbmem
-brain memory backup-compare --input /path/to/incoming.cbmem
-brain memory restore-encrypted --input /path/to/incoming.cbmem --confirm-restore
-brain memory recover --confirm
-brain memory recovery-export --output-a /offline-a/key.cbkey --output-b /offline-b/key.cbkey --passphrase-a-file /private/pass-a --passphrase-b-file /private/pass-b --confirm
-brain memory recovery-drill --share-a /offline-a/key.cbkey --share-b /offline-b/key.cbkey --passphrase-a-file /private/pass-a --passphrase-b-file /private/pass-b --input /path/to/backup.cbmem
-brain harness cycle
-```
-
-详见 [事务记忆基础设施](docs/v9/memory-infrastructure.md)、[加密备份及冲突安全同步](docs/v9/encrypted-backup-and-sync.md) 与 [离线恢复密钥仪式](docs/v9/recovery-key-ceremony.md)。
-
----
-
 ## 历代版本：解决了什么问题，为什么那样改
 
 这不是「版本号越大功能越多越好」的堆料史。每一版都先钉住一个**高频翻车点**，再发现护栏本身的成本与盲区，最后收敛成 V9 的原则：
@@ -961,7 +911,7 @@ flowchart TB
   - **evidence-gated completion**：完成门控；  
   - **fail-closed red lines / fail-open observers**；  
   - **local-first privacy**。  
-- **手段**：Task Contract、事件、证据门、失败电路、hooks/CLI/MCP 统一 core、可选 Ollama 嵌入、V1–V8 复制式迁移。  
+- **手段**：Task Contract、事件、证据门、失败电路、hooks/CLI/MCP 统一 core、V1–V8 复制式迁移。  
 - **0.10 增量**：把「证据」做成可执行 verifier；补 handoff、eval、path policy、skills、hosts、memory 版本语义（P0–P6）。
 
 ### 从历代演进里沉淀的产品原则
@@ -989,39 +939,9 @@ flowchart TB
 8. **编排默认关闭；打开要有独立收益证明。**  
 9. **三端一套策略；红线硬，观察软。**  
 10. **用 eval 约束叙事，避免「架构故事」膨胀。**
-
----
-
-## 认知资产协议
-
-0.16 增加了一个默认关闭、候选优先的 Cognitive Asset Protocol Lab。它把来源、证据判断、认知单元、Playbook manifest、真实复用回执和只读授权投影连成同一条可审计链，但不会把日常聊天直接升级成人格结论，也不保存隐藏推理或完整工具输出。
-
-```mermaid
-flowchart LR
-  S["Source Envelope<br/>默认 quarantine"] --> C["Cognition Candidate"]
-  C --> H["人工确认 + 四级证据门"]
-  H --> U["Cognition Unit"]
-  U --> P["Playbook"]
-  P --> R["生产路径 Reuse Receipt"]
-  R --> V["Verified Capability"]
-  V --> G["只读 Projection Grant"]
-```
-
-语义成熟度与部署状态分开；`runnable_playbook` 只代表 manifest 已通过结构门。内置 provider 的 `prepareRun` 只准备外部执行请求，不 dispatch、不执行步骤、不宣称运行完成。晋升 `verified_capability` 至少需要 10 个语义不同案例、3 个边界或对抗案例、80% 成功率、零关键安全失败。计数样本必须是外部 verifier 验签通过、带唯一 nonce、绑定 task/playbook version、executor/verifier principal 与不同 trust domain，以及 input/output/artifact/runner/policy digest 的生产路径收据。没有配置外部 `reuseReceiptVerifier` 时，复用记录和自动晋升均 fail closed。
-
-```bash
-# Labs 每次启动都必须显式确认；Cognitive Assets 会同时启用 Memory
-brain cognition status --enable-cognitive-assets --confirm-labs --json
-brain cognition digest --enable-cognitive-assets --confirm-labs --limit 5 --json
-```
-
-默认关闭；显式启用后，`operator_guardrail_only` 模式也只允许检查，不具备跨 Agent 导出授权能力。未加密的 live SQLite 会拒绝调用方声明为敏感、personal scope，或被类型规则分类为 personality、emotion、health、relationship、values 等敏感推断；它不是自动内容识别器。完整协议、安全边界和 MCP 投影说明见 [Cognitive Asset Protocol v1](docs/v9/cognitive-assets.md)。
-
----
-
 ## 五分钟跑起来
 
-需要 **Node.js 22.5+**（事务记忆使用内置 `node:sqlite`）。
+需要 **Node.js 22.5+**（任务合同与事件账本使用内置 `node:sqlite`）。
 
 ### 安装路径图
 
@@ -1074,15 +994,15 @@ brain handoff status --json
 brain handoff progress --summary "固定了 Stop 验收" --json
 ```
 
-### 技能 / 记忆 / 宿主（P4–P6）
+### 技能 / 宿主（P4–P6）
 
 ```bash
 brain skill list --json
 brain skill activate --id brain-lite-model-router --criterion tests --budget 2000 --json
-brain memory create --kind preference --content "优先本地嵌入" --json
-brain memory query --query "嵌入" --json
 brain hosts list --json
 ```
+
+召回不在这里：V11 已移除 `brain memory` / `brain cognition` / `brain embeddings` 这三组命令，长期记忆改由宿主原生能力负责。
 
 ### 给项目装传感器
 
@@ -1154,17 +1074,6 @@ brain mcp serve --project /absolute/path/to/project
 原生 Plugin 会从 `.mcp.json` 发现零依赖、未绑定项目的只读状态服务；上面的配置是显式绑定项目的 full MCP。full MCP 可读状态/任务/失败/事件/验收/交接/技能；Memory 与 Cognitive Labs 工具只在对应 feature 显式启用时注册。它可受控建任务、checkpoint、**claim** 证据、激活技能、验证后关闭任务。
 **不能**自证 passed、下载模型、改嵌入配置、批准迁移、绕过策略。
 
-### 可选：本地资料柜（Ollama）
-
-像资料管理员，不是第二大脑。hooks 热路径**永不**调用。
-
-```bash
-brain embeddings recommend --profile zh-light --json
-brain embeddings doctor --json
-```
-
-见 [docs/v9/local-embeddings.md](docs/v9/local-embeddings.md)。
-
 ### 验收与发布卫生
 
 ```bash
@@ -1234,13 +1143,9 @@ flowchart TB
 | 文档 | 内容 |
 |---|---|
 | [CLI / hooks / MCP 快速开始](docs/v9/quickstart.md) | 命令与接入 |
-| [Hook Coverage Matrix](docs/v9/hook-coverage.md) | 11 个声明事件、阻断能力与已知宿主边界 |
+| [Hook Coverage Matrix](docs/v9/hook-coverage.md) | 3 个声明事件、阻断能力与已知宿主边界 |
 | [P0–P6 可靠性控制平面](docs/v9/p0-p6-reliability-plane.md) | 0.10 机制说明 |
-| [可选 Ollama 本地嵌入](docs/v9/local-embeddings.md) | 资料柜 |
-| [事务记忆基础设施](docs/v9/memory-infrastructure.md) | SQLite、检索、图与持续评测 |
-| [Cognitive Asset Protocol v1](docs/v9/cognitive-assets.md) | 来源隔离、证据门、Playbook、复用门槛与只读投影 |
-| [加密备份及冲突同步](docs/v9/encrypted-backup-and-sync.md) | `.cbmem`、Keychain 与血缘判定 |
-| [离线恢复密钥仪式](docs/v9/recovery-key-ceremony.md) | 2-of-2 分离保管、演练、导入与轮换 |
+| [V10 → V11 升级说明](docs/v9/v10-to-v11.md) | 移除项、hook 收敛与升级步骤 |
 | [V1–V8 迁移与回退](docs/v9/migration.md) | 搬家协议 |
 | [隐私与威胁模型](docs/v9/privacy-and-threat-model.md) | 本地优先与导出 |
 | [研究与开源归属](docs/v9/research-and-attribution.md) | 论文与上游概念 |

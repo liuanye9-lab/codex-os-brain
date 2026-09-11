@@ -48,8 +48,8 @@ function nativePluginStatus() {
       playbookExecution: false,
     },
     controlStore: { initialized: false },
-    memory: { enabled: false, reason: 'feature_disabled' },
-    cognitiveAssets: { enabled: false, reason: 'feature_disabled', lab: true },
+    memory: { enabled: false, reason: 'delegated_to_host', host: 'codex_native_memories' },
+    cognitiveAssets: { enabled: false, reason: 'removed_in_v11' },
   };
 }
 

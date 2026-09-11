@@ -39,7 +39,7 @@ function main() {
     run(npm, ['init', '-y'], { cwd: consumer, env: npmEnv });
     run(npm, ['install', tarball, '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: consumer, env: npmEnv });
     run(process.execPath, ['--input-type=module', '--eval',
-      "import('codex-brain-v9').then(async root => { const core = await import('codex-brain-v9/core'); const labs = await import('codex-brain-v9/labs/cognitive-assets'); if (!root.default || typeof core.default?.core?.createV9Core !== 'function' || typeof labs.createCognitiveAssetProvider !== 'function') process.exit(1); })"],
+      "import('codex-brain-v9').then(async root => { const core = await import('codex-brain-v9/core'); if (!root.default || typeof core.default?.core?.createV9Core !== 'function') process.exit(1); await import('codex-brain-v9/labs/cognitive-assets').then(() => process.exit(1), () => {}); })"],
     { cwd: consumer });
     run(process.execPath, [path.join(consumer, 'node_modules', '.bin', 'brain'), '--help', '--json'], { cwd: consumer });
     process.stdout.write(`${JSON.stringify({ passed: true, package: packed.filename })}\n`);
