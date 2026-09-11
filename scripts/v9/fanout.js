@@ -59,12 +59,21 @@ function unitKey(unit) {
  * Take the ledger lock and apply a change.
  *
  * Under real concurrency the lock is contended, and failing immediately starves whichever workers
- * happen to lose the race — measured at four of five workers claiming nothing at all. Retry with
+ * happen to lose the race -- measured at four of five workers claiming nothing at all. Retry with
  * randomised backoff so contention slows a worker down instead of silently excluding it. The wait
  * is bounded: a lock that never frees must surface as an error, not as an infinite hang.
+ *
+ * The wait must not burn a core while it happens. A spin loop here measured 99.3% CPU for the full
+ * ten-second window, which on a four-worker fan-out would cost more than the work being delegated,
+ * so this blocks on Atomics.wait instead of spinning.
  */
-function mutate(file, planId, fn) {
-  const deadline = Date.now() + LOCK_WAIT_MS;
+function sleepBlocking(ms) {
+  // A private buffer nobody notifies, used purely as a precise blocking timer.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function mutate(file, planId, fn, { lockWaitMs = LOCK_WAIT_MS } = {}) {
+  const deadline = Date.now() + Number(lockWaitMs);
   let attempt = 0;
   for (;;) {
     try {
@@ -82,8 +91,7 @@ function mutate(file, planId, fn) {
       attempt += 1;
       // Exponential backoff with jitter, so retrying workers do not resynchronise into a herd.
       const backoff = Math.min(2 ** attempt, 64) + Math.floor(Math.random() * 16);
-      const until = Date.now() + backoff;
-      while (Date.now() < until) { /* short spin; waits here are sub-100ms by construction */ }
+      sleepBlocking(Math.min(backoff, Math.max(deadline - Date.now(), 1)));
     }
   }
 }
@@ -123,7 +131,8 @@ function registerUnits({ paths, projectScope = 'default', planId = 'default', un
  * handed out twice either — the reclaim is recorded.
  */
 function claimUnits({
-  paths, projectScope = 'default', planId = 'default', worker, limit = 1, leaseMs = DEFAULT_LEASE_MS,
+  paths, projectScope = 'default', planId = 'default', worker, limit = 1,
+  leaseMs = DEFAULT_LEASE_MS, lockWaitMs = LOCK_WAIT_MS,
 } = {}) {
   if (!worker) throw new Error('fanout_worker_required');
   const file = ledgerPath(paths, projectScope, planId);
@@ -135,7 +144,9 @@ function claimUnits({
     for (const unit of Object.values(ledger.units)) {
       if (unit.state !== 'claimed') continue;
       const claimedAt = Date.parse(unit.claimedAt || 0);
-      if (Number.isFinite(claimedAt) && claimedAt < deadline) {
+      // `<=` so that leaseMs: 0 means "treat every current claim as dead" deterministically,
+      // rather than depending on whether a millisecond happened to tick over.
+      if (Number.isFinite(claimedAt) && claimedAt <= deadline) {
         unit.state = 'pending';
         unit.reclaimedFrom = unit.claimedBy;
         unit.reclaimCount = (unit.reclaimCount || 0) + 1;
@@ -157,7 +168,7 @@ function claimUnits({
       .filter(unit => unit.state === 'completed')
       .map(unit => unit.label);
     return { planId, worker: String(worker), claimed, reclaimed, completedContext };
-  });
+  }, { lockWaitMs });
 }
 
 /**
@@ -198,7 +209,7 @@ function fanoutStatus({ paths, projectScope = 'default', planId = 'default', lea
   const unverified = completed.filter(unit => unit.verified !== true);
   const deadline = Date.now() - Number(leaseMs);
   // Held past their lease: a worker took these and never came back.
-  const stalled = units.filter(unit => unit.state === 'claimed' && Date.parse(unit.claimedAt || 0) < deadline);
+  const stalled = units.filter(unit => unit.state === 'claimed' && Date.parse(unit.claimedAt || 0) <= deadline);
   return {
     planId: ledger.planId,
     total: units.length,
@@ -263,4 +274,31 @@ function assessSplit({
   };
 }
 
-module.exports = { assessSplit, claimUnits, completeUnit, fanoutStatus, registerUnits, unitKey };
+/**
+ * Return units whose lease has expired to the pool, without claiming them.
+ *
+ * `claimUnits` already reclaims as a side effect, but that only helps when another worker turns up.
+ * A run whose workers have all died needs a way to recover the stranded work explicitly, and an
+ * operator needs to see what was recovered rather than have it happen silently.
+ */
+function reclaimUnits({ paths, projectScope = 'default', planId = 'default', leaseMs = DEFAULT_LEASE_MS } = {}) {
+  const file = ledgerPath(paths, projectScope, planId);
+  return mutate(file, planId, (ledger, now) => {
+    const deadline = Date.parse(now) - Number(leaseMs);
+    const reclaimed = [];
+    for (const unit of Object.values(ledger.units)) {
+      if (unit.state !== 'claimed') continue;
+      const claimedAt = Date.parse(unit.claimedAt || 0);
+      if (!Number.isFinite(claimedAt) || claimedAt > deadline) continue;
+      unit.state = 'pending';
+      unit.reclaimedFrom = unit.claimedBy;
+      unit.reclaimCount = (unit.reclaimCount || 0) + 1;
+      unit.claimedBy = null;
+      unit.claimedAt = null;
+      reclaimed.push({ unit: unit.key, label: unit.label, from: unit.reclaimedFrom });
+    }
+    return { planId, reclaimed, count: reclaimed.length };
+  });
+}
+
+module.exports = { assessSplit, claimUnits, completeUnit, fanoutStatus, reclaimUnits, registerUnits, unitKey };

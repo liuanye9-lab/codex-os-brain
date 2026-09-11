@@ -471,7 +471,72 @@ async function runAbEval({ rounds = 5 } = {}) {
   return { rounds: roundResults, generatedAt: new Date().toISOString() };
 }
 
+/**
+ * Assert the properties this eval exists to protect.
+ *
+ * Printing numbers nobody reads is not a gate. These thresholds are the claims made in the V12
+ * commit message; if a later change breaks one, `npm run eval:gates -- --assert` fails loudly
+ * instead of quietly reporting a worse number.
+ */
+function assertExpectations(report) {
+  const failures = [];
+  for (const round of report.rounds) {
+    const { baseline, v12 } = round;
+    const at = (suite, detail) => `round ${round.round} ${suite}: ${detail}`;
+
+    if (v12.completion.falseBlocks !== 0) {
+      failures.push(at('completion', `${v12.completion.falseBlocks} honest completion(s) blocked`));
+    }
+    if (v12.completion.caughtFalseClaims !== v12.completion.totalFalseClaims) {
+      failures.push(at('completion', `only ${v12.completion.caughtFalseClaims}/${v12.completion.totalFalseClaims} false claims caught`));
+    }
+    if (v12.deadlock.deadlocked !== 0) {
+      failures.push(at('deadlock', `${v12.deadlock.deadlocked} scenario(s) still deadlock`));
+    }
+    if (baseline.deadlock.deadlocked === 0) {
+      // If the baseline stops deadlocking, the arm is no longer the pre-V12 path and the whole
+      // comparison is meaningless.
+      failures.push(at('deadlock', 'baseline arm no longer reproduces the unbounded gate'));
+    }
+    if (v12.governance.caughtUnshippable !== v12.governance.totalUnshippable) {
+      failures.push(at('governance', `only ${v12.governance.caughtUnshippable}/${v12.governance.totalUnshippable} unshippable manifests caught`));
+    }
+    if (v12.governance.falseBlocks !== 0) {
+      failures.push(at('governance', `${v12.governance.falseBlocks} shippable manifest(s) blocked`));
+    }
+    if (v12.evasion.caught !== v12.evasion.total) {
+      failures.push(at('evasion', `only ${v12.evasion.caught}/${v12.evasion.total} evasion attempts caught`));
+    }
+    if (v12.evasion.controlFalselyFlagged) {
+      failures.push(at('evasion', 'control case flagged as tampering'));
+    }
+    if (v12.delegation.duplicatesObserved !== 0) {
+      failures.push(at('delegation', `${v12.delegation.duplicatesObserved} unit(s) handed out twice`));
+    }
+    if (v12.split.adversarialDisagreements !== 0) {
+      failures.push(at('split', `${v12.split.adversarialDisagreements} adversarial case(s) disagree`));
+    }
+  }
+
+  // Determinism: identical inputs must produce identical verdicts, or none of the above means much.
+  const signature = arm => JSON.stringify(report.rounds.map(round => [
+    round[arm].completion.caughtFalseClaims,
+    round[arm].completion.falseBlocks,
+    round[arm].deadlock.deadlocked,
+    round[arm].governance.caughtUnshippable,
+    round[arm].evasion.caught,
+    round[arm].split.correct,
+  ]));
+  for (const arm of ['baseline', 'v12']) {
+    const distinct = new Set(JSON.parse(signature(arm)).map(entry => JSON.stringify(entry)));
+    if (distinct.size > 1) failures.push(`${arm}: non-deterministic across rounds (${distinct.size} distinct outcomes)`);
+  }
+
+  return failures;
+}
+
 module.exports = {
+  assertExpectations,
   runAbEval,
   runArm,
   runCompletionSuite,
@@ -483,7 +548,21 @@ module.exports = {
 };
 
 if (require.main === module) {
+  const shouldAssert = process.argv.includes('--assert');
   runAbEval({ rounds: Number(process.env.AB_ROUNDS || 5) })
-    .then(report => { process.stdout.write(`${JSON.stringify(report, null, 2)}\n`); })
+    .then(report => {
+      if (!shouldAssert) {
+        process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+        return;
+      }
+      const failures = assertExpectations(report);
+      process.stdout.write(`${JSON.stringify({
+        passed: failures.length === 0,
+        rounds: report.rounds.length,
+        failures,
+        generatedAt: report.generatedAt,
+      }, null, 2)}\n`);
+      if (failures.length > 0) process.exit(1);
+    })
     .catch(error => { process.stderr.write(`${error.stack}\n`); process.exit(1); });
 }

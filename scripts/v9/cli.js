@@ -27,7 +27,7 @@ function commandGuide() {
       verify: 'Re-run executable acceptance criteria.',
       evidence: 'claim | attach',
       handoff: 'init | status | progress',
-      fanout: 'assess | register | claim | complete | status',
+      fanout: 'assess | register | claim | complete | reclaim | status',
       hooks: 'doctor | enable | disable',
       mcp: 'serve',
     },
@@ -229,14 +229,34 @@ async function runCli(argv, io = defaultIo(), services = {}) {
     }));
   }
   if (group === 'fanout' && (!action || action === 'status')) {
-    return io.json(core.fanout.status({ planId: args.plan || 'default' }));
+    return io.json(core.fanout.status({
+      planId: args.plan || 'default',
+      ...(args['lease-ms'] === undefined ? {} : { leaseMs: Number(args['lease-ms']) }),
+    }));
+  }
+  if (group === 'fanout' && action === 'reclaim') {
+    // Units held by a worker that never came back. Reclaiming is deliberate rather than automatic
+    // on read, so an operator decides when a slow worker is treated as dead.
+    return io.json(core.fanout.reclaim({
+      planId: args.plan || 'default',
+      ...(args['lease-ms'] === undefined ? {} : { leaseMs: Number(args['lease-ms']) }),
+    }));
   }
   if (group === 'fanout' && action === 'assess') {
     // Decide by task shape, never by preference for more agents.
+    //
+    // Shared context is two different situations wearing one name. A style guide or schema every
+    // unit reads can be copied into each dispatch for free; an index every unit writes to is real
+    // coupling. `--shared-readonly` says the shared thing is not written to, which is why a
+    // thousand independent units are not dragged back onto one agent by a constant.
+    const isolated = args['isolated-context'] === true;
+    const sharedReadonly = args['shared-readonly'] === true;
     return io.json(core.fanout.assessSplit({
       units: Number(args.units || 0),
       crossUnitDependency: args['independent-units'] !== true,
-      sharedContextRequired: args['isolated-context'] !== true,
+      sharedContextRequired: !(isolated || sharedReadonly),
+      sharedContextMutable: sharedReadonly ? false : null,
+      orderDependent: args['order-dependent'] === true,
       exceedsSingleContext: args['exceeds-context'] === true,
       perUnitVerifiable: args['per-unit-verifiable'] === true,
     }));

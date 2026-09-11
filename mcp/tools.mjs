@@ -41,20 +41,26 @@ export function toolDefinitions(core) {
     },
     {
       name: 'brain_assess_split',
-      description: 'Judge whether work should be split across sub-agents, by task shape only. Splitting is refused when units must talk to each other, need shared context, or cannot be checked individually.',
+      description: 'Judge whether work should be split across sub-agents, by task shape only. Splitting is refused when units are coupled, share mutable state, must be produced in order, or cannot be checked individually. Shared read-only context is not coupling.',
       inputSchema: {
         units: z.number().int().min(0).max(100000),
         independentUnits: z.boolean().optional(),
         isolatedContext: z.boolean().optional(),
+        sharedReadOnly: z.boolean().optional(),
+        orderDependent: z.boolean().optional(),
         exceedsSingleContext: z.boolean().optional(),
         perUnitVerifiable: z.boolean().optional(),
       },
       readOnly: true,
-      handler: async ({ units, independentUnits, isolatedContext, exceedsSingleContext, perUnitVerifiable } = {}) => result(
+      handler: async ({
+        units, independentUnits, isolatedContext, sharedReadOnly, orderDependent, exceedsSingleContext, perUnitVerifiable,
+      } = {}) => result(
         core.fanout.assessSplit({
           units,
           crossUnitDependency: independentUnits !== true,
-          sharedContextRequired: isolatedContext !== true,
+          sharedContextRequired: !(isolatedContext === true || sharedReadOnly === true),
+          sharedContextMutable: sharedReadOnly === true ? false : null,
+          orderDependent: orderDependent === true,
           exceedsSingleContext: exceedsSingleContext === true,
           perUnitVerifiable: perUnitVerifiable === true,
         }),

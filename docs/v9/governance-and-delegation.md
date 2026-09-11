@@ -111,6 +111,30 @@ rather than per project.
 Note the fourth column of the rule: work that cannot be checked one unit at a time is never split.
 Splitting unverifiable work only produces more unverified output, faster.
 
+Two distinctions matter here, both added after eval cases were written specifically to break the
+first version of these criteria:
+
+- **Shared read-only context is not coupling.** A style guide, schema or constant every unit reads
+  can be copied into each dispatch for nothing. Pass `--shared-readonly`. Only shared *mutable*
+  state — an index every unit writes to — forces a single agent.
+- **Ordering is a dependency in its own right.** Units with no data dependency may still have to be
+  produced in sequence. Pass `--order-dependent` and the split is refused.
+
+## 4.5 Recover work from workers that died
+
+A claim is a lease, not a permanent assignment. A worker that crashes mid-unit would otherwise take
+that unit with it: nobody could claim it, and the work would be silently missing from the result.
+
+```bash
+brain fanout status  --plan kb-2026q3 --json    # stalled: units held past their lease
+brain fanout reclaim --plan kb-2026q3 --json    # return them to the pool
+```
+
+A live claim is never stolen — only leases that have actually expired are recovered, and each
+recovery is recorded with the worker it came from. Reclaiming is a deliberate command rather than an
+automatic side effect, so a slow worker is declared dead by a person, not by a timeout you forgot
+about.
+
 ## 4. Delegate through the ledger, not through the prompt
 
 Step repetition is the largest single failure mode in multi-agent runs, and it is not fixable by

@@ -313,6 +313,7 @@ function createV9Core({
       register: input => fanout.registerUnits({ paths, projectScope: projectScopeId(projectRoot()), ...input }),
       claim: input => fanout.claimUnits({ paths, projectScope: projectScopeId(projectRoot()), ...input }),
       complete: input => fanout.completeUnit({ paths, projectScope: projectScopeId(projectRoot()), ...input }),
+      reclaim: input => fanout.reclaimUnits({ paths, projectScope: projectScopeId(projectRoot()), ...input }),
       status: input => fanout.fanoutStatus({ paths, projectScope: projectScopeId(projectRoot()), ...input }),
     },
     skills,

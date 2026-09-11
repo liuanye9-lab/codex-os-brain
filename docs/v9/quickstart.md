@@ -85,6 +85,16 @@ brain fanout assess --units 500 \
   --independent-units --isolated-context --per-unit-verifiable --json
 ```
 
+Two flags exist because "shared context" is two different situations. A style guide every unit
+reads is free to copy into each dispatch; an index every unit writes to is real coupling:
+
+```bash
+brain fanout assess --units 1000 --independent-units \
+  --shared-readonly --per-unit-verifiable --json   # -> fan_out
+brain fanout assess --units 40 --independent-units --isolated-context \
+  --order-dependent --per-unit-verifiable --json   # -> single_agent
+```
+
 When it does split, the ledger prevents the largest multi-agent failure mode — repeating work
 someone already did — by handing every dispatch a read-only list of what is finished:
 
@@ -98,6 +108,14 @@ brain fanout status   --plan kb-q3 --json
 
 `--verified` without `--verifier-ref` is refused: a worker cannot vouch for itself. Watch
 `zeroVerificationRate` in `status` — the share of delegated output adopted with no check at all.
+
+A claim is a lease, so a worker that dies does not take its units with it. `status` reports them as
+`stalled`; recover them explicitly when a worker is not coming back:
+
+```bash
+brain fanout status  --plan kb-q3 --json          # stalled / reclaimed counts
+brain fanout reclaim --plan kb-q3 --json          # return expired claims to the pool
+```
 
 ## The Stop gate is bounded
 

@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { clearStopGate, evaluateStopGate, readStopGate } = require('../scripts/v9/stop-gate');
-const { assessSplit, claimUnits, completeUnit, fanoutStatus, registerUnits } = require('../scripts/v9/fanout');
+const { assessSplit, claimUnits, completeUnit, fanoutStatus, reclaimUnits, registerUnits } = require('../scripts/v9/fanout');
 const { withFileLock } = require('../scripts/v9/store');
 const { captureVerifierBaseline, runVerifier, verifyVerifierBaseline } = require('../scripts/v9/verifiers');
 const { handleStop } = require('../scripts/v9/hooks/stop');
@@ -320,11 +320,8 @@ test('status surfaces units held past their lease instead of hiding them', () =>
   registerUnits({ ...scope, units: [{ id: 'u1', label: 'stuck unit' }] });
   claimUnits({ ...scope, worker: 'crashed', limit: 1 });
 
-  // Let the claim age past a 1ms lease, so the assertion does not depend on sub-millisecond timing.
-  const until = Date.now() + 5;
-  while (Date.now() < until) { /* deliberate short wait */ }
-
-  const status = fanoutStatus({ ...scope, leaseMs: 1 });
+  // leaseMs: 0 means "treat every current claim as dead", with no dependence on clock ticks.
+  const status = fanoutStatus({ ...scope, leaseMs: 0 });
   assert.equal(status.stalled, 1);
   assert.deepEqual(status.stalledSample, ['stuck unit']);
 
@@ -361,6 +358,42 @@ test('releasing a lock another process already cleared is not an error', () => {
     return 'completed';
   });
   assert.equal(outcome, 'completed');
+});
+
+test('stranded units can be recovered explicitly, not only as a side effect of another claim', () => {
+  // A run whose workers have all died has nobody left to trigger the reclaim-on-claim path.
+  const { paths } = tempPaths();
+  const scope = { paths, projectScope: 'p', planId: 'recover' };
+  registerUnits({ ...scope, units: [{ id: 'u1' }, { id: 'u2' }, { id: 'u3' }] });
+  claimUnits({ ...scope, worker: 'crashed', limit: 2 });
+
+  // Nothing is taken from a worker still inside its lease.
+  assert.equal(reclaimUnits({ ...scope }).count, 0);
+
+  const recovered = reclaimUnits({ ...scope, leaseMs: 0 });
+  assert.equal(recovered.count, 2);
+  assert.deepEqual(recovered.reclaimed.map(entry => entry.from), ['crashed', 'crashed']);
+  assert.equal(fanoutStatus(scope).pending, 3);
+});
+
+test('waiting for a contended ledger does not burn a core', () => {
+  // The first backoff implementation spun, measuring 99.3% CPU for the whole ten-second window.
+  const { paths } = tempPaths();
+  const scope = { paths, projectScope: 'p', planId: 'cpu' };
+  registerUnits({ ...scope, units: [{ id: 'u1' }] });
+
+  const lock = path.join(paths.fanoutRoot, 'p', 'cpu.json.lock');
+  fs.mkdirSync(path.dirname(lock), { recursive: true });
+  fs.writeFileSync(lock, JSON.stringify({ pid: 999999 }));
+
+  const before = process.cpuUsage();
+  const started = Date.now();
+  assert.throws(() => claimUnits({ ...scope, worker: 'blocked', limit: 1, lockWaitMs: 300 }), /lock_busy/);
+  const wallMs = Date.now() - started;
+  const cpuMs = (process.cpuUsage(before).user + process.cpuUsage(before).system) / 1000;
+
+  assert.ok(wallMs >= 250, `expected to wait, waited ${wallMs}ms`);
+  assert.ok(cpuMs / wallMs < 0.5, `expected mostly idle waiting, burned ${(cpuMs / wallMs * 100).toFixed(1)}% CPU`);
 });
 
 test('plans and projects keep separate ledgers', () => {

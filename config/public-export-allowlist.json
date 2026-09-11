@@ -114,6 +114,8 @@
     "scripts/verify-v9-release.js",
     "evals/v9-reliability/*.cjs",
     "evals/v9-reliability/package.json",
+    "evals/v12-ab/*.cjs",
+    "evals/v12-ab/*.json",
     "evals/codex-ab-v0.15/*.cjs",
     "evals/codex-ab-v0.15/*.json",
     "evals/codex-ab-v0.15/*.jsonl",
