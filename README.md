@@ -1,15 +1,35 @@
-# Codex Brain — 个人可靠性 Harness
+# Codex Brain V11：Coding Agent 可靠性 Harness（个人版）
 
 给 Codex 装一套安全带：**agent 说"做完了"的时候，由机器去验证，而不是相信它。**
 
-不是让模型更聪明，是让它**不能声称未经验证的完成**、**不能悄悄改掉验收标准**、**不能把没人检查过的产出当成结果交付**。
+不是让模型更聪明，是让它**不能声称未经验证的完成**、**不能悄悄改掉验收标准**、**不能把没人检查过的产出当成结果交付**。它更像一个**安全副驾驶**：不替你开车，但在你要冲出路面时踩住刹车。
 
 ```bash
 git clone <this-repo> && cd codex-os-brain
 npm install
 node bin/brain.js hooks enable --project "$(pwd)" --confirm
 node bin/brain.js doctor          # 全绿即生效
+node bin/brain.js status --json   # 看当前任务与未通过的验收项
 ```
+
+---
+
+## 一分钟看懂它怎么工作
+
+```mermaid
+flowchart LR
+  A[会话开始] -->|SessionStart 注入小抄| B[Agent 干活]
+  B -->|PreToolUse 红绿灯| C{越界或危险?}
+  C -->|是| D[deny 拦下]
+  C -->|否| E[执行工具]
+  E --> B
+  B -->|声称完成| F[Stop 重跑验收器]
+  F -->|未通过| G[block 挡回去]
+  F -->|通过| H[允许结束]
+  G --> B
+```
+
+三个词概括：进门发**小抄**（当前任务合同），路上看**红绿灯**（能力边界），出门查**验收**（可执行证据）。
 
 ---
 
@@ -32,8 +52,8 @@ node bin/brain.js doctor          # 全绿即生效
 10 轮两臂各只产生 **1 种结果签名** = 完全确定性，可复现：
 
 ```bash
-npm run eval:gates              # 完整数据
-node evals/v12-ab/runner.cjs --assert   # 回归门禁，破坏即 exit 1
+npm run eval:gates                       # 完整数据
+node evals/v12-ab/runner.cjs --assert    # 回归门禁，破坏即 exit 1
 ```
 
 原始数据：[`evals/v12-ab/baseline-results.json`](evals/v12-ab/baseline-results.json)
@@ -48,13 +68,18 @@ node evals/v12-ab/runner.cjs --assert   # 回归门禁，破坏即 exit 1
 
 ## 三个 hook，各拦一件事
 
-| Hook | 时机 | 做什么 |
-|---|---|---|
-| `SessionStart` | 会话开始 | 注入当前任务合同：目标、约束、未完成的验收项 |
-| `PreToolUse` | 每次工具调用前 | 越界写入、危险删除直接 deny |
-| `Stop` | 声称完成时 | **重跑验收器**。没过就不许结束 |
+| Hook | 时机 | 做什么 | 对应工程学科 |
+|---|---|---|---|
+| `SessionStart` | 会话开始 | 注入当前任务合同：目标、约束、未完成的验收项 | Context engineering |
+| `PreToolUse` | 每次工具调用前 | 越界写入、危险删除直接 deny | Capability policy |
+| `Stop` | 声称完成时 | **重跑验收器**。没过就不许结束 | Loop engineering |
 
 从 12 个 hook 收敛到 3 个：**能在事前拦住的，不需要事后记录。**
+
+V11 同时做了减法，删掉了记忆层与认知资产层（净删 5588 行）。被删能力与迁移路径见
+[V10 → V11 变更](docs/v9/v10-to-v11.md)；V1–V8 的历史演进见 [v1/README.md](v1/README.md)。
+召回改为委托宿主原生 memories，harness 不再自建一套；RAG（可选）与 Evidence-gated memory
+不再内置，需要时由宿主或外部工具提供。
 
 ---
 
@@ -116,6 +141,21 @@ node bin/brain.js task create --task-id kb-q3 \
 
 所以**不造 orchestrator**，只造两样东西：
 
+```mermaid
+flowchart TD
+  A[一批活儿] --> B{单元之间要互相说话?}
+  B -->|要| Z[单 agent<br/>提高 thinking 预算]
+  B -->|不要| C{共享的东西会被写吗?}
+  C -->|会写| Z
+  C -->|只读| D{必须按顺序产出?}
+  D -->|是| Z
+  D -->|否| E{能逐项独立验证?}
+  E -->|不能| Z
+  E -->|能| F{单元数够多?}
+  F -->|太少| Z
+  F -->|够| G[fan out<br/>走委派账本]
+```
+
 ### 拆分判据——先问该不该拆
 
 ```bash
@@ -154,23 +194,29 @@ node bin/brain.js fanout status   --plan kb --json
 
 ## 命令速查
 
+装成 plugin 后可直接用 `brain` 前缀；仓库内开发时用 `node bin/brain.js` 等价。
+
 ```bash
-# 健康检查
-node bin/brain.js doctor --json
+# 健康检查与当前状态
+brain doctor --json
+brain status --json          # 当前任务、未通过的验收项
 
 # 任务与验收
-node bin/brain.js task create --task-id X --objective "..." --criterion tests --json
-node bin/brain.js verify --json
-node bin/brain.js task close --task-id X --json
+brain task create --task-id X --objective "..." --criterion tests --json
+brain verify --json
+brain task close --task-id X --json
 
 # 委派
-node bin/brain.js fanout assess|register|claim|complete|reclaim|status
+brain fanout assess|register|claim|complete|reclaim|status
 
 # 交接
-node bin/brain.js handoff init|status|progress
+brain handoff init|status|progress
+
+# MCP：把上述能力暴露给支持 MCP 的客户端（只读工具标记为 readOnly）
+brain mcp serve
 
 # hook 开关（回滚用）
-node bin/brain.js hooks disable --project "$(pwd)" --confirm
+brain hooks disable --project "$(pwd)" --confirm
 ```
 
 ## 验证与门禁

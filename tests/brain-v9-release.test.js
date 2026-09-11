@@ -102,3 +102,16 @@ test('GitHub Actions are immutable SHA pinned', () => {
     }
   }
 });
+
+test('runtime identity matches the package it ships from', () => {
+  // V11 bumped package.json to 11 / 0.17.0 but left identity.js reporting 10 / 0.16.0, so
+  // `brain status` disagreed with its own release. Identity is now derived, not restated.
+  const { IDENTITY } = require('../scripts/v9/identity');
+  const pkg = require('../package.json');
+  assert.equal(IDENTITY.productMajor, pkg.codexBrain.productMajor);
+  assert.equal(IDENTITY.releaseVersion, pkg.codexBrain.releaseVersion);
+  assert.equal(IDENTITY.releaseVersion, pkg.version);
+  assert.equal(IDENTITY.runtimeContract, pkg.codexBrain.runtimeContract);
+  // The cognitive-asset layer was removed in V11; its protocol field must not linger.
+  assert.equal(IDENTITY.cognitiveAssetProtocol, undefined);
+});
