@@ -7,21 +7,24 @@ const { doctorHooks, setProjectHooks } = require('./hook-config');
 const { inventoryLegacy, planMigration, applyMigration } = require('./migration');
 const { runEvidenceSigningLoop } = require('./doctor');
 const { inspectTrustBoundary } = require('./trust-boundary');
+const { IDENTITY } = require('./identity');
 
 const EXIT = Object.freeze({ ok: 0, usage: 2, blocked: 3, failed: 4 });
 
 function commandGuide() {
   return {
-    name: 'Codex Brain V10',
+    name: `Codex Brain V${IDENTITY.productMajor}`,
     usage: 'brain <command> [action] [--flags] [--json]',
     startHere: [
       'brain doctor --json',
+      'brain adopt --json',
       'brain task create --task-id demo --objective "ship safely" --criterion tests --json',
       'brain verify --json',
       'brain hooks enable --project "$PWD" --confirm --json',
     ],
     commands: {
       status: 'Read runtime status.',
+      adopt: 'Put the current directory under the harness so the gates apply here.',
       doctor: 'Check environment, hooks, and a temporary signed-evidence round trip. May initialize an OS-local evidence key.',
       task: 'create | show | checkpoint',
       verify: 'Re-run executable acceptance criteria.',
@@ -85,6 +88,52 @@ async function runCli(argv, io = defaultIo(), services = {}) {
 
   if (!group || group === 'help' || args.help === true) return io.json(commandGuide());
   if (group === 'status') return io.json(core.status());
+  if (group === 'adopt') {
+    // Measured on this machine: five real Codex sessions, none of them in a managed
+    // directory, so every gate was installed and inert. The cause is policy.evaluateAction
+    // returning level 0 when there is no contract -- "managed" means a contract exists, and
+    // creating one took a task id, an objective and a criterion nobody types before starting
+    // work. This makes the common case one word.
+    const existing = core.contracts.active();
+    if (existing && args.force !== true) {
+      return io.json({
+        adopted: false,
+        reason: 'already_managed',
+        projectRoot,
+        taskId: existing.taskId,
+        objective: existing.objective,
+        hint: 'This directory already has an active contract. Use --force to replace it.',
+      });
+    }
+    const hasTests = (() => {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
+        return Boolean(pkg?.scripts?.test);
+      } catch { return false; }
+    })();
+    // Only claim a criterion the project can actually satisfy. Adopting a directory with no
+    // test script onto a `tests` criterion would block every completion on a verifier that
+    // can never pass, which teaches you to bypass the harness.
+    const criteria = hasTests
+      ? [{ id: 'tests', required: true, verifier: 'test_runner', verifierSpec: { executable: 'npm', args: ['test'] } }]
+      : [{ id: 'scope', required: true, verifier: 'git_diff_bounded' }];
+    const created = core.contracts.create({
+      taskId: args['task-id'] || `adopt-${Date.now().toString(36)}`,
+      objective: args.objective || `Ongoing work in ${path.basename(projectRoot)}`,
+      criteria,
+      scope: { allowed: [], forbidden: [] },
+    });
+    return io.json({
+      adopted: true,
+      projectRoot,
+      taskId: created.taskId,
+      criterion: criteria[0].id,
+      criterionReason: hasTests
+        ? 'package.json declares a test script'
+        : 'no test script found; scope containment is the only criterion that can pass here',
+      gatesNowActive: ['PreToolUse destructive-write denial', 'Stop completion verification'],
+    });
+  }
   if (group === 'doctor') {
     const v9 = core.status();
     const hooks = doctorHooks({ projectRoot, pluginRoot, runtimePaths: core.paths });

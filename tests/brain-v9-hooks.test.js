@@ -80,7 +80,17 @@ test('Stop blocks when the live verifier crashes instead of trusting stale state
 });
 
 test('SessionStart is silent without an active task and compact recovery is bounded', async () => {
-  assert.deepEqual(await handleSession({ event: 'SessionStart' }, { contracts: { active: () => null } }), {});
+  // V13 intentionally narrowed "silent": an unmanaged *work* directory now gets a
+  // not-guarded notice, because five audited real sessions ran with every gate inert and
+  // nothing ever said so. The original intent of this assertion -- no contract means no
+  // checkpoint noise -- still holds everywhere the notice is suppressed, so it is pinned to
+  // scratch space here. Coverage for the notice itself lives in brain-v13-adoption.test.js.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-hooks-silent-'));
+  try {
+    assert.deepEqual(await handleSession({ event: 'SessionStart', projectRoot: scratch }, { contracts: { active: () => null } }), {});
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
   const core = { contracts: { active: () => ({ objective: 'finish v9', constraints: [{ explicit: true, text: 'preserve v8' }], unresolved: ['verify'], criteria: [] }) } };
   const output = await handleSession({ event: 'PostCompact' }, core);
   assert.match(output.hookSpecificOutput.additionalContext, /finish v9/);

@@ -1,6 +1,37 @@
 'use strict';
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { additionalContext } = require('./input');
 const handoff = require('../handoff');
+
+// A directory is only guarded once it has a contract: policy.evaluateAction returns level 0
+// with no contract, so an unadopted directory silently has no gates at all. Measured on this
+// machine, five real sessions ran that way. SessionStart is the one moment we can say so.
+//
+// It stays a notice rather than an auto-adopt: creating contracts in every directory Codex
+// opens would litter state and adopt throwaway dirs. And it is deliberately quiet about
+// scratch space -- a prompt that fires in /tmp trains you to ignore it, which costs more than
+// the reminder is worth.
+function unmanagedNotice(projectRoot) {
+  try {
+    const resolved = path.resolve(projectRoot);
+    const home = os.homedir();
+    if (resolved === home || resolved === path.parse(resolved).root) return '';
+    const tmp = path.resolve(os.tmpdir());
+    if (resolved === tmp || resolved.startsWith(tmp + path.sep)) return '';
+    if (resolved.split(path.sep).includes('node_modules')) return '';
+    // Real work is version controlled; that keeps this off scratch directories.
+    if (!fs.existsSync(path.join(resolved, '.git'))) return '';
+    return [
+      `NOT GUARDED — ${path.basename(resolved)} has no task contract, so the harness gates are inert here.`,
+      'Destructive writes are not denied and completion claims are not verified in this directory.',
+      'Run `brain adopt --json` to turn them on.',
+    ].join('\n');
+  } catch {
+    return '';
+  }
+}
 
 function buildCheckpoint(contract) {
   const constraints = (contract.constraints || []).filter(item => item.explicit).slice(0, 4).map(item => item.text);
@@ -31,6 +62,10 @@ async function handleSession(input, core) {
   const parts = [];
 
   if (contract) parts.push(buildCheckpoint(contract));
+  else {
+    const notice = unmanagedNotice(projectRoot);
+    if (notice) parts.push(notice);
+  }
 
   // Shift-change notes for the next session.
   try {
