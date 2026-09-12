@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { projectScopeId, resolveV9Paths, scopeV9Paths } = require('./paths');
+const { writeOriginMarker } = require('./scope-gc');
 const { atomicWriteJson, readJsonSafe } = require('./store');
 const { createControlStore } = require('./control-store');
 const { createControlGuard } = require('./control-guard');
@@ -41,6 +42,12 @@ function createV9Core({
   const rawSessionId = String(configuredSessionId || process.env.BRAIN_SESSION_ID || process.env.CODEX_THREAD_ID || 'default');
   const runtimePaths = config.hooks?.projectScoped === false ? paths : scopeV9Paths(paths, projectRoot());
   paths = runtimePaths;
+  // The scope folder is named by a one-way hash, so without this marker a deleted project
+  // leaves state nobody can attribute or reclaim. Best effort by design: a failed write
+  // only makes `brain gc` more conservative, it must never break a hook.
+  if (enabled && runtimePaths.projectId) {
+    writeOriginMarker({ runtimeRoot: runtimePaths.runtimeRoot, projectRoot: runtimePaths.projectRoot, projectId: runtimePaths.projectId });
+  }
   const legacyActiveTaskFile = path.join(paths.tasksRoot, 'active.json');
   const legacyEventsFile = path.join(paths.eventsRoot, 'events.jsonl');
   const controlStore = createControlStore({

@@ -8,6 +8,7 @@ const { inventoryLegacy, planMigration, applyMigration } = require('./migration'
 const { runEvidenceSigningLoop } = require('./doctor');
 const { inspectTrustBoundary } = require('./trust-boundary');
 const { IDENTITY } = require('./identity');
+const { collectProjectScopes } = require('./scope-gc');
 
 const EXIT = Object.freeze({ ok: 0, usage: 2, blocked: 3, failed: 4 });
 
@@ -25,6 +26,7 @@ function commandGuide() {
     commands: {
       status: 'Read runtime status.',
       adopt: 'Put the current directory under the harness so the gates apply here.',
+      gc: 'Report project state folders; --confirm reclaims only those whose project is gone.',
       doctor: 'Check environment, hooks, and a temporary signed-evidence round trip. May initialize an OS-local evidence key.',
       task: 'create | show | checkpoint',
       verify: 'Re-run executable acceptance criteria.',
@@ -133,6 +135,17 @@ async function runCli(argv, io = defaultIo(), services = {}) {
         : 'no test script found; scope containment is the only criterion that can pass here',
       gatesNowActive: ['PreToolUse destructive-write denial', 'Stop completion verification'],
     });
+  }
+  if (group === 'gc') {
+    // Scope folders are named by a one-way hash of the project path, so state from deleted
+    // projects used to be unattributable and unreclaimable. Only folders whose recorded
+    // project is provably gone are removed; folders with no marker are reported, never
+    // deleted, because guessing wrong destroys a contract that is currently guarding work.
+    const report = collectProjectScopes({
+      runtimeRoot: resolveV9Paths().runtimeRoot,
+      confirm: args.confirm === true,
+    });
+    return io.json(report);
   }
   if (group === 'doctor') {
     const v9 = core.status();

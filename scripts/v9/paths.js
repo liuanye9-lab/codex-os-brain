@@ -25,8 +25,7 @@ function resolveV9Paths(env = process.env, options = {}) {
     eventsRoot: pathImpl.join(runtimeRoot, 'events'),
     evidenceRoot: pathImpl.join(runtimeRoot, 'evidence'),
     failuresRoot: pathImpl.join(runtimeRoot, 'failures'),
-    embeddingsRoot: pathImpl.join(runtimeRoot, 'embeddings'),
-    embeddingConfigPath: pathImpl.join(runtimeRoot, 'embeddings', 'config.json'),
+    // V11 removed the memory and cognitive-asset layers; their path entries are gone with them.
     migrationRoot: pathImpl.join(runtimeRoot, 'migration'),
     localStateRoot,
     localRuntimeRoot,
@@ -49,8 +48,7 @@ function projectScopeId(projectRoot, pathImpl = path) {
 function scopeV9Paths(paths, projectRoot, pathImpl = path) {
   const projectId = projectScopeId(projectRoot, pathImpl);
   const projectRuntimeRoot = pathImpl.join(paths.runtimeRoot, 'projects', projectId);
-  const projectLocalRuntimeRoot = pathImpl.join(paths.localRuntimeRoot, 'projects', projectId);
-  return {
+  const projectLocalRuntimeRoot = pathImpl.join(paths.localRuntimeRoot, 'projects', projectId);  return {
     ...paths,
     projectId,
     projectRoot: pathImpl.resolve(projectRoot),
@@ -59,20 +57,9 @@ function scopeV9Paths(paths, projectRoot, pathImpl = path) {
     eventsRoot: pathImpl.join(projectRuntimeRoot, 'events'),
     evidenceRoot: pathImpl.join(projectRuntimeRoot, 'evidence'),
     failuresRoot: pathImpl.join(projectRuntimeRoot, 'failures'),
-    embeddingsRoot: pathImpl.join(projectRuntimeRoot, 'embeddings'),
-    embeddingConfigPath: pathImpl.join(projectRuntimeRoot, 'embeddings', 'config.json'),
     localRuntimeRoot: projectLocalRuntimeRoot,
     controlDbPath: pathImpl.join(projectLocalRuntimeRoot, 'control', 'control.sqlite3'),
     controlGuardPath: pathImpl.join(projectRuntimeRoot, 'control', 'active.guard.json'),
-    memoryRoot: pathImpl.join(projectLocalRuntimeRoot, 'memory'),
-    memoryDbPath: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'memory.sqlite3'),
-    memoryBackupRoot: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'backups'),
-    memoryEncryptedBackupRoot: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'encrypted-backups'),
-    memoryBackupStatePath: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'backup-state.json'),
-    memoryDeviceIdPath: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'device-id'),
-    memoryRestoreRoot: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'restore'),
-    memoryRestoreLockPath: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'restore.lock'),
-    memoryRestoreJournalPath: pathImpl.join(projectLocalRuntimeRoot, 'memory', 'restore-journal.json'),
   };
 }
 

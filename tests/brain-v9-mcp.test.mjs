@@ -30,7 +30,10 @@ test('disabled labs do not initialize the memory database', () => {
   const status = core.status();
   assert.equal(status.features.memory, false);
   assert.equal(status.features.cognitiveAssets, false);
-  assert.equal(fs.existsSync(core.paths.memoryDbPath), false);
+  // V11 removed the memory layer, so paths no longer declares memoryDbPath at all. The
+  // whole-tree scan below is the stronger assertion anyway: it fails if any component
+  // recreates a memory database under a different name or location.
+  assert.equal(core.paths.memoryDbPath, undefined);
   const pending = [path.join(home, 'state')];
   const memoryDatabases = [];
   while (pending.length) {
