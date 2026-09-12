@@ -336,7 +336,23 @@ function createControlStore({ dbPath, sessionId = 'default', taskId } = {}) {
           }
           const pending = db.prepare('SELECT task_id, contract_json FROM task_contracts WHERE active=1 AND bound_session_id IS NULL ORDER BY created_at').all();
           if (pending.length > 1) return { expected: true, contract: null, missing: true, corrupt: false, ambiguous: true };
-          if (pending.length === 0) return { expected: false, contract: null, missing: false, corrupt: false };
+          if (pending.length === 0) {
+            // A contract already claimed by an earlier session is still this project's
+            // contract. Session binding exists to disambiguate concurrent tasks, not to
+            // expire protection: treating "claimed by someone else" as "missing" made
+            // `brain adopt` deny every command in the directory it was supposed to guard,
+            // from the next session onward. Adopt a single unambiguous active contract.
+            const claimed = db.prepare('SELECT task_id, contract_json FROM task_contracts WHERE active=1 ORDER BY created_at').all();
+            if (claimed.length > 1) return { expected: true, contract: null, missing: true, corrupt: false, ambiguous: true };
+            if (claimed.length === 1) {
+              const now = new Date().toISOString();
+              ensureSession(db, now);
+              db.prepare('UPDATE harness_sessions SET active_task_id=?, updated_at=? WHERE session_id=?')
+                .run(claimed[0].task_id, now, scopedSessionId);
+              return stateFromRow(claimed[0]);
+            }
+            return { expected: false, contract: null, missing: false, corrupt: false };
+          }
           const now = new Date().toISOString();
           ensureSession(db, now);
           db.prepare('UPDATE task_contracts SET bound_session_id=?, updated_at=? WHERE task_id=? AND bound_session_id IS NULL AND active=1')

@@ -14,6 +14,10 @@ const path = require('node:path');
 
 const { handleSession } = require('../scripts/v9/hooks/session');
 const { evaluateAction } = require('../scripts/v9/policy');
+const { createV9Core } = require('../scripts/v9/core');
+const { resolveV9Paths, scopeV9Paths } = require('../scripts/v9/paths');
+
+const ENABLED = { enabled: true, hooks: { enabled: true } };
 
 function tempProject({ git = true, pkg = null } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-adopt-'));
@@ -158,4 +162,44 @@ test('a genuinely unadopted project still gets the notice', async () => {
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('an adopted directory stays guarded in later sessions', () => {
+  // Regression: `brain adopt` binds the contract to the session that created it. A later
+  // session found no *unbound* contract, reported the selector as missing, and PreToolUse
+  // denied every command -- including `npm test` -- in the directory adopt was meant to
+  // protect. Measured on three real adopted directories before the fix.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-adopt-resume-'));
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-adopt-project-'));
+  const env = { CODEX_BRAIN_HOME: path.join(home, 'brain'), CODEX_BRAIN_STATE_HOME: path.join(home, 'state') };
+  const paths = scopeV9Paths(resolveV9Paths(env), projectRoot);
+
+  const first = createV9Core({ config: ENABLED, paths, projectRoot, sessionId: 'session-that-adopted' });
+  first.contracts.create({ taskId: 'adopt-x', objective: 'guard this directory', criterionIds: ['scope'] });
+  assert.equal(first.contracts.state().contract.taskId, 'adopt-x');
+
+  const later = createV9Core({ config: ENABLED, paths, projectRoot, sessionId: 'a-totally-different-session' });
+  const state = later.contracts.state();
+  assert.equal(state.missing, false, 'a later session must not report the contract as missing');
+  assert.equal(state.contract?.taskId, 'adopt-x');
+});
+
+test('two active contracts stay ambiguous rather than guessing', () => {
+  // The inherit path must not paper over genuine ambiguity: picking one of two active
+  // contracts would silently enforce the wrong boundary.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-adopt-ambig-'));
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-adopt-ambig-p-'));
+  const env = { CODEX_BRAIN_HOME: path.join(home, 'brain'), CODEX_BRAIN_STATE_HOME: path.join(home, 'state') };
+  const paths = scopeV9Paths(resolveV9Paths(env), projectRoot);
+
+  const owner = createV9Core({ config: ENABLED, paths, projectRoot, sessionId: 'owner-a' });
+  owner.contracts.create({ taskId: 'task-a', objective: 'first', criterionIds: ['scope'] });
+  // A second session is required: one session may hold only one active task.
+  const other = createV9Core({ config: ENABLED, paths, projectRoot, sessionId: 'owner-b' });
+  other.contracts.create({ taskId: 'task-b', objective: 'second', criterionIds: ['scope'] });
+
+  const later = createV9Core({ config: ENABLED, paths, projectRoot, sessionId: 'later' });
+  const state = later.contracts.state();
+  assert.equal(state.contract, null);
+  assert.equal(state.missing, true);
 });
