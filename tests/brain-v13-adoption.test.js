@@ -125,3 +125,37 @@ test('an unreadable project root degrades to silence rather than throwing', asyn
   // SessionStart runs on every session; a notice helper must never be able to break startup.
   assert.deepEqual(await sessionParts(path.join(os.homedir(), 'does-not-exist-' + Date.now())), {});
 });
+
+test('an adopted project is not falsely told it is unguarded', async () => {
+  // Regression: contracts bind to the first session that claims them, so a new session in an
+  // adopted project sees contract=null with expected/missing set. The notice used to read that
+  // as "unadopted" and printed NOT GUARDED in projects whose gates were provably denying --
+  // a false alarm, which is the fastest way to train someone to ignore the warning.
+  const root = realWorkProject();
+  try {
+    const core = {
+      contracts: {
+        active: () => null,
+        state: () => ({ expected: true, contract: null, missing: true, corrupt: false }),
+      },
+      projectRoot: () => root,
+    };
+    const out = await handleSession({ event: 'SessionStart', projectRoot: root }, core);
+    assert.doesNotMatch(JSON.stringify(out), /NOT GUARDED/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a genuinely unadopted project still gets the notice', async () => {
+  const root = realWorkProject();
+  try {
+    const core = {
+      contracts: { active: () => null, state: () => ({ expected: false, contract: null, missing: false, corrupt: false }) },
+      projectRoot: () => root,
+    };
+    assert.match(JSON.stringify(await handleSession({ event: 'SessionStart', projectRoot: root }, core)), /NOT GUARDED/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

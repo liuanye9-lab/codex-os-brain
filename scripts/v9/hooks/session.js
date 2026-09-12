@@ -63,8 +63,22 @@ async function handleSession(input, core) {
 
   if (contract) parts.push(buildCheckpoint(contract));
   else {
-    const notice = unmanagedNotice(projectRoot);
-    if (notice) parts.push(notice);
+    // `active()` is session-scoped: a contract binds to the first session that claims it, so a
+    // *new* session in an adopted project sees contract=null with expected/missing set rather
+    // than the contract itself. Treating that as "unadopted" printed NOT GUARDED in projects
+    // whose gates were provably live -- a false alarm, and the fastest way to teach someone to
+    // ignore the warning. Only speak up when the project truly has no contract at all.
+    let trulyUnadopted = true;
+    try {
+      const state = core.contracts.state?.();
+      if (state && (state.expected || state.missing || state.ambiguous || state.corrupt)) trulyUnadopted = false;
+    } catch {
+      trulyUnadopted = false; // unsure means silent; a false alarm costs more than a missed one
+    }
+    if (trulyUnadopted) {
+      const notice = unmanagedNotice(projectRoot);
+      if (notice) parts.push(notice);
+    }
   }
 
   // Shift-change notes for the next session.
