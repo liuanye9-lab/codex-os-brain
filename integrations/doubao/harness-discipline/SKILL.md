@@ -1,15 +1,16 @@
 ---
 name: harness-discipline
-description: 在豆包工作中复用 Codex Brain harness 的验收纪律——把"做完了"变成可执行验证，并在多 agent 拆分前先判断该不该拆。适用于：声称任务完成前的自检、需要机械证据而非口头结论、批量工作是否 fan out 的判断、内容治理产物的发布前门禁。不用于：替代宿主自身的权限控制，也不保证拦截（豆包无 hook 机制，本 Skill 为自觉级）。
+description: 在豆包工作中复用 Codex Brain harness 的验收纪律——把"做完了"变成可执行验证，并在多 agent 拆分前先判断该不该拆。适用于：声称任务完成前的自检、查本项目反复失败的操作、需要机械证据而非口头结论、批量工作是否 fan out 的判断、内容治理产物的发布前门禁。不用于：替代宿主自身的权限控制，也不保证拦截（豆包无 hook 机制，本 Skill 为自觉级）。
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Harness 验收纪律（豆包侧）
 
 ## 先说清楚这个 Skill 的能力边界
 
-**Codex 侧**：harness 通过 `SessionStart` / `PreToolUse` / `Stop` 三个 hook **机械强制**——
+**Codex 侧**：harness 通过 5 个 hook **机械强制**——
+`SessionStart` / `UserPromptSubmit` / `PreToolUse` / `PostToolUse` / `Stop`。
 agent 想跳过验收，宿主层面就不允许结束。
 
 **豆包侧（本 Skill）**：豆包工作**没有 hook 机制**，只有 skill。因此本 Skill 是**自觉级纪律**：
@@ -20,16 +21,23 @@ agent 想跳过验收，宿主层面就不允许结束。
 
 ### 还有一条边界：只在"受管项目"里生效
 
-即使在 Codex 侧，`PreToolUse` 的危险操作拦截**只在初始化过 harness 的项目内生效**
-（实测：受管项目内 `rm -rf ~/Documents` → deny；未初始化的目录内 → 放行）。
+即使在 Codex 侧，`PreToolUse` 的危险操作拦截**只在纳管过的项目内生效**
+（实测：纳管项目内 `rm -rf ~/Documents` → deny；未纳管的目录内 → 放行）。
 
-所以在一个新目录开工时，**先初始化再干活**：
+所以在一个新目录开工时，**先纳管再干活**：
+
+```bash
+brain adopt --json
+```
+
+一个词就够，验收判据自动选：有 test 脚本用 `tests`，否则退到 `scope`。
+需要自己指定目标和判据时才用完整形式：
 
 ```bash
 brain task create --task-id <id> --objective "<目标>" --criterion tests --json
 ```
 
-没初始化就等于没有安全带，无论 Codex 还是豆包。
+没纳管就等于没有安全带，无论 Codex 还是豆包。
 
 ## 前置：引擎是否可用
 
@@ -74,7 +82,38 @@ brain verify --json
 
 ---
 
-## 用法二：多 agent 拆分前，先问该不该拆
+## 用法二：动手前，先看这个坑踩过没有
+
+**触发时机**：接手一个项目、或准备重试一个之前失败过的操作。
+
+Codex 侧会自动做这件事：`PostToolUse` 记录每次失败，`UserPromptSubmit` 在同一操作
+**连续失败 ≥2 次且还没恢复**时，把这条事实注入上下文。豆包侧没有 hook，所以要手动查：
+
+```bash
+brain failures --json          # 本项目反复失败的操作（默认项目维度）
+brain failures --session --json # 只看当前会话的熔断状态
+```
+
+判读：
+
+| `consecutive` | `status` | 含义 |
+|---|---|---|
+| 1 | `warning` | 偶发，正常重试即可 |
+| ≥2 | `warning` / `open` | **同一个坑反复踩**，换思路而不是再试一次 |
+| — | `closed` | 已恢复，不必在意 |
+
+**为什么阈值是 2**：一次失败还在当前上下文里，回放它纯属噪音；第二次相同失败才是
+"上下文已经不够用了"的信号。
+
+**注意这里只给事实，不给建议**——它告诉你"`npm run build` 在这个项目连续失败 3 次"，
+不告诉你该怎么改。判断是你的事，它只负责让你知道自己在原地打转。
+
+依据：Harness-Bench（5194 条轨迹）发现模型越强，越不需要提示层的流程指导，
+但**仍然需要**持久状态与证据。所以这一层刻意只做记录与回放。
+
+---
+
+## 用法三：多 agent 拆分前，先问该不该拆
 
 **触发时机**：面对批量同构工作，考虑并行处理时。
 
@@ -100,7 +139,7 @@ brain fanout assess --units <数量> \
 
 ---
 
-## 用法三：拆了之后，用账本防重复与防自证
+## 用法四：拆了之后，用账本防重复与防自证
 
 **这不是编排器**——它不 spawn、不调度。跑 worker 是宿主的事，账本只记录认领与结果。
 
@@ -122,7 +161,7 @@ worker 崩溃不会把活儿带走——认领是租约，`status` 报 `stalled`
 
 ---
 
-## 用法四：内容治理产物的发布门禁
+## 用法五：内容治理产物的发布门禁
 
 配合 `enterprise-kb-ops` 这类产出 `knowledge-manifest.json` 的工作流：
 

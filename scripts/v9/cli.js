@@ -30,6 +30,7 @@ function commandGuide() {
       doctor: 'Check environment, hooks, and a temporary signed-evidence round trip. May initialize an OS-local evidence key.',
       task: 'create | show | checkpoint',
       verify: 'Re-run executable acceptance criteria.',
+      failures: 'Show operations that keep failing in this project.',
       evidence: 'claim | attach',
       handoff: 'init | status | progress',
       fanout: 'assess | register | claim | complete | reclaim | status',
@@ -272,7 +273,13 @@ async function runCli(argv, io = defaultIo(), services = {}) {
       provenance: { kind: args.kind || 'command', ref: args.ref || args.id },
     }));
   }
-  if (group === 'failures') return io.json(core.failures.status());
+  if (group === 'failures') {
+    // Session-scoped status answers "is this session stuck in a retry loop", which is
+    // rarely what someone typing this command wants. The useful question is what keeps
+    // failing in this project, so the default is project-wide; --session narrows it.
+    if (args.session === true) return io.json(core.failures.status());
+    return io.json(core.failures.projectHistory({ minConsecutive: 1, limit: 20 }));
+  }
   if (group === 'handoff' && (!action || action === 'status')) return io.json(core.handoff.statusHandoff({ projectRoot }));
   if (group === 'handoff' && action === 'init') {
     return io.json(core.handoff.initHandoff({
