@@ -403,6 +403,30 @@ function createControlStore({ dbPath, sessionId = 'default', taskId } = {}) {
           .map(row => JSON.parse(row.state_json));
       });
     },
+    // Circuits are per-session because breaking a retry loop is a within-session concern.
+    // Recall is the opposite: its whole value is telling a *new* session what an earlier
+    // one already learned, so it reads the project instead. Rows are collapsed per
+    // operation, keeping the worst streak, so one operation cannot flood the replay.
+    projectCircuits({ minConsecutive = 2, limit = 10 } = {}) {
+      return withDb(db => {
+        const rows = db.prepare('SELECT operation, state_json, updated_at FROM failure_circuits ORDER BY updated_at DESC').all();
+        const worst = new Map();
+        for (const row of rows) {
+          let state;
+          try { state = JSON.parse(row.state_json); } catch { continue; }
+          if (!state || Number(state.consecutive) < minConsecutive) continue;
+          if (state.status === 'closed') continue;
+          const key = String(state.operation || row.operation || 'unknown');
+          const previous = worst.get(key);
+          if (!previous || Number(state.consecutive) > Number(previous.consecutive)) {
+            worst.set(key, { ...state, operation: key, updatedAt: row.updated_at });
+          }
+        }
+        return [...worst.values()]
+          .sort((a, b) => Number(b.consecutive) - Number(a.consecutive))
+          .slice(0, limit);
+      });
+    },
     importLegacy({ contract, guardExpected = false, events = [] } = {}) {
       return withDb(db => transaction(db, () => {
         const existing = db.prepare('SELECT value_json FROM control_meta WHERE key=?').get('legacy-import-v1');

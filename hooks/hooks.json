@@ -14,7 +14,33 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/bin/run-brain-hook.js\"",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\bin\\run-brain-hook.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
       {
         "matcher": ".*",
         "hooks": [

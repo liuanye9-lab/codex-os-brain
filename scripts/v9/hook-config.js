@@ -7,9 +7,10 @@ const { spawnSync } = require('node:child_process');
 const { atomicWriteJson } = require('./store');
 const { resolveV9Paths, scopeV9Paths } = require('./paths');
 
-// V11: the installer only owns the three hooks that carry a distinct failure mode.
+// V13: five hooks. The three V11 gates, plus the pair that closes the episodic loop --
+// PostToolUse records real failures, UserPromptSubmit replays only the repeated ones.
 // Any other event left in a user's hooks.json belongs to them and is never touched.
-const REQUIRED_EVENTS = ['SessionStart', 'PreToolUse', 'Stop'];
+const REQUIRED_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'];
 const OWNER = 'codex-brain-v9';
 const OWNER_MARKER = `BRAIN_V9_HOOK_OWNER=${OWNER}`;
 const STATE_FILE = 'hooks.codex-brain-v9.state.json';

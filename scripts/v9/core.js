@@ -290,6 +290,9 @@ function createV9Core({
         : resetCircuitForOperation({ signature: null, operation, consecutive: 0, status: 'closed' }, operation);
     },
     status(operation) { return enabled ? controlStore.circuitStatus(operation) : []; },
+    // Cross-session view, used by recall. Session-scoped status() is the wrong source
+    // there: a new session would always see an empty list and never replay anything.
+    projectHistory(options) { return enabled ? controlStore.projectCircuits(options) : []; },
   };
 
   return {

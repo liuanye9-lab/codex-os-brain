@@ -17,9 +17,11 @@ test('hook manifest uses PLUGIN_ROOT and explicit short timeouts', () => {
   assert.ok(commands.filter(hook => hook.event !== 'Stop').every(hook => hook.timeout <= 5));
   assert.ok(commands.filter(hook => hook.event === 'Stop').every(hook => hook.timeout >= 120));
   assert.deepEqual(Object.keys(manifest.hooks), REQUIRED_EVENTS);
-  // V11 contract: exactly three sensors, each with a distinct failure mode.
-  assert.deepEqual(REQUIRED_EVENTS, ['SessionStart', 'PreToolUse', 'Stop']);
-  assert.equal(commands.length, 3);
+  // V13 contract: three gates plus the two sensors that close the episodic loop.
+  // PostToolUse records what actually failed; UserPromptSubmit replays only repeats.
+  // Both run on every turn, so both are held to the same short timeout as the gates.
+  assert.deepEqual(REQUIRED_EVENTS, ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop']);
+  assert.equal(commands.length, 5);
 });
 
 test('enable writes only project hooks after confirmation', () => {

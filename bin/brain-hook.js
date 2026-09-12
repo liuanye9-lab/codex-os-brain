@@ -6,6 +6,8 @@ const { dispatchHook } = require('../scripts/v9/hook-dispatch');
 const { handleSession } = require('../scripts/v9/hooks/session');
 const { handleRisk } = require('../scripts/v9/hooks/risk');
 const { handleStop } = require('../scripts/v9/hooks/stop');
+const { handleObservation } = require('../scripts/v9/hooks/observer');
+const { handleRecall } = require('../scripts/v9/hooks/recall');
 const { getHostAdapter } = require('../scripts/v9/hosts');
 
 async function main() {
@@ -32,13 +34,17 @@ async function main() {
   const adapter = getHostAdapter(hostName);
 
   const bind = handler => value => handler(value, core);
-  // V11: three hooks only. Every extra sensor was cost without a distinct failure mode.
-  //   SessionStart -> restore task contract context after a new/resumed session
-  //   PreToolUse   -> block actions outside the signed task boundary
-  //   Stop         -> refuse an unverified completion claim
+  // V11 kept three hooks; V13 adds one sensor, because the episodic slot was empty.
+  //   SessionStart  -> restore task contract context after a new/resumed session
+  //   UserPromptSubmit -> replay this project's own repeated failures, nothing else
+  //   PreToolUse    -> block actions outside the signed task boundary
+  //   PostToolUse   -> record what actually failed, so the replay above has a source
+  //   Stop          -> refuse an unverified completion claim
   const handlers = {
     SessionStart: bind(handleSession),
+    UserPromptSubmit: bind(handleRecall),
     PreToolUse: bind(handleRisk),
+    PostToolUse: bind(handleObservation),
     Stop: bind(handleStop),
   };
 
